@@ -26,8 +26,8 @@ const exampleHistoricalData = JSON.stringify([
 ], null, 2);
 
 const formSchema = z.object({
-  amountPerTrade: z.coerce.number().min(1, "Amount must be at least 1 USD."),
-  cryptocurrency: z.string().min(1, "Please select a cryptocurrency."),
+  amountPerTrade: z.coerce.number().min(1, "La cantidad debe ser al menos 1 USD."),
+  cryptocurrency: z.string().min(1, "Por favor, selecciona una criptomoneda."),
   strategy: z.enum(['movingAverage', 'rsi', 'bollingerBands']),
   riskLevel: z.enum(['high', 'medium', 'low']),
   historicalData: z.string().refine(data => {
@@ -37,7 +37,7 @@ const formSchema = z.object({
     } catch {
       return false;
     }
-  }, "Historical data must be valid JSON."),
+  }, "Los datos históricos deben ser JSON válido."),
 });
 
 type BotControlsFormValues = z.infer<typeof formSchema>;
@@ -70,22 +70,22 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
     startTransition(async () => {
       try {
         const aiInput: GenerateTradingSignalsInput = {
-          historicalData: data.historicalData, // Already a string
+          historicalData: data.historicalData,
           strategy: data.strategy,
           riskLevel: data.riskLevel,
         };
         const result = await generateSignalsAction(aiInput);
         onSignalsGenerated(result);
         toast({
-          title: "Signals Generated",
-          description: "AI has successfully generated trading signals.",
+          title: "Señales Generadas",
+          description: "La IA ha generado exitosamente las señales de trading.",
         });
       } catch (error) {
-        console.error("Error generating signals:", error);
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        console.error("Error generando señales:", error);
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
         onGenerationError(errorMessage);
         toast({
-          title: "Error Generating Signals",
+          title: "Error al Generar Señales",
           description: errorMessage,
           variant: "destructive",
         });
@@ -94,13 +94,12 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
   };
 
   const toggleBotStatus = () => {
-    const newBotStatus = !isBotRunning; // Determine the next state
-    setIsBotRunning(newBotStatus);     // Set the state
+    const newBotStatus = !isBotRunning;
+    setIsBotRunning(newBotStatus);
     
-    // Use the next state for the toast message
     toast({
-      title: `Bot ${newBotStatus ? "Started" : "Stopped"}`,
-      description: `The trading bot is now ${newBotStatus ? "running" : "stopped"}.`,
+      title: `Bot ${newBotStatus ? "Iniciado" : "Detenido"}`,
+      description: `El bot de trading ahora está ${newBotStatus ? "funcionando" : "detenido"}.`,
     });
   };
 
@@ -109,24 +108,24 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
       <CardHeader>
         <CardTitle className="flex items-center">
           <Settings2 className="h-5 w-5 mr-2 text-primary" />
-          Bot Controls & Strategy
+          Controles del Bot y Estrategia
         </CardTitle>
-        <CardDescription>Configure the trading bot and generate AI signals.</CardDescription>
+        <CardDescription>Configura el bot de trading y genera señales de IA.</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between">
-              <Label htmlFor="bot-status" className="text-sm font-medium">Bot Status</Label>
+              <Label htmlFor="bot-status" className="text-sm font-medium">Estado del Bot</Label>
               <Button
                 id="bot-status"
                 type="button"
                 variant={isBotRunning ? "destructive" : "default"}
                 onClick={toggleBotStatus}
-                className="w-[120px]"
+                className="w-[140px]" // Increased width for Spanish text
               >
                 <Power className="mr-2 h-4 w-4" />
-                {isBotRunning ? "Stop Bot" : "Start Bot"}
+                {isBotRunning ? "Detener Bot" : "Iniciar Bot"}
               </Button>
             </div>
 
@@ -135,9 +134,9 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="amountPerTrade"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><DollarSign className="h-4 w-4 mr-1 text-muted-foreground" />Amount per Trade (USD)</FormLabel>
+                  <FormLabel className="flex items-center"><DollarSign className="h-4 w-4 mr-1 text-muted-foreground" />Cantidad por Operación (USD)</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="e.g., 100" {...field} />
+                    <Input type="number" placeholder="ej: 100" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -149,11 +148,11 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="cryptocurrency"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><Repeat className="h-4 w-4 mr-1 text-muted-foreground" />Cryptocurrency</FormLabel>
+                  <FormLabel className="flex items-center"><Repeat className="h-4 w-4 mr-1 text-muted-foreground" />Criptomoneda</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a cryptocurrency" />
+                        <SelectValue placeholder="Selecciona una criptomoneda" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -173,17 +172,17 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="strategy"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><Waypoints className="h-4 w-4 mr-1 text-muted-foreground" />Trading Strategy</FormLabel>
+                  <FormLabel className="flex items-center"><Waypoints className="h-4 w-4 mr-1 text-muted-foreground" />Estrategia de Trading</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a strategy" />
+                        <SelectValue placeholder="Selecciona una estrategia" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="movingAverage">Moving Average Crossover</SelectItem>
-                      <SelectItem value="rsi">RSI (Relative Strength Index)</SelectItem>
-                      <SelectItem value="bollingerBands">Bollinger Bands</SelectItem>
+                      <SelectItem value="movingAverage">Cruce de Medias Móviles</SelectItem>
+                      <SelectItem value="rsi">RSI (Índice de Fuerza Relativa)</SelectItem>
+                      <SelectItem value="bollingerBands">Bandas de Bollinger</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -196,17 +195,17 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="riskLevel"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><ShieldCheck className="h-4 w-4 mr-1 text-muted-foreground" />Risk Level</FormLabel>
+                  <FormLabel className="flex items-center"><ShieldCheck className="h-4 w-4 mr-1 text-muted-foreground" />Nivel de Riesgo</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a risk level" />
+                        <SelectValue placeholder="Selecciona un nivel de riesgo" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="low">Bajo</SelectItem>
+                      <SelectItem value="medium">Medio</SelectItem>
+                      <SelectItem value="high">Alto</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -219,12 +218,12 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="historicalData"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Historical Price Data (JSON)</FormLabel>
+                  <FormLabel>Datos Históricos de Precios (JSON)</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="Enter historical data as JSON string" {...field} rows={5} className="font-mono text-xs"/>
+                    <Textarea placeholder="Ingresa datos históricos como cadena JSON" {...field} rows={5} className="font-mono text-xs"/>
                   </FormControl>
                   <FormDescription>
-                    Paste historical price data. Each object should contain timestamp, open, high, low, close, and volume.
+                    Pega los datos históricos de precios. Cada objeto debe contener timestamp, open, high, low, close y volume.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -234,7 +233,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
           <CardFooter>
             <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={isPending}>
               {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-              Generate Trading Signals
+              Generar Señales de Trading
             </Button>
           </CardFooter>
         </form>
@@ -242,3 +241,4 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
     </Card>
   );
 }
+

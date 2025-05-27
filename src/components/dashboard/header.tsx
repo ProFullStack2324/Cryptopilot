@@ -1,3 +1,4 @@
+
 import { Bot } from 'lucide-react'; // Using Bot icon as a logo placeholder
 
 export function AppHeader() {
@@ -8,8 +9,9 @@ export function AppHeader() {
           <Bot className="h-8 w-8 mr-3 text-primary" />
           <h1 className="text-2xl font-bold text-primary">CryptoPilot</h1>
         </div>
-        {/* Future navigation or user profile can go here */}
+        {/* La navegación futura o el perfil de usuario pueden ir aquí */}
       </div>
     </header>
   );
 }
+

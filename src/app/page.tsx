@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -36,10 +37,7 @@ export default function DashboardPage() {
   // Wrapper for server action to set loading state
   const generateSignalsActionWrapper = async (input: any) => {
     setIsLoadingAiSignals(true);
-    setAiError(null); // Clear previous errors
-    // setAiSignalData(null); // Clear previous data while loading new
-    // No, don't clear previous data yet, BotControls's onSubmit already calls clearSignalData.
-    // This wrapper should just manage loading state around the action call.
+    setAiError(null); 
     try {
       return await handleGenerateSignalsAction(input);
     } finally {
@@ -85,8 +83,9 @@ export default function DashboardPage() {
         </div>
       </main>
       <footer className="py-6 text-center text-sm text-muted-foreground border-t">
-        © {new Date().getFullYear()} CryptoPilot. All rights reserved.
+        © {new Date().getFullYear()} CryptoPilot. Todos los derechos reservados.
       </footer>
     </div>
   );
 }
+

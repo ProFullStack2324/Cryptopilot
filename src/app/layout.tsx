@@ -1,3 +1,4 @@
+
 import type {Metadata} from 'next';
 import {Geist, Geist_Mono} from 'next/font/google';
 import './globals.css';
@@ -15,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'CryptoPilot',
-  description: 'Automated cryptocurrency trading bot dashboard.',
+  description: 'Panel de control de bot de trading de criptomonedas automatizado.',
 };
 
 export default function RootLayout({
@@ -24,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="es"> {/* Changed lang to "es" for Spanish */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
         <Toaster />
@@ -32,3 +33,4 @@ export default function RootLayout({
     </html>
   );
 }
+

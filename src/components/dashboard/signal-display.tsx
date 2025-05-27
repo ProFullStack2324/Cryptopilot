@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,11 +27,11 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
           setParsedSignals(signalsArray as ParsedSignals);
           setParseError(null);
         } else {
-          throw new Error("Parsed data is not a valid array of signals.");
+          throw new Error("Los datos analizados no son un array válido de señales.");
         }
       } catch (e) {
-        console.error("Error parsing signals JSON:", e);
-        setParseError("Failed to parse trading signals. The format might be incorrect.");
+        console.error("Error al analizar JSON de señales:", e);
+        setParseError("Error al analizar las señales de trading. El formato podría ser incorrecto.");
         setParsedSignals(null);
       }
     } else {
@@ -41,9 +42,16 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
 
   const isValidSignalItem = (item: any): item is SignalItem => {
     return typeof item === 'object' && item !== null &&
-           typeof item.signal === 'string' && ['BUY', 'SELL', 'HOLD'].includes(item.signal) &&
+           typeof item.signal === 'string' && ['BUY', 'SELL', 'HOLD'].includes(item.signal) && // Keep these as is for logic
            typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1;
   };
+  
+  const getSignalBadgeText = (signal: 'BUY' | 'SELL' | 'HOLD'): string => {
+    if (signal === 'BUY') return 'COMPRAR';
+    if (signal === 'SELL') return 'VENDER';
+    return 'MANTENER';
+  }
+
 
   if (isLoading) {
     return (
@@ -51,9 +59,9 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
         <CardHeader>
           <CardTitle className="flex items-center">
             <Lightbulb className="h-5 w-5 mr-2 text-primary" />
-            AI Trading Signals
+            Señales de Trading IA
           </CardTitle>
-          <CardDescription>Generating signals, please wait...</CardDescription>
+          <CardDescription>Generando señales, por favor espera...</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="h-8 w-3/4 animate-pulse rounded-md bg-muted"></div>
@@ -67,7 +75,7 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
     return (
       <Alert variant="destructive" className="mt-4">
         <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Error Generating Signals</AlertTitle>
+        <AlertTitle>Error al Generar Señales</AlertTitle>
         <AlertDescription>{error}</AlertDescription>
       </Alert>
     );
@@ -77,9 +85,9 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
     return (
       <Alert className="mt-4 border-primary/50 bg-primary/5">
         <Info className="h-4 w-4 text-primary" />
-        <AlertTitle className="text-primary">No Signals Generated Yet</AlertTitle>
+        <AlertTitle className="text-primary">Aún No Se Han Generado Señales</AlertTitle>
         <AlertDescription>
-          Configure parameters and click "Generate Trading Signals" to see AI recommendations.
+          Configura los parámetros y haz clic en "Generar Señales de Trading" para ver las recomendaciones de la IA.
         </AlertDescription>
       </Alert>
     );
@@ -89,7 +97,7 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
      return (
       <Alert variant="destructive" className="mt-4">
         <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Signal Display Error</AlertTitle>
+        <AlertTitle>Error de Visualización de Señal</AlertTitle>
         <AlertDescription>{parseError}</AlertDescription>
       </Alert>
     );
@@ -101,23 +109,23 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
       <CardHeader>
         <CardTitle className="flex items-center text-primary">
           <CheckCircle className="h-5 w-5 mr-2 text-green-500" />
-          AI Trading Signals Generated
+          Señales de Trading IA Generadas
         </CardTitle>
-        <CardDescription>Review the AI-powered trading signals and analysis below.</CardDescription>
+        <CardDescription>Revisa las señales de trading y el análisis proporcionados por la IA a continuación.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div>
           <h3 className="text-lg font-semibold mb-2 flex items-center">
             <Terminal className="h-5 w-5 mr-2 text-muted-foreground" />
-            Generated Signals
+            Señales Generadas
           </h3>
           {parsedSignals && parsedSignals.length > 0 ? (
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Signal</TableHead>
-                    <TableHead className="text-right">Confidence</TableHead>
+                    <TableHead>Señal</TableHead>
+                    <TableHead className="text-right">Confianza</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -132,7 +140,7 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
                             'bg-gray-500/20 text-gray-700 dark:bg-gray-700/30 dark:text-gray-400'
                           }
                         >
-                          {item.signal}
+                          {getSignalBadgeText(item.signal)}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">{(item.confidence * 100).toFixed(0)}%</TableCell>
@@ -142,20 +150,21 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
               </Table>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No specific trading signals generated, or signals could not be parsed.</p>
+            <p className="text-sm text-muted-foreground">No se generaron señales de trading específicas, o las señales no pudieron ser analizadas.</p>
           )}
         </div>
         
         <div>
           <h3 className="text-lg font-semibold mb-2 flex items-center">
             <Lightbulb className="h-5 w-5 mr-2 text-muted-foreground" />
-            Explanation
+            Explicación
           </h3>
           <div className="p-4 bg-muted/50 rounded-md border text-sm leading-relaxed">
-            {signalData.explanation || "No explanation provided."}
+            {signalData.explanation || "No se proporcionó explicación."}
           </div>
         </div>
       </CardContent>
     </Card>
   );
 }
+
