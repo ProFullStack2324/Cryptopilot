@@ -80,23 +80,27 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
           historicalData: data.historicalData,
           strategy: data.strategy,
           riskLevel: data.riskLevel,
+          // Asegurarse de pasar cryptocurrencyForAI según el schema
         };
         const result = await generateSignalsAction(aiInput);
-        onSignalsGenerated(result);
+        onSignalsGenerated(result); // onSignalsGenerated ya está siendo llamado por generateSignalsActionWrapper en page.tsx
         toast({
           title: "Señales de IA Generadas",
           description: "Las señales de trading han sido procesadas.",
           variant: "default",
         });
       } catch (error) {
-        console.error("Error generando señales:", error);
+        console.error("Error generando señales desde BotControls:", error);
+        // onGenerationError ya está siendo llamado por generateSignalsActionWrapper en page.tsx
+        // Solo mostramos un toast aquí si el error no fue ya manejado (lo cual no debería pasar)
         const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
-        onGenerationError(errorMessage);
-        toast({
-          title: "Error al Generar Señales",
-          description: errorMessage,
-          variant: "destructive",
-        });
+        if(!form.formState.isSubmitting) { // Evitar doble toast si el error ya se manejó arriba
+            toast({
+            title: "Error al Generar Señales",
+            description: errorMessage,
+            variant: "destructive",
+            });
+        }
       }
     });
   };
@@ -166,11 +170,11 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="cryptocurrencyForAI"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center text-muted-foreground"><Repeat className="h-4 w-4 mr-1" />Criptomoneda (para análisis IA)</FormLabel>
+                  <FormLabel className="flex items-center text-muted-foreground"><Repeat className="h-4 w-4 mr-1" />Activo (para contexto IA)</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger className="bg-input text-foreground">
-                        <SelectValue placeholder="Selecciona cripto para IA" />
+                        <SelectValue placeholder="Selecciona activo para IA" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent className="bg-popover text-popover-foreground">
@@ -183,7 +187,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
                     </SelectContent>
                   </Select>
                   <FormDescription className="text-xs text-muted-foreground/70">
-                    Esta selección es para el contexto de la IA. El mercado para operar se elige en "Mercados".
+                    Esta selección provee contexto al modelo de IA. El mercado para operar se elige en "Mercados".
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -264,4 +268,3 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
     </Card>
   );
 }
-

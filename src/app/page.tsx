@@ -152,7 +152,13 @@ export default function TradingPlatformPage() {
         setSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_SIGNAL_EVENTS_ON_CHART));
       }
     } catch (e) {
-      console.error("Error al analizar señales para eventos del gráfico:", e);
+      console.error("Error al analizar señales JSON para eventos del gráfico en page.tsx:", e, "Datos recibidos:", data.signals);
+       // Opcional: mostrar un toast de error si el parseo aquí falla
+       toast({
+        title: "Error de Formato de Señal",
+        description: "Las señales de IA no pudieron ser visualizadas en el gráfico debido a un formato inesperado.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -171,9 +177,21 @@ export default function TradingPlatformPage() {
     setIsLoadingAiSignals(true);
     setAiError(null);
     try {
-      return await handleGenerateSignalsAction(input);
+      const result = await handleGenerateSignalsAction(input);
+      // La validación de la estructura de result ya se hace en handleGenerateSignalsAction
+      handleSignalsGenerated(result); // Llama a handleSignalsGenerated aquí
+      return result; // Devuelve el resultado para BotControls si es necesario
+    } catch (error) {
+        // El error ya debería ser manejado y lanzado por handleGenerateSignalsAction
+        // Aquí solo lo capturamos para pasarlo a onGenerationError
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
+        handleGenerationError(errorMessage); // Llama a handleGenerationError aquí
+        // No es necesario devolver nada aquí ya que es un error
+        // O podrías lanzar el error de nuevo si BotControls lo espera,
+        // pero la práctica actual es manejarlo con onGenerationError
+        throw error; // Re-lanzar para que el toast en BotControls se active
     } finally {
-      // setIsLoadingAiSignals(false); // Se maneja en los callbacks onSignalsGenerated/onGenerationError
+       // setIsLoadingAiSignals(false); // Se gestiona en handleSignalsGenerated/handleGenerationError
     }
   };
 
@@ -376,6 +394,7 @@ export default function TradingPlatformPage() {
                               <li><strong>Suavizar Ruido:</strong> Ayuda a filtrar fluctuaciones muy pequeñas y momentáneas del precio, ofreciendo una visión un poco más clara de la tendencia subyacente.</li>
                               <li><strong>Posibles Señales:</strong> El cruce del precio por encima o por debajo de la SMA 10 puede ser usado por algunos traders como una indicación temprana de un cambio de dirección.</li>
                             </ul>
+                             <p className="mt-2"><strong>Ejemplo práctico:</strong> Si el precio cruza hacia arriba la SMA 10 después de haber estado por debajo, podría indicar una fortaleza compradora emergente. Si cruza hacia abajo, debilidad.</p>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma20">
@@ -385,9 +404,10 @@ export default function TradingPlatformPage() {
                             <p className="mb-2"><strong>Para qué sirve:</strong></p>
                             <ul className="list-disc pl-5 space-y-1">
                               <li><strong>Tendencia a Mediano Plazo (Relativo al Gráfico):</strong> Es una media de plazo un poco más largo que la SMA 10. Proporciona una visión de la tendencia más suavizada y menos sensible a movimientos bruscos y cortos.</li>
-                              <li><strong>Confirmación de Tendencia:</strong> Puede usarse para confirmar la dirección de la tendencia sugerida por medias más cortas o por el propio precio.</li>
-                              <li><strong>Niveles Dinámicos:</strong> Al igual que otras SMAs, puede actuar como un nivel de soporte (si el precio está por encima y rebota) o resistencia (si el precio está por debajo y le cuesta superarla).</li>
+                              <li><strong>Confirmación de Tendencia:</strong> Puede usarse para confirmar la dirección de la tendencia sugerida por medias más cortas o por el propio precio. Por ejemplo, si el precio y la SMA 10 están por encima de la SMA 20, refuerza la idea de una tendencia alcista.</li>
+                              <li><strong>Niveles Dinámicos de Soporte/Resistencia:</strong> Al igual que otras SMAs, puede actuar como un nivel de soporte (si el precio está por encima y rebota en la SMA 20) o resistencia (si el precio está por debajo y le cuesta superar la SMA 20).</li>
                             </ul>
+                            <p className="mt-2"><strong>Ejemplo práctico:</strong> En una tendencia alcista, el precio podría retroceder hasta la SMA 20 y encontrar "soporte" allí antes de continuar subiendo. En una tendencia bajista, podría subir hasta la SMA 20 y encontrar "resistencia".</p>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma-general">
@@ -399,13 +419,13 @@ export default function TradingPlatformPage() {
                               <li><strong>Identificación de Tendencia:</strong> Si el precio se mantiene consistentemente por encima de una SMA, sugiere una tendencia alcista. Si se mantiene por debajo, una tendencia bajista. La inclinación de la SMA también da pistas sobre la fortaleza de la tendencia.</li>
                               <li><strong>Cruces de Medias (Crossovers):</strong>
                                 <ul className="list-circle pl-5 mt-1 space-y-1">
-                                  <li><strong>Cruce Dorado (Golden Cross):</strong> Ocurre cuando una SMA de corto plazo (ej. SMA 10) cruza por encima de una SMA de más largo plazo (ej. SMA 20). A menudo se interpreta como una señal alcista (potencial compra).</li>
+                                  <li><strong>Cruce Dorado (Golden Cross):</strong> Ocurre cuando una SMA de corto plazo (ej. SMA 10 en nuestro caso) cruza por encima de una SMA de más largo plazo (ej. SMA 20). A menudo se interpreta como una señal alcista (potencial compra).</li>
                                   <li><strong>Cruce de la Muerte (Death Cross):</strong> Ocurre cuando una SMA de corto plazo cruza por debajo de una SMA de más largo plazo. A menudo se interpreta como una señal bajista (potencial venta).</li>
                                 </ul>
                               </li>
-                              <li><strong>Soporte y Resistencia Dinámicos:</strong> Las SMAs pueden actuar como niveles donde el precio puede encontrar soporte (en una tendencia alcista) o resistencia (en una tendencia bajista).</li>
+                              <li><strong>Soporte y Resistencia Dinámicos:</strong> Las SMAs pueden actuar como niveles donde el precio puede encontrar soporte (en una tendencia alcista) o resistencia (en una tendencia bajista). Un rebote en una SMA puede ser una señal de continuación de tendencia.</li>
                             </ul>
-                            <p className="mt-2"><strong>Importante:</strong> Las SMAs son indicadores rezagados (se basan en precios pasados) y funcionan mejor en mercados con tendencia. No existe una configuración única que funcione para todos los activos o condiciones de mercado.</p>
+                            <p className="mt-2"><strong>Importante:</strong> Las SMAs son indicadores rezagados (se basan en precios pasados) y funcionan mejor en mercados con tendencia. En mercados laterales o muy volátiles, pueden generar señales falsas. No existe una configuración única que funcione para todos los activos o condiciones de mercado. Los traders suelen combinar SMAs con otros indicadores y análisis para tomar decisiones.</p>
                           </AccordionContent>
                         </AccordionItem>
                       </Accordion>
