@@ -4,13 +4,13 @@ import type { ChartConfig } from "@/components/ui/chart";
 export interface Trade {
   id: string;
   date: string;
-  type: 'Compra' | 'Venta';
+  type: 'Compra' | 'Venta'; // Ya en español
   asset: string;
   amount: number;
   price: number;
   total: number;
-  status: 'Completado' | 'Pendiente' | 'Fallido';
-  pnl?: number; // Ganancia/Pérdida realizada para esta operación
+  status: 'Completado' | 'Pendiente' | 'Fallido'; // Ya en español
+  pnl?: number; 
 }
 
 export interface MarketPriceDataPoint {
@@ -46,21 +46,20 @@ const generateInitialPriceHistory = (basePrice: number, volatility: number, poin
   const nowInSeconds = Math.floor(Date.now() / 1000);
 
   for (let i = 0; i < points; i++) {
-    const timestamp = nowInSeconds - (points - 1 - i) * minutesInterval * 60; // Timestamps yendo hacia atrás desde ahora
+    const timestamp = nowInSeconds - (points - 1 - i) * minutesInterval * 60; 
     history.push({
       timestamp: timestamp,
       price: parseFloat(currentPrice.toFixed(5)),
     });
-    // Simular movimiento de precio
     currentPrice *= (1 + (Math.random() - 0.5) * volatility); 
-    if (currentPrice <= 0) currentPrice = basePrice * 0.1; // Evitar precios negativos o cero
+    if (currentPrice <= 0) currentPrice = basePrice * 0.1; 
   }
   return history;
 };
 
 
 export const mockMarketPriceHistory: Record<string, MarketPriceDataPoint[]> = {
-  "BTCUSDT": generateInitialPriceHistory(61500, 0.0005, 200, 1), // 200 puntos, 1 min de intervalo
+  "BTCUSDT": generateInitialPriceHistory(61500, 0.0005, 200, 1), 
   "ETHUSDT": generateInitialPriceHistory(3400, 0.0007, 200, 1),
   "SOLUSDT": generateInitialPriceHistory(150, 0.001, 200, 1),
   "ADAUSDT": generateInitialPriceHistory(0.42, 0.0015, 200, 1),
@@ -86,21 +85,21 @@ export const marketPriceChartConfigDark = {
     label: "SMA 50 (Ref. Bot)",
     color: "hsl(var(--chart-4))", 
   },
-  aiBuySignal: { // Renombrado para claridad
+  aiBuySignal: { 
     label: "Compra IA",
-    color: "hsl(var(--chart-3))", // Verde más brillante
+    color: "hsl(var(--chart-3))", 
   },
-  aiSellSignal: { // Renombrado para claridad
+  aiSellSignal: { 
     label: "Venta IA",
-    color: "hsl(var(--destructive))", // Rojo destructivo
+    color: "hsl(var(--destructive))", 
   },
   smaCrossBuySignal: {
     label: "Cruce SMA Compra",
-    color: "hsl(var(--chart-3) / 0.7)", // Verde más claro/transparente
+    color: "hsl(var(--chart-3) / 0.7)", 
   },
   smaCrossSellSignal: {
     label: "Cruce SMA Venta",
-    color: "hsl(var(--destructive) / 0.7)", // Rojo más claro/transparente
+    color: "hsl(var(--destructive) / 0.7)", 
   }
 } satisfies ChartConfig;
 
@@ -121,7 +120,7 @@ export interface OrderFormData {
   type: 'buy' | 'sell';
   marketId: string;
   amount: number;
-  price?: number; // Opcional para órdenes de mercado
+  price?: number; 
   orderType: 'market' | 'limit';
 }
 
@@ -131,7 +130,7 @@ export const initialMockTrades: Trade[] = [
 ];
 
 export interface PerformanceDataPoint {
-  date: string; // Formato HH:mm:ss
+  date: string; 
   value: number;
 }
 export const mockPerformanceChartConfigDark = {
@@ -141,14 +140,14 @@ export const mockPerformanceChartConfigDark = {
   },
 } satisfies ChartConfig;
 
-export interface SignalEvent { // Usado para señales de IA
+export interface SignalEvent { 
   timestamp: number;
   price: number;
   type: 'BUY' | 'SELL';
   confidence: number;
 }
 
-export interface SmaCrossoverEvent { // Nuevo tipo para cruces de SMA
+export interface SmaCrossoverEvent { 
     timestamp: number;
     price: number;
     type: 'SMA_CROSS_BUY' | 'SMA_CROSS_SELL';
@@ -159,5 +158,14 @@ export interface SimulatedPosition {
   entryPrice: number;
   amount: number;
   type: 'buy' | 'sell'; 
-  timestamp: number; // Unix timestamp del momento de entrada
+  timestamp: number; 
 }
+
+// Example historical data to be used by the AI when auto-generating signals
+export const exampleHistoricalDataForAI = JSON.stringify([
+  {"timestamp": "2023-10-01T00:00:00Z", "open": 27000, "high": 27200, "low": 26800, "close": 27100, "volume": 1000},
+  {"timestamp": "2023-10-02T00:00:00Z", "open": 27100, "high": 27500, "low": 27000, "close": 27400, "volume": 1200},
+  {"timestamp": "2023-10-03T00:00:00Z", "open": 27400, "high": 28000, "low": 27300, "close": 27900, "volume": 1500},
+  {"timestamp": "2023-10-04T00:00:00Z", "open": 27900, "high": 28100, "low": 27700, "close": 27800, "volume": 1100},
+  {"timestamp": "2023-10-05T00:00:00Z", "open": 27800, "high": 28200, "low": 27500, "close": 28150, "volume": 1300}
+], null, 2);
