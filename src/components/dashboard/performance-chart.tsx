@@ -16,119 +16,160 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import type { PerformanceDataPoint } from "@/lib/types"; // Cambio a PerformanceDataPoint
-import { marketPriceChartConfigDark as mockPerformanceChartConfigDark } from "@/lib/types"; // Usar config renombrada
-import { useState, useEffect } from 'react';
+import type { PerformanceDataPoint } from "@/lib/types";
+import { marketPriceChartConfigDark as mockPerformanceChartConfigDark } from "@/lib/types";
+import { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
+const MAX_PERFORMANCE_DATA_POINTS = 100;
 
-const initialPerformanceData: PerformanceDataPoint[] = [ // Esto representa el rendimiento del *portafolio total*, no un mercado específico
-  { date: format(new Date(2024,6,1), 'MMM dd', {locale: es}), value: 9500 },
-  { date: format(new Date(2024,6,3), 'MMM dd', {locale: es}), value: 9700 },
-  { date: format(new Date(2024,6,5), 'MMM dd', {locale: es}), value: 9650 },
-  { date: format(new Date(2024,6,7), 'MMM dd', {locale: es}), value: 10050 },
-  { date: format(new Date(2024,6,9), 'MMM dd', {locale: es}), value: 10200 },
-  { date: format(new Date(2024,6,11), 'MMM dd', {locale: es}), value: 10150 },
-  { date: format(new Date(2024,6,13), 'MMM dd', {locale: es}), value: 10300 },
-  { date: format(new Date(2024,6,15), 'MMM dd', {locale: es}), value: 10500 },
-  { date: format(new Date(2024,6,17), 'MMM dd', {locale: es}), value: 10450 },
-  { date: format(new Date(2024,6,19), 'MMM dd', {locale: es}), value: 10700 },
-  { date: format(new Date(2024,6,21), 'MMM dd', {locale: es}), value: 10900 },
-  { date: format(new Date(2024,6,23), 'MMM dd', {locale: es}), value: 10800 },
-  { date: format(new Date(2024,6,25), 'MMM dd', {locale: es}), value: 11050 },
-  { date: format(new Date(2024,6,27), 'MMM dd', {locale: es}), value: 11200 },
-  { date: format(new Date(2024,6,29), 'MMM dd', {locale: es}), value: 11150 },
-];
+interface PerformanceChartProps {
+  portfolioValue: number | null;
+}
 
-
-export function PerformanceChart() { // Este componente se mantiene como rendimiento general del portafolio
-  const [chartData, setChartData] = useState<PerformanceDataPoint[] | null>(null);
+export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
+  const [chartData, setChartData] = useState<PerformanceDataPoint[]>([]);
 
   useEffect(() => {
-    setChartData(initialPerformanceData);
-  }, []);
+    if (portfolioValue !== null) {
+      const newPoint: PerformanceDataPoint = {
+        // Usar un formato de hora para reflejar cambios más frecuentes
+        date: format(new Date(), 'HH:mm:ss', { locale: es }),
+        value: portfolioValue,
+      };
+      setChartData(prevData => {
+        const updatedData = [...prevData, newPoint];
+        if (updatedData.length > MAX_PERFORMANCE_DATA_POINTS) {
+          return updatedData.slice(updatedData.length - MAX_PERFORMANCE_DATA_POINTS);
+        }
+        return updatedData;
+      });
+    }
+  }, [portfolioValue]);
 
-  if (chartData === null) {
+  // Establecer un punto inicial si el portafolio tiene valor al montar y el gráfico está vacío
+  useEffect(() => {
+    if (portfolioValue !== null && chartData.length === 0) {
+       setChartData([{
+         date: format(new Date(), 'HH:mm:ss', { locale: es }),
+         value: portfolioValue
+       }]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portfolioValue]); // Solo al montar si portfolioValue está disponible
+
+  const currentDisplayValue = useMemo(() => {
+    if (chartData.length > 0) {
+      return chartData[chartData.length - 1].value;
+    }
+    return portfolioValue; // Fallback al valor actual si el gráfico aún no tiene puntos
+  }, [chartData, portfolioValue]);
+
+  if (portfolioValue === null && chartData.length === 0) {
     return (
-      <Card className="shadow-lg bg-card text-card-foreground">
+      <Card className="shadow-lg bg-card text-card-foreground mt-4">
         <CardHeader>
-          <CardTitle>Rendimiento del Portafolio</CardTitle>
-          <CardDescription>Cargando datos del gráfico...</CardDescription>
+          <CardTitle className="flex items-center text-base">
+            <TrendingUp className="h-5 w-5 mr-2 text-primary" />
+            Rendimiento General Portafolio
+          </CardTitle>
+          <CardDescription className="text-xs text-muted-foreground">Cargando datos del portafolio...</CardDescription>
         </CardHeader>
-        <CardContent className="h-[300px] flex items-center justify-center">
+        <CardContent className="h-[200px] flex items-center justify-center">
            <div className="h-full w-full animate-pulse rounded-md bg-muted"></div>
         </CardContent>
       </Card>
     );
   }
-  
-  const currentPortfolioValue = chartData.length > 0 ? chartData[chartData.length -1].value : 0;
 
   return (
-    <Card className="shadow-lg bg-card text-card-foreground">
-      <CardHeader>
+    <Card className="shadow-lg bg-card text-card-foreground mt-4">
+      <CardHeader className="pb-2 pt-3">
         <CardTitle className="flex items-center text-base">
           <TrendingUp className="h-5 w-5 mr-2 text-primary" />
           Rendimiento General Portafolio
         </CardTitle>
-        <CardDescription className="text-xs text-muted-foreground">Valor total del portafolio (simulado)</CardDescription>
+        <CardDescription className="text-xs text-muted-foreground">Valor total del portafolio (simulado, actualizándose)</CardDescription>
       </CardHeader>
       <CardContent className="pt-0 pb-2">
-        <ChartContainer config={mockPerformanceChartConfigDark} className="h-[200px] w-full">
-          <LineChart
-            accessibilityLayer
-            data={chartData}
-            margin={{
-              left: 0, 
-              right: 12,
-              top: 5,
-              bottom: 5,
-            }}
-          >
-            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-            <XAxis
-              dataKey="date"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              tickFormatter={(value) => value.slice(0, 6)}
-              stroke="hsl(var(--muted-foreground))"
-              fontSize={10}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              tickFormatter={(value) => `$${(value / 1000)}k`}
-              stroke="hsl(var(--muted-foreground))"
-              domain={['dataMin - 500', 'dataMax + 500']}
-              fontSize={10}
-            />
-            <ChartTooltip
-              cursor={{stroke: "hsl(var(--accent))", strokeWidth: 1, strokeDasharray: "3 3"}}
-              content={<ChartTooltipContent indicator="line" labelClassName="text-foreground" className="bg-popover text-popover-foreground border-popover-foreground/50" />}
-            />
-            <Line
-              dataKey="value" // 'value' es el key en PerformanceDataPoint
-              type="monotone"
-              stroke="hsl(var(--chart-2))" // Usar otro color para distinguirlo del gráfico de mercado
-              strokeWidth={2}
-              dot={{ r: 2, fill: "hsl(var(--chart-2))", strokeWidth: 1, stroke: "hsl(var(--background))" }}
-              activeDot={{ r: 4, fill: "hsl(var(--chart-2))", stroke: "hsl(var(--background))", strokeWidth: 2 }}
-            />
-          </LineChart>
-        </ChartContainer>
+        {chartData.length > 0 ? (
+          <ChartContainer config={mockPerformanceChartConfigDark} className="h-[180px] w-full"> {/* Reducir altura un poco */}
+            <LineChart
+              accessibilityLayer
+              data={chartData}
+              margin={{
+                left: 0,
+                right: 12,
+                top: 5,
+                bottom: 5,
+              }}
+            >
+              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
+              <XAxis
+                dataKey="date"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                // Mostrar menos ticks si hay muchos puntos
+                tickFormatter={(value, index) => {
+                    if (chartData.length > 10 && index % Math.floor(chartData.length / 5) !== 0 && index !== chartData.length -1 && index !== 0) return '';
+                    return value;
+                }}
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={10}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                tickFormatter={(value) => `$${(value / 1000).toFixed(1)}k`} // Ajustar formato si es necesario
+                stroke="hsl(var(--muted-foreground))"
+                domain={['dataMin - dataMin*0.05', 'dataMax + dataMax*0.05']} // Margen dinámico
+                fontSize={10}
+                width={50}
+              />
+              <ChartTooltip
+                cursor={{stroke: "hsl(var(--accent))", strokeWidth: 1, strokeDasharray: "3 3"}}
+                content={<ChartTooltipContent
+                            indicator="line"
+                            labelClassName="text-foreground"
+                            className="bg-popover text-popover-foreground border-popover-foreground/50"
+                            formatter={(value, name, props) => {
+                                const rawValue = props.payload?.[name as keyof typeof props.payload] as number | undefined;
+                                return [
+                                    rawValue?.toLocaleString(undefined, {style: 'currency', currency: 'USD', minimumFractionDigits:2, maximumFractionDigits:2 }),
+                                    mockPerformanceChartConfigDark[name as keyof typeof mockPerformanceChartConfigDark]?.label || name
+                                ];
+                            }}
+                          />}
+              />
+              <Line
+                dataKey="value"
+                type="monotone"
+                stroke="hsl(var(--chart-2))"
+                strokeWidth={2}
+                dot={{ r: 1, fill: "hsl(var(--chart-2))", strokeWidth: 0.5, stroke: "hsl(var(--background))" }}
+                activeDot={{ r: 3, fill: "hsl(var(--chart-2))", stroke: "hsl(var(--background))", strokeWidth: 1 }}
+                name={mockPerformanceChartConfigDark.value.label as string}
+              />
+            </LineChart>
+          </ChartContainer>
+        ) : (
+          <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
+            Esperando datos del portafolio...
+          </div>
+        )}
       </CardContent>
        <CardFooter className="flex-col items-start gap-1 text-xs pt-0 pb-3">
         <div className="flex gap-2 font-medium leading-none text-foreground">
-          Valor actual: ${currentPortfolioValue.toLocaleString()}.
+          Valor actual del portafolio: ${currentDisplayValue?.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) || 'N/A'}.
         </div>
         <div className="leading-none text-muted-foreground">
-          Mostrando datos simulados de los últimos 30 días.
+          Mostrando el rendimiento simulado.
         </div>
       </CardFooter>
     </Card>
   )
 }
-
