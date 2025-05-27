@@ -2,25 +2,21 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Landmark, TrendingUp, Wallet } from "lucide-react";
-import { useState, useEffect } from 'react';
+import { Landmark, Wallet } from "lucide-react";
 
-export function BalanceCard() {
-  const [balance, setBalance] = useState<number | null>(null);
+interface BalanceCardProps {
+  balance: number | null;
+  asset?: string;
+}
 
-  useEffect(() => {
-    // Simula la obtención del saldo
-    // En una aplicación real, esto sería una llamada a la API
-    setBalance(Math.random() * 25000 + 5000); // Saldo aleatorio entre 5k y 30k
-  }, []);
-
+export function BalanceCard({ balance, asset = "USD" }: BalanceCardProps) {
   return (
     <Card className="shadow-lg bg-card text-card-foreground">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">Saldo Actual (USD)</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4">
+        <CardTitle className="text-sm font-medium text-muted-foreground">Saldo ({asset})</CardTitle>
         <Wallet className="h-5 w-5 text-primary" />
       </CardHeader>
-      <CardContent>
+      <CardContent className="pb-4">
         {balance === null ? (
            <div className="h-8 w-3/4 animate-pulse rounded-md bg-muted my-1"></div>
         ) : (
@@ -28,8 +24,8 @@ export function BalanceCard() {
             ${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         )}
-        <p className="text-xs text-green-500 mt-1 flex items-center">
-          <TrendingUp className="h-4 w-4 mr-1" /> +2.5% desde el mes pasado
+        <p className="text-xs text-muted-foreground mt-1">
+          Este es un saldo simulado.
         </p>
       </CardContent>
     </Card>
