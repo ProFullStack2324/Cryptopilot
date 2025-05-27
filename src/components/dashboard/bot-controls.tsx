@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useTransition } from "react";
@@ -93,10 +94,13 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
   };
 
   const toggleBotStatus = () => {
-    setIsBotRunning(!isBotRunning);
+    const newBotStatus = !isBotRunning; // Determine the next state
+    setIsBotRunning(newBotStatus);     // Set the state
+    
+    // Use the next state for the toast message
     toast({
-      title: `Bot ${!isBotRunning ? "Started" : "Stopped"}`,
-      description: `The trading bot is now ${!isBotRunning ? "running" : "stopped"}.`,
+      title: `Bot ${newBotStatus ? "Started" : "Stopped"}`,
+      description: `The trading bot is now ${newBotStatus ? "running" : "stopped"}.`,
     });
   };
 
