@@ -17,7 +17,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, LandmarkIcon } from "lucide-react"; // Added BotIcon, BookOpen
 import { useToast } from "@/hooks/use-toast";
 
 const MAX_SIGNAL_EVENTS_ON_CHART = 5;
@@ -53,7 +54,6 @@ function SimulatedPnLDisplay({ position, currentPrice, market }: { position: Sim
   if (position.entryPrice * position.amount !== 0) { // Evitar división por cero
     pnlPercentage = (pnl / (position.entryPrice * position.amount)) * 100;
   }
-
 
   const pnlColor = pnl >= 0 ? 'text-green-500' : 'text-red-500';
 
@@ -96,24 +96,26 @@ export default function TradingPlatformPage() {
   );
   const [currentSimulatedPosition, setCurrentSimulatedPosition] = useState<SimulatedPosition | null>(null);
 
-  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
-  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false); // Oculta por defecto
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false); // Oculta por defecto
 
   const toggleLeftSidebar = () => setIsLeftSidebarOpen(!isLeftSidebarOpen);
   const toggleRightSidebar = () => setIsRightSidebarOpen(!isRightSidebarOpen);
 
 
   useEffect(() => {
-    const initialQuote = Math.random() * 25000 + 5000;
+    // Simulación de saldo inicial
+    const initialQuote = Math.random() * 25000 + 5000; // Saldo en USD
     setAvailableQuoteBalance(initialQuote);
+    // Simulación de saldo del activo base para el mercado por defecto
     const defaultMarketBaseBalance = Math.random() * (mockMarkets[0].baseAsset === 'BTC' ? 0.5 : 10) + 0.1;
     setCurrentBaseAssetBalance(defaultMarketBaseBalance);
   }, []);
 
   useEffect(() => {
     setCurrentMarketPriceHistory(mockMarketPriceHistory[selectedMarket.id] || []);
-    setSignalEvents([]);
-    setCurrentSimulatedPosition(null); 
+    setSignalEvents([]); // Limpiar eventos de señal del gráfico al cambiar de mercado
+    setCurrentSimulatedPosition(null); // Limpiar posición simulada al cambiar de mercado
   }, [selectedMarket]);
 
 
@@ -121,7 +123,8 @@ export default function TradingPlatformPage() {
     const newMarket = mockMarkets.find(m => m.id === marketId);
     if (newMarket) {
       setSelectedMarket(newMarket);
-      clearSignalData();
+      clearSignalData(); // Limpiar datos de IA
+      // Simular un nuevo balance para el activo base del nuevo mercado
       const newBaseBalance = Math.random() * (newMarket.baseAsset === 'BTC' ? 0.2 : 5) + (newMarket.baseAsset === 'BTC' ? 0.01 : 0.5);
       setCurrentBaseAssetBalance(newBaseBalance);
     }
@@ -151,6 +154,7 @@ export default function TradingPlatformPage() {
       }
     } catch (e) {
       console.error("Error al analizar señales para eventos del gráfico:", e);
+      // No mostrar error al usuario por esto, es un problema de visualización interna
     }
   };
 
@@ -171,7 +175,7 @@ export default function TradingPlatformPage() {
     try {
       return await handleGenerateSignalsAction(input);
     } finally {
-      // setIsLoadingAiSignals(false); // Se maneja en los callbacks
+      // setIsLoadingAiSignals(false); // Se maneja en los callbacks onSignalsGenerated/onGenerationError
     }
   };
 
@@ -191,7 +195,7 @@ export default function TradingPlatformPage() {
       amount: orderData.amount,
       price: priceToUse,
       total: totalCostOrProceeds,
-      status: 'Completado', 
+      status: 'Completado',
     };
 
     if (orderData.type === 'buy') {
@@ -215,7 +219,7 @@ export default function TradingPlatformPage() {
         toast({ title: "Fondos Insuficientes (Simulado)", description: `No tienes suficiente ${selectedMarket.quoteAsset} para comprar ${orderData.amount} ${selectedMarket.baseAsset}.`, variant: "destructive" });
         return;
       }
-    } else { 
+    } else { // orderData.type === 'sell'
       if (currentBaseAssetBalance >= orderData.amount) {
         setCurrentBaseAssetBalance(currentBaseAssetBalance - orderData.amount);
         setAvailableQuoteBalance((availableQuoteBalance || 0) + totalCostOrProceeds);
@@ -290,7 +294,7 @@ export default function TradingPlatformPage() {
           <section className={`col-span-12 ${centralColSpan} p-1 md:p-2 flex flex-col gap-2 transition-all duration-300 ease-in-out`}>
             <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
               <MarketPriceChart
-                key={selectedMarket.id} 
+                key={selectedMarket.id} // Key para forzar re-render al cambiar de mercado
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
                 initialPriceHistory={currentMarketPriceHistory}
@@ -308,7 +312,7 @@ export default function TradingPlatformPage() {
             </div>
           </section>
 
-          {/* Columna Derecha: Selector de Mercado, Pestañas (Control IA, Saldo), P&L, Señales IA */}
+          {/* Columna Derecha: Selector de Mercado, Pestañas (Control IA, Saldo, Guía), P&L, Señales IA */}
           <aside className={`col-span-12 ${isRightSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
@@ -318,9 +322,10 @@ export default function TradingPlatformPage() {
               />
               <Separator className="my-4" />
               <Tabs defaultValue="ai-controls" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-2">
-                  <TabsTrigger value="ai-controls">Control IA</TabsTrigger>
-                  <TabsTrigger value="balance">Info. Activo</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-3 mb-2">
+                  <TabsTrigger value="ai-controls"><BotIcon className="w-4 h-4 mr-1" />Control IA</TabsTrigger>
+                  <TabsTrigger value="balance"><LandmarkIcon className="w-4 h-4 mr-1"/>Info. Activo</TabsTrigger>
+                  <TabsTrigger value="metric-guide"><BookOpen className="w-4 h-4 mr-1"/>Guía</TabsTrigger>
                 </TabsList>
                 <TabsContent value="ai-controls">
                    <BotControls
@@ -328,7 +333,7 @@ export default function TradingPlatformPage() {
                     onGenerationError={handleGenerationError}
                     clearSignalData={clearSignalData}
                     generateSignalsAction={generateSignalsActionWrapper}
-                    selectedMarketSymbol={selectedMarket.baseAsset}
+                    selectedMarketSymbol={selectedMarket.baseAsset} // Pasar el símbolo del mercado para el input de IA
                   />
                 </TabsContent>
                 <TabsContent value="balance">
@@ -346,6 +351,42 @@ export default function TradingPlatformPage() {
                         </CardContent>
                       </Card>
                   )}
+                </TabsContent>
+                <TabsContent value="metric-guide">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center"><BookOpen className="w-4 h-4 mr-2 text-primary"/>Guía de Métricas del Gráfico</CardTitle>
+                      <CardDescription className="text-xs">Explicación de los indicadores visualizados.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-sm">
+                      <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="price">
+                          <AccordionTrigger>Precio</AccordionTrigger>
+                          <AccordionContent>
+                            Es la línea principal del gráfico (generalmente azul). Representa el precio de cotización actual (o el último precio conocido en nuestra simulación) del activo. Fluctúa basado en la oferta y demanda del mercado (en nuestra simulación, se actualiza para dar dinamismo).
+                          </AccordionContent>
+                        </AccordionItem>
+                        <AccordionItem value="sma10">
+                          <AccordionTrigger>SMA 10</AccordionTrigger>
+                          <AccordionContent>
+                            Media Móvil Simple (SMA) de 10 períodos. Calcula el precio promedio de los últimos 10 puntos de datos del gráfico. Es una media de corto plazo, reaccionando rápidamente a cambios recientes. Ayuda a identificar tendencias a muy corto plazo.
+                          </AccordionContent>
+                        </AccordionItem>
+                        <AccordionItem value="sma20">
+                          <AccordionTrigger>SMA 20</AccordionTrigger>
+                          <AccordionContent>
+                            Media Móvil Simple (SMA) de 20 períodos. Calcula el precio promedio de los últimos 20 puntos de datos. Es una media de plazo ligeramente más largo que la SMA 10, ofreciendo una visión de la tendencia un poco más suavizada.
+                          </AccordionContent>
+                        </AccordionItem>
+                        <AccordionItem value="sma-general">
+                          <AccordionTrigger>Uso General de SMAs</AccordionTrigger>
+                          <AccordionContent>
+                            Las SMAs suavizan los precios para identificar la dirección de la tendencia. Los cruces entre SMAs de diferente duración (ej. SMA 10 cruzando SMA 20) pueden ser interpretados por algunos traders como señales de compra (cruce dorado) o venta (cruce de la muerte). También pueden actuar como niveles dinámicos de soporte o resistencia.
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </CardContent>
+                  </Card>
                 </TabsContent>
               </Tabs>
               <SimulatedPnLDisplay position={currentSimulatedPosition} currentPrice={latestPriceForPnl} market={selectedMarket} />
@@ -365,3 +406,6 @@ export default function TradingPlatformPage() {
     </div>
   );
 }
+
+
+    
