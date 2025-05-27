@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, LandmarkIcon } from "lucide-react"; // Added BotIcon, BookOpen
+import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, LandmarkIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const MAX_SIGNAL_EVENTS_ON_CHART = 5;
@@ -96,8 +96,8 @@ export default function TradingPlatformPage() {
   );
   const [currentSimulatedPosition, setCurrentSimulatedPosition] = useState<SimulatedPosition | null>(null);
 
-  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false); // Oculta por defecto
-  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false); // Oculta por defecto
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false); 
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false); 
 
   const toggleLeftSidebar = () => setIsLeftSidebarOpen(!isLeftSidebarOpen);
   const toggleRightSidebar = () => setIsRightSidebarOpen(!isRightSidebarOpen);
@@ -105,7 +105,7 @@ export default function TradingPlatformPage() {
 
   useEffect(() => {
     // Simulación de saldo inicial
-    const initialQuote = Math.random() * 25000 + 5000; // Saldo en USD
+    const initialQuote = Math.random() * 25000 + 5000; 
     setAvailableQuoteBalance(initialQuote);
     // Simulación de saldo del activo base para el mercado por defecto
     const defaultMarketBaseBalance = Math.random() * (mockMarkets[0].baseAsset === 'BTC' ? 0.5 : 10) + 0.1;
@@ -114,8 +114,8 @@ export default function TradingPlatformPage() {
 
   useEffect(() => {
     setCurrentMarketPriceHistory(mockMarketPriceHistory[selectedMarket.id] || []);
-    setSignalEvents([]); // Limpiar eventos de señal del gráfico al cambiar de mercado
-    setCurrentSimulatedPosition(null); // Limpiar posición simulada al cambiar de mercado
+    setSignalEvents([]); 
+    setCurrentSimulatedPosition(null); 
   }, [selectedMarket]);
 
 
@@ -123,8 +123,7 @@ export default function TradingPlatformPage() {
     const newMarket = mockMarkets.find(m => m.id === marketId);
     if (newMarket) {
       setSelectedMarket(newMarket);
-      clearSignalData(); // Limpiar datos de IA
-      // Simular un nuevo balance para el activo base del nuevo mercado
+      clearSignalData(); 
       const newBaseBalance = Math.random() * (newMarket.baseAsset === 'BTC' ? 0.2 : 5) + (newMarket.baseAsset === 'BTC' ? 0.01 : 0.5);
       setCurrentBaseAssetBalance(newBaseBalance);
     }
@@ -154,7 +153,6 @@ export default function TradingPlatformPage() {
       }
     } catch (e) {
       console.error("Error al analizar señales para eventos del gráfico:", e);
-      // No mostrar error al usuario por esto, es un problema de visualización interna
     }
   };
 
@@ -294,7 +292,7 @@ export default function TradingPlatformPage() {
           <section className={`col-span-12 ${centralColSpan} p-1 md:p-2 flex flex-col gap-2 transition-all duration-300 ease-in-out`}>
             <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
               <MarketPriceChart
-                key={selectedMarket.id} // Key para forzar re-render al cambiar de mercado
+                key={selectedMarket.id} 
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
                 initialPriceHistory={currentMarketPriceHistory}
@@ -333,7 +331,7 @@ export default function TradingPlatformPage() {
                     onGenerationError={handleGenerationError}
                     clearSignalData={clearSignalData}
                     generateSignalsAction={generateSignalsActionWrapper}
-                    selectedMarketSymbol={selectedMarket.baseAsset} // Pasar el símbolo del mercado para el input de IA
+                    selectedMarketSymbol={selectedMarket.baseAsset} 
                   />
                 </TabsContent>
                 <TabsContent value="balance">
@@ -361,27 +359,53 @@ export default function TradingPlatformPage() {
                     <CardContent className="text-sm">
                       <Accordion type="single" collapsible className="w-full">
                         <AccordionItem value="price">
-                          <AccordionTrigger>Precio</AccordionTrigger>
+                          <AccordionTrigger>Precio (Línea Principal)</AccordionTrigger>
                           <AccordionContent>
-                            Es la línea principal del gráfico (generalmente azul). Representa el precio de cotización actual (o el último precio conocido en nuestra simulación) del activo. Fluctúa basado en la oferta y demanda del mercado (en nuestra simulación, se actualiza para dar dinamismo).
+                            <p className="mb-2">Esta línea (generalmente azul o la más destacada) representa el <strong>precio de cotización más reciente</strong> del activo en el mercado seleccionado (ej. BTC/USD).</p>
+                            <p className="mb-2"><strong>Para qué sirve:</strong> Es la información fundamental. Muestra el valor al que se está comprando y vendiendo el activo en un momento dado. Su movimiento refleja la oferta y la demanda.</p>
+                            <p>En esta simulación, el precio se actualiza cada pocos segundos para imitar el dinamismo de un mercado real.</p>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma10">
-                          <AccordionTrigger>SMA 10</AccordionTrigger>
+                          <AccordionTrigger>SMA 10 (Media Móvil Simple de 10 períodos)</AccordionTrigger>
                           <AccordionContent>
-                            Media Móvil Simple (SMA) de 10 períodos. Calcula el precio promedio de los últimos 10 puntos de datos del gráfico. Es una media de corto plazo, reaccionando rápidamente a cambios recientes. Ayuda a identificar tendencias a muy corto plazo.
+                            <p className="mb-2">La SMA 10 calcula el <strong>precio promedio de los últimos 10 puntos de datos</strong> del gráfico. En nuestro gráfico, cada punto de dato representa un intervalo corto (segundos o minutos, según la simulación actual).</p>
+                            <p className="mb-2"><strong>Para qué sirve:</strong></p>
+                            <ul className="list-disc pl-5 space-y-1">
+                              <li><strong>Tendencia a Corto Plazo:</strong> Al ser una media de corto plazo, reacciona rápidamente a los cambios recientes en el precio, ayudando a identificar la dirección inmediata del mercado.</li>
+                              <li><strong>Suavizar Ruido:</strong> Ayuda a filtrar fluctuaciones muy pequeñas y momentáneas del precio, ofreciendo una visión un poco más clara de la tendencia subyacente.</li>
+                              <li><strong>Posibles Señales:</strong> El cruce del precio por encima o por debajo de la SMA 10 puede ser usado por algunos traders como una indicación temprana de un cambio de dirección.</li>
+                            </ul>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma20">
-                          <AccordionTrigger>SMA 20</AccordionTrigger>
+                          <AccordionTrigger>SMA 20 (Media Móvil Simple de 20 períodos)</AccordionTrigger>
                           <AccordionContent>
-                            Media Móvil Simple (SMA) de 20 períodos. Calcula el precio promedio de los últimos 20 puntos de datos. Es una media de plazo ligeramente más largo que la SMA 10, ofreciendo una visión de la tendencia un poco más suavizada.
+                            <p className="mb-2">La SMA 20 calcula el <strong>precio promedio de los últimos 20 puntos de datos</strong> del gráfico.</p>
+                            <p className="mb-2"><strong>Para qué sirve:</strong></p>
+                            <ul className="list-disc pl-5 space-y-1">
+                              <li><strong>Tendencia a Mediano Plazo (Relativo al Gráfico):</strong> Es una media de plazo un poco más largo que la SMA 10. Proporciona una visión de la tendencia más suavizada y menos sensible a movimientos bruscos y cortos.</li>
+                              <li><strong>Confirmación de Tendencia:</strong> Puede usarse para confirmar la dirección de la tendencia sugerida por medias más cortas o por el propio precio.</li>
+                              <li><strong>Niveles Dinámicos:</strong> Al igual que otras SMAs, puede actuar como un nivel de soporte (si el precio está por encima y rebota) o resistencia (si el precio está por debajo y le cuesta superarla).</li>
+                            </ul>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma-general">
-                          <AccordionTrigger>Uso General de SMAs</AccordionTrigger>
+                          <AccordionTrigger>Uso General de Medias Móviles (SMAs)</AccordionTrigger>
                           <AccordionContent>
-                            Las SMAs suavizan los precios para identificar la dirección de la tendencia. Los cruces entre SMAs de diferente duración (ej. SMA 10 cruzando SMA 20) pueden ser interpretados por algunos traders como señales de compra (cruce dorado) o venta (cruce de la muerte). También pueden actuar como niveles dinámicos de soporte o resistencia.
+                            <p className="mb-2">Las Medias Móviles Simples (SMAs) son herramientas populares en el análisis técnico porque ayudan a visualizar la dirección de la tendencia de un activo y a generar posibles señales de trading.</p>
+                            <p className="mb-2"><strong>Principales Usos:</strong></p>
+                            <ul className="list-disc pl-5 space-y-1">
+                              <li><strong>Identificación de Tendencia:</strong> Si el precio se mantiene consistentemente por encima de una SMA, sugiere una tendencia alcista. Si se mantiene por debajo, una tendencia bajista. La inclinación de la SMA también da pistas sobre la fortaleza de la tendencia.</li>
+                              <li><strong>Cruces de Medias (Crossovers):</strong>
+                                <ul className="list-circle pl-5 mt-1 space-y-1">
+                                  <li><strong>Cruce Dorado (Golden Cross):</strong> Ocurre cuando una SMA de corto plazo (ej. SMA 10) cruza por encima de una SMA de más largo plazo (ej. SMA 20). A menudo se interpreta como una señal alcista (potencial compra).</li>
+                                  <li><strong>Cruce de la Muerte (Death Cross):</strong> Ocurre cuando una SMA de corto plazo cruza por debajo de una SMA de más largo plazo. A menudo se interpreta como una señal bajista (potencial venta).</li>
+                                </ul>
+                              </li>
+                              <li><strong>Soporte y Resistencia Dinámicos:</strong> Las SMAs pueden actuar como niveles donde el precio puede encontrar soporte (en una tendencia alcista) o resistencia (en una tendencia bajista).</li>
+                            </ul>
+                            <p className="mt-2"><strong>Importante:</strong> Las SMAs son indicadores rezagados (se basan en precios pasados) y funcionan mejor en mercados con tendencia. No existe una configuración única que funcione para todos los activos o condiciones de mercado.</p>
                           </AccordionContent>
                         </AccordionItem>
                       </Accordion>
@@ -406,6 +430,3 @@ export default function TradingPlatformPage() {
     </div>
   );
 }
-
-
-    
