@@ -2,7 +2,7 @@
 "use client"
 
 import { TrendingUp } from "lucide-react"
-import { Line, LineChart, CartesianGrid, XAxis, YAxis, Tooltip as RechartsTooltip } from "recharts"
+import { Line, LineChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts"
 import {
   Card,
   CardContent,
@@ -17,7 +17,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import type { PerformanceDataPoint } from "@/lib/types";
-import { mockPerformanceChartConfig } from "@/lib/types";
+import { mockPerformanceChartConfigDark } from "@/lib/types"; // Using dark theme config
 import { useState, useEffect } from 'react';
 
 const initialPerformanceData: PerformanceDataPoint[] = [
@@ -29,6 +29,13 @@ const initialPerformanceData: PerformanceDataPoint[] = [
   { date: 'Jul 11', value: 10150 },
   { date: 'Jul 13', value: 10300 },
   { date: 'Jul 15', value: 10500 },
+  { date: 'Jul 17', value: 10450 },
+  { date: 'Jul 19', value: 10700 },
+  { date: 'Jul 21', value: 10900 },
+  { date: 'Jul 23', value: 10800 },
+  { date: 'Jul 25', value: 11050 },
+  { date: 'Jul 27', value: 11200 },
+  { date: 'Jul 29', value: 11150 },
 ];
 
 
@@ -36,13 +43,12 @@ export function PerformanceChart() {
   const [chartData, setChartData] = useState<PerformanceDataPoint[] | null>(null);
 
   useEffect(() => {
-    // Simula la obtención de datos del gráfico
     setChartData(initialPerformanceData);
   }, []);
 
   if (chartData === null) {
     return (
-      <Card className="shadow-lg">
+      <Card className="shadow-lg bg-card text-card-foreground">
         <CardHeader>
           <CardTitle>Rendimiento del Portafolio</CardTitle>
           <CardDescription>Cargando datos del gráfico...</CardDescription>
@@ -55,64 +61,66 @@ export function PerformanceChart() {
   }
   
   return (
-    <Card className="shadow-lg">
+    <Card className="shadow-lg bg-card text-card-foreground">
       <CardHeader>
         <CardTitle className="flex items-center">
           <TrendingUp className="h-5 w-5 mr-2 text-primary" />
           Rendimiento del Portafolio
         </CardTitle>
-        <CardDescription>Valor del portafolio en los últimos 15 días</CardDescription>
+        <CardDescription className="text-muted-foreground">Valor del portafolio en los últimos 30 días</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={mockPerformanceChartConfig} className="h-[300px] w-full">
+        <ChartContainer config={mockPerformanceChartConfigDark} className="h-[300px] w-full">
           <LineChart
             accessibilityLayer
             data={chartData}
             margin={{
-              left: 12,
+              left: 0, 
               right: 12,
               top: 5,
               bottom: 5,
             }}
           >
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
             <XAxis
               dataKey="date"
               tickLine={false}
               axisLine={false}
               tickMargin={8}
               tickFormatter={(value) => value.slice(0, 6)}
+              stroke="hsl(var(--muted-foreground))"
             />
             <YAxis
               tickLine={false}
               axisLine={false}
               tickMargin={8}
               tickFormatter={(value) => `$${(value / 1000)}k`}
+              stroke="hsl(var(--muted-foreground))"
+              domain={['dataMin - 500', 'dataMax + 500']}
             />
             <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent indicator="line" />}
+              cursor={{stroke: "hsl(var(--accent))", strokeWidth: 1, strokeDasharray: "3 3"}}
+              content={<ChartTooltipContent indicator="line" labelClassName="text-foreground" className="bg-popover text-popover-foreground border-popover-foreground/50" />}
             />
             <Line
               dataKey="value"
               type="monotone"
-              stroke="var(--color-value)"
-              strokeWidth={3}
-              dot={true}
-              activeDot={{ r: 6 }}
+              stroke="hsl(var(--chart-1))"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "hsl(var(--chart-1))", strokeWidth: 1, stroke: "hsl(var(--background))" }}
+              activeDot={{ r: 5, fill: "hsl(var(--chart-1))", stroke: "hsl(var(--background))", strokeWidth: 2 }}
             />
           </LineChart>
         </ChartContainer>
       </CardContent>
        <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className="flex gap-2 font-medium leading-none">
+        <div className="flex gap-2 font-medium leading-none text-foreground">
           El valor actual del portafolio es ${chartData[chartData.length -1].value.toLocaleString()}.
         </div>
         <div className="leading-none text-muted-foreground">
-          Mostrando datos de los últimos 15 días.
+          Mostrando datos de los últimos 30 días.
         </div>
       </CardFooter>
     </Card>
   )
 }
-

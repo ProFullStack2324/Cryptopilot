@@ -23,6 +23,14 @@ export const mockPerformanceChartConfig = {
   },
 } satisfies ChartConfig;
 
+// Configuración del gráfico para tema oscuro
+export const mockPerformanceChartConfigDark = {
+  value: {
+    label: "Valor del Portafolio (USD)",
+    color: "hsl(var(--chart-1))", // Usar el color de chart-1 definido para el tema oscuro
+  },
+} satisfies ChartConfig;
+
 
 export interface SignalItem {
   signal: 'BUY' | 'SELL' | 'HOLD';

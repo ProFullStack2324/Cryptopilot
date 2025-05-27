@@ -9,7 +9,7 @@ import { TradeHistoryTable } from "@/components/dashboard/trade-history-table";
 import { PerformanceChart } from "@/components/dashboard/performance-chart";
 import { BotControls } from "@/components/dashboard/bot-controls";
 import { SignalDisplay } from "@/components/dashboard/signal-display";
-import { handleGenerateSignalsAction } from "./actions"; // Server Action
+import { handleGenerateSignalsAction } from "./actions"; 
 import { Separator } from "@/components/ui/separator";
 
 export default function DashboardPage() {
@@ -34,33 +34,32 @@ export default function DashboardPage() {
     setAiError(null);
   }
 
-  // Wrapper for server action to set loading state
   const generateSignalsActionWrapper = async (input: any) => {
     setIsLoadingAiSignals(true);
     setAiError(null); 
     try {
       return await handleGenerateSignalsAction(input);
     } finally {
-      // setIsLoadingAiSignals(false); // This is handled in callbacks now
+      // setIsLoadingAiSignals(false); // Esto se maneja en los callbacks ahora
     }
   };
 
 
   return (
-    <div className="flex min-h-screen w-full flex-col">
+    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
       <AppHeader />
-      <main className="flex-1 p-4 md:p-8 container mx-auto">
-        <div className="grid gap-6 md:gap-8 grid-cols-1 lg:grid-cols-3 xl:grid-cols-4">
-          {/* Top Row: Balance, Performance */}
-          <div className="lg:col-span-1 xl:col-span-1">
+      <main className="flex-1 p-4 md:p-6 lg:p-8 container mx-auto">
+        <div className="grid gap-6 md:gap-8 grid-cols-1 lg:grid-cols-12">
+          
+          <div className="lg:col-span-12 xl:col-span-4">
             <BalanceCard />
           </div>
-          <div className="lg:col-span-2 xl:col-span-3">
+
+          <div className="lg:col-span-12 xl:col-span-8">
             <PerformanceChart />
           </div>
-
-          {/* Middle Row: Bot Controls & AI Signals */}
-          <div className="lg:col-span-3 xl:col-span-2">
+          
+          <div className="lg:col-span-12 xl:col-span-6">
             <BotControls 
               onSignalsGenerated={handleSignalsGenerated} 
               onGenerationError={handleGenerationError}
@@ -68,7 +67,8 @@ export default function DashboardPage() {
               generateSignalsAction={generateSignalsActionWrapper} 
             />
           </div>
-          <div className="lg:col-span-3 xl:col-span-2">
+
+          <div className="lg:col-span-12 xl:col-span-6">
             <SignalDisplay 
               signalData={aiSignalData} 
               isLoading={isLoadingAiSignals}
@@ -76,16 +76,14 @@ export default function DashboardPage() {
             />
           </div>
           
-          {/* Bottom Row: Trade History */}
-          <div className="lg:col-span-3 xl:col-span-4">
+          <div className="lg:col-span-12">
             <TradeHistoryTable />
           </div>
         </div>
       </main>
-      <footer className="py-6 text-center text-sm text-muted-foreground border-t">
-        © {new Date().getFullYear()} CryptoPilot. Todos los derechos reservados.
+      <footer className="py-6 text-center text-xs text-muted-foreground border-t border-border">
+        © {new Date().getFullYear()} CryptoPilot. Todos los derechos reservados. Plataforma de simulación.
       </footer>
     </div>
   );
 }
-
