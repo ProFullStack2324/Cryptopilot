@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import type { AISignalData, Market, OrderFormData, Trade, MarketPriceDataPoint, SignalEvent, SimulatedPosition, ParsedSignals, SignalItem } from "@/lib/types";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import type { AISignalData, Market, OrderFormData, Trade, MarketPriceDataPoint, SignalEvent, SimulatedPosition, ParsedSignals, SignalItem, SmaCrossoverEvent } from "@/lib/types";
 import { mockMarkets, mockMarketPriceHistory, initialMockTrades } from "@/lib/types";
 import { AppHeader } from "@/components/dashboard/header";
 import { BalanceCard } from "@/components/dashboard/balance-card";
@@ -13,16 +13,17 @@ import { PerformanceChart } from "@/components/dashboard/performance-chart";
 import { handleGenerateSignalsAction } from "./actions";
 import { MarketSelector } from "@/components/trading/market-selector";
 import { MarketPriceChart } from "@/components/trading/market-price-chart";
-import { OrderForm } from "@/components/trading/order-form";
+import { OrderForm } from "@/components/trading/order-form"; // Importación añadida
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, LandmarkIcon } from "lucide-react";
+import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, LandmarkIcon, Wallet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-const MAX_SIGNAL_EVENTS_ON_CHART = 5;
+const MAX_AI_SIGNAL_EVENTS_ON_CHART = 5;
+const MAX_SMA_CROSSOVER_EVENTS_ON_CHART = 5; 
 const AI_TRADE_CONFIDENCE_THRESHOLD = 0.7;
 
 // Helper to validate individual signal items
@@ -100,7 +101,9 @@ export default function TradingPlatformPage() {
   const [availableQuoteBalance, setAvailableQuoteBalance] = useState<number | null>(null);
   const [currentBaseAssetBalance, setCurrentBaseAssetBalance] = useState<number>(0);
   const [tradeHistory, setTradeHistory] = useState<Trade[]>(initialMockTrades);
-  const [signalEvents, setSignalEvents] = useState<SignalEvent[]>([]);
+  const [aiSignalEvents, setAiSignalEvents] = useState<SignalEvent[]>([]); 
+  const [smaCrossoverEvents, setSmaCrossoverEvents] = useState<SmaCrossoverEvent[]>([]); 
+  
   const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>(
     mockMarketPriceHistory[mockMarkets[0].id] || []
   );
@@ -109,8 +112,8 @@ export default function TradingPlatformPage() {
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
 
-  const toggleLeftSidebar = () => setIsLeftSidebarOpen(!isLeftSidebarOpen);
-  const toggleRightSidebar = () => setIsRightSidebarOpen(!isRightSidebarOpen);
+  const toggleLeftSidebar = useCallback(() => setIsLeftSidebarOpen(prev => !prev), []);
+  const toggleRightSidebar = useCallback(() => setIsRightSidebarOpen(prev => !prev), []);
 
 
   useEffect(() => {
@@ -122,8 +125,9 @@ export default function TradingPlatformPage() {
 
   useEffect(() => {
     setCurrentMarketPriceHistory(mockMarketPriceHistory[selectedMarket.id] || []);
-    setSignalEvents([]); // Clear signal markers when market changes
-    setCurrentSimulatedPosition(null); // Clear simulated position when market changes
+    setAiSignalEvents([]); 
+    setSmaCrossoverEvents([]); 
+    setCurrentSimulatedPosition(null); 
   }, [selectedMarket]);
 
 
@@ -131,8 +135,7 @@ export default function TradingPlatformPage() {
     const newMarket = mockMarkets.find(m => m.id === marketId);
     if (newMarket) {
       setSelectedMarket(newMarket);
-      clearSignalData(); // Clear AI signal data for the new market
-      // Simulate a new base asset balance for the new market
+      clearSignalData(); 
       const newBaseBalance = Math.random() * (newMarket.baseAsset === 'BTC' ? 0.2 : 5) + (newMarket.baseAsset === 'BTC' ? 0.01 : 0.5);
       setCurrentBaseAssetBalance(newBaseBalance);
     }
@@ -142,7 +145,7 @@ export default function TradingPlatformPage() {
     const priceToUse = orderData.orderType === 'limit' && orderData.price ? orderData.price : (currentMarketPriceHistory.length > 0 ? currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price : selectedMarket.latestPrice || 0);
 
     if (priceToUse <= 0) {
-      if (!isAISimulated) { // Only show toast for manual trades
+      if (!isAISimulated) {
         toast({ title: "Error de Precio", description: "No se pudo determinar un precio válido para la orden.", variant: "destructive" });
       }
       return false;
@@ -172,7 +175,7 @@ export default function TradingPlatformPage() {
           type: 'buy',
           timestamp: Math.floor(Date.now() / 1000)
         });
-        if (!isAISimulated) { // Mostrar toast solo para trades manuales exitosos
+        if (!isAISimulated) {
              toast({
                 title: "Orden de Compra (Simulada) Exitosa",
                 description: `Comprados ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5})}`,
@@ -198,7 +201,7 @@ export default function TradingPlatformPage() {
             type: 'sell',
             timestamp: Math.floor(Date.now() / 1000)
         });
-        if (!isAISimulated) { // Mostrar toast solo para trades manuales exitosos
+        if (!isAISimulated) {
             toast({
                 title: "Orden de Venta (Simulada) Exitosa",
                 description: `Vendidos ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5})}`,
@@ -207,7 +210,7 @@ export default function TradingPlatformPage() {
         }
         return true;
       } else {
-         if (!isAISimulated) { // Mostrar toast solo para trades manuales
+         if (!isAISimulated) {
           toast({ title: "Fondos Insuficientes (Simulado)", description: `No tienes suficiente ${selectedMarket.baseAsset} para vender ${orderData.amount}.`, variant: "destructive" });
         }
         return false;
@@ -222,77 +225,81 @@ export default function TradingPlatformPage() {
     let parsedSignalsArray: ParsedSignals | null = null;
     try {
       const rawParsed = JSON.parse(data.signals);
-      // Validate that rawParsed is an array AND each item is a valid SignalItem or it's an empty array
       if (Array.isArray(rawParsed) && (rawParsed.length === 0 || rawParsed.every(isValidSignalItem))) {
         parsedSignalsArray = rawParsed as ParsedSignals;
       } else {
-        // Determine a more specific error if it's an array but items are invalid
         let errorDetail = "Los datos de señales de IA no son un array.";
-        if (Array.isArray(rawParsed)) { // Es un array, pero los items no son válidos
+        if (Array.isArray(rawParsed)) {
             errorDetail = "Uno o más objetos de señal tienen un formato incorrecto (esperado: {signal: 'BUY'|'SELL'|'HOLD', confidence: number}).";
         }
-        throw new Error(errorDetail);
+        console.error("Error al analizar señales JSON para eventos de gráfico:", errorDetail, "Datos recibidos:", data.signals);
+        toast({
+            title: "Error de Formato de Señal IA (Gráfico)",
+            description: errorDetail,
+            variant: "destructive",
+        });
+        // No retornar aquí, permitir que SignalDisplay maneje su propio error de parseo si es necesario
+        // pero asegurar que aiSignalData.signals se actualice si hay un error.
+        setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: "Error al procesar señales."});
       }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Formato de señales JSON inesperado.";
       console.error("Error al analizar señales JSON en page.tsx:", errorMsg, "Datos recibidos:", data.signals);
       setAiError(`Error de formato en señales de IA: ${errorMsg}. Revise la consola para más detalles.`);
-      setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: "Error al procesar señales."}); // Ensure signals is an empty array string for SignalDisplay
+      setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: "Error al procesar señales."});
       toast({
         title: "Error de Formato de Señal IA",
         description: errorMsg,
         variant: "destructive",
       });
-      return;
+      // No retornar aquí tampoco, por la misma razón.
     }
 
     if (parsedSignalsArray && currentMarketPriceHistory.length > 0) {
       const latestPricePoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
-      if (!latestPricePoint) return; // Should not happen if history has points
+      if (!latestPricePoint) return;
 
       const newEvents: SignalEvent[] = parsedSignalsArray
-        .filter(s => s.signal === 'BUY' || s.signal === 'SELL') // Only create events for BUY/SELL
+        .filter(s => s.signal === 'BUY' || s.signal === 'SELL')
         .map(s => ({
-          timestamp: latestPricePoint.timestamp, // Use the timestamp of the latest market data
-          price: latestPricePoint.price,         // Use the price of the latest market data
+          timestamp: latestPricePoint.timestamp,
+          price: latestPricePoint.price,
           type: s.signal as 'BUY' | 'SELL',
           confidence: s.confidence,
         }));
 
-      setSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_SIGNAL_EVENTS_ON_CHART));
+      setAiSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_AI_SIGNAL_EVENTS_ON_CHART));
 
-      // Simulate a trade if a high-confidence signal is found
       for (const signal of parsedSignalsArray) {
         if ((signal.signal === 'BUY' || signal.signal === 'SELL') && signal.confidence >= AI_TRADE_CONFIDENCE_THRESHOLD) {
-          let tradeAmount = 0.01; // Default trade amount for smaller cryptos
+          let tradeAmount = 0.01; 
           if (selectedMarket.baseAsset === 'BTC') tradeAmount = 0.0005;
           else if (selectedMarket.baseAsset === 'ETH') tradeAmount = 0.005;
           else if (selectedMarket.quoteAsset === 'USD' && latestPricePoint.price > 0) {
-              // For other cryptos, simulate investing a small USD amount (e.g., $10-$50)
-              const dollarAmountToInvest = Math.random() * 40 + 10; // Invertir entre 10 y 50 USD
+              const dollarAmountToInvest = Math.random() * 40 + 10;
               tradeAmount = dollarAmountToInvest / latestPricePoint.price;
           }
 
-          tradeAmount = parseFloat(tradeAmount.toFixed(6)); // Ensure reasonable precision
-          if (tradeAmount <=0) continue; // Skip if trade amount is zero or negative
+          tradeAmount = parseFloat(tradeAmount.toFixed(6)); 
+          if (tradeAmount <=0) continue;
 
           const simulatedOrder: OrderFormData = {
             type: signal.signal === 'BUY' ? 'buy' : 'sell',
             marketId: selectedMarket.id,
             amount: tradeAmount,
-            orderType: 'market', // AI always places market orders for simplicity
-            price: latestPricePoint.price // Use current market price
+            orderType: 'market',
+            price: latestPricePoint.price 
           };
-          const success = handlePlaceOrder(simulatedOrder, true); // Pass true for isAISimulated
+          const success = handlePlaceOrder(simulatedOrder, true); 
           if (success) {
                console.log(`IA simuló un trade ${signal.signal} de ${tradeAmount} ${selectedMarket.baseAsset} con confianza ${signal.confidence}`);
                toast({
                   title: `IA Simuló ${signal.signal === 'BUY' ? 'Compra' : 'Venta'} Exitosa`,
                   description: `${signal.signal === 'BUY' ? 'Comprados' : 'Vendidos'} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} a $${latestPricePoint.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5})} (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
-                  variant: "default" // Use "default" or a success-like variant
+                  variant: "default"
                });
           }
-          break; // Only simulate the first high-confidence trade per signal generation
+          break; 
         }
       }
     }
@@ -302,7 +309,6 @@ export default function TradingPlatformPage() {
   const handleGenerationError = (errorMsg: string) => {
     setAiSignalData(null);
     setAiError(errorMsg);
-    // The toast is generally shown by the caller (generateSignalsActionWrapper or BotControls)
   };
 
 
@@ -311,36 +317,27 @@ export default function TradingPlatformPage() {
     setAiError(null);
   }
 
-  // Wrapper function to call the server action and handle loading/error states
   const generateSignalsActionWrapper = async (input: any) => {
     setIsLoadingAiSignals(true);
-    setAiError(null); // Clear previous errors
-    setAiSignalData(null); // Clear previous signal data
+    setAiError(null); 
+    setAiSignalData(null); 
     try {
-      // Add cryptocurrencyForAI to the input if it's not already there
       const completeInput = {
         ...input,
-        cryptocurrencyForAI: selectedMarket.baseAsset, // Ensure it's always the current market's base asset
+        cryptocurrencyForAI: selectedMarket.baseAsset, 
       };
       const result = await handleGenerateSignalsAction(completeInput);
-      // Basic validation of the result structure
       if (typeof result.signals !== 'string' || typeof result.explanation !== 'string') {
         throw new Error("La respuesta de la IA no tiene la estructura esperada (signals/explanation).");
       }
-      handleSignalsGenerated(result);
-      // setIsLoadingAiSignals(false); // Moved to finally
-      return result; // Return result so BotControls can also use it if needed (e.g. for a success toast)
+      handleSignalsGenerated(result); // Esto ya establece aiSignalData
+      // No es necesario retornar `result` aquí si `handleSignalsGenerated` ya hizo su trabajo.
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
         console.error("Error en generateSignalsActionWrapper:", errorMessage, error);
-        handleGenerationError(errorMessage); // This sets aiError
-        // setIsLoadingAiSignals(false); // Moved to finally
-        toast({ // Ensure user sees a generic toast if others are not shown or are too specific
-            title: "Error en Generación de Señales IA",
-            description: errorMessage,
-            variant: "destructive",
-        });
-        throw error; // Re-throw so BotControls can also catch if it needs to
+        handleGenerationError(errorMessage); 
+        // El toast de error se muestra en handleGenerationError (implícitamente a través de setAiError) o en BotControls.
+        // No relanzar el error aquí, ya que lo manejará BotControls.
     } finally {
         setIsLoadingAiSignals(false);
     }
@@ -349,20 +346,18 @@ export default function TradingPlatformPage() {
   const latestPriceForPnl = currentMarketPriceHistory.length > 0 ? currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price : undefined;
 
   const totalPortfolioValue = useMemo(() => {
-    if (availableQuoteBalance === null || latestPriceForPnl === undefined) {
-      return null; // Not enough data to calculate
+    if (availableQuoteBalance === null || latestPriceForPnl === undefined || currentBaseAssetBalance === undefined) {
+      return null; 
     }
-    // Value of base asset holdings + quote asset balance
     return availableQuoteBalance + (currentBaseAssetBalance * latestPriceForPnl);
   }, [availableQuoteBalance, currentBaseAssetBalance, latestPriceForPnl]);
 
 
-  // Dynamic column spans for central content based on sidebar visibility
-  let centralColSpan = 'md:col-span-12'; // Default: full width if both sidebars are closed
+  let centralColSpan = 'md:col-span-12'; 
   if (isLeftSidebarOpen && isRightSidebarOpen) {
-    centralColSpan = 'md:col-span-6'; // Both open: smallest central area
+    centralColSpan = 'md:col-span-6'; 
   } else if (isLeftSidebarOpen || isRightSidebarOpen) {
-    centralColSpan = 'md:col-span-9'; // One open: medium central area
+    centralColSpan = 'md:col-span-9'; 
   }
 
   return (
@@ -372,14 +367,13 @@ export default function TradingPlatformPage() {
         isLeftSidebarOpen={isLeftSidebarOpen}
         toggleRightSidebar={toggleRightSidebar}
         isRightSidebarOpen={isRightSidebarOpen}
+        portfolioBalance={totalPortfolioValue}
       />
       <main className="flex-1">
-        {/* Main grid layout */}
-        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem)]"> {/* Adjusted for footer height */}
+        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem-2rem)]"> 
 
-          {/* Left Sidebar */}
           <aside className={`col-span-12 ${isLeftSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
-            <ScrollArea className="flex-1 pr-2"> {/* Added pr-2 to prevent scrollbar overlap */}
+            <ScrollArea className="flex-1 pr-2">
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center"><PackageSearch className="w-4 h-4 mr-2"/>Libro de Órdenes</CardTitle>
@@ -404,29 +398,30 @@ export default function TradingPlatformPage() {
             </ScrollArea>
           </aside>
 
-          {/* Central Content Area */}
           <section className={`col-span-12 ${centralColSpan} p-1 md:p-2 flex flex-col gap-2 transition-all duration-300 ease-in-out`}>
-            <div className="flex-grow-[3] min-h-[300px] md:min-h-0"> {/* Market Price Chart takes more space */}
+            <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
               <MarketPriceChart
-                key={selectedMarket.id} // Re-render chart when market changes
+                key={selectedMarket.id}
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
                 initialPriceHistory={currentMarketPriceHistory}
-                signalEvents={signalEvents}
+                aiSignalEvents={aiSignalEvents}
+                smaCrossoverEvents={smaCrossoverEvents}
+                onSmaCrossoverGenerated={(event) => setSmaCrossoverEvents(prev => [...prev, event].slice(-MAX_SMA_CROSSOVER_EVENTS_ON_CHART))}
+
               />
             </div>
-            <div className="flex-grow-[2] min-h-[280px] md:min-h-0"> {/* Order Form takes less space */}
+            <div className="flex-grow-[2] min-h-[280px] md:min-h-0">
               <OrderForm
                 market={selectedMarket}
                 balanceQuoteAsset={availableQuoteBalance || 0}
                 balanceBaseAsset={currentBaseAssetBalance}
-                onSubmit={(orderData) => handlePlaceOrder(orderData, false)} // false for manual trades
+                onSubmit={(orderData) => handlePlaceOrder(orderData, false)}
                 currentPrice={latestPriceForPnl}
               />
             </div>
           </section>
 
-          {/* Right Sidebar */}
           <aside className={`col-span-12 ${isRightSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
@@ -443,16 +438,16 @@ export default function TradingPlatformPage() {
                 </TabsList>
                 <TabsContent value="ai-controls">
                    <BotControls
-                    onSignalsGenerated={handleSignalsGenerated} // This is now called by generateSignalsActionWrapper
-                    onGenerationError={handleGenerationError} // This is now called by generateSignalsActionWrapper
+                    onSignalsGenerated={handleSignalsGenerated}
+                    onGenerationError={handleGenerationError}
                     clearSignalData={clearSignalData}
-                    generateSignalsAction={generateSignalsActionWrapper} // Pass the wrapper
-                    selectedMarketSymbol={selectedMarket.baseAsset} // Pass current market symbol for context
+                    generateSignalsAction={generateSignalsActionWrapper}
+                    selectedMarketSymbol={selectedMarket.baseAsset}
                   />
                 </TabsContent>
                 <TabsContent value="balance">
                   <BalanceCard balance={availableQuoteBalance} asset={`${selectedMarket.quoteAsset} (Disponible)`} />
-                  <PerformanceChart portfolioValue={totalPortfolioValue} /> {/* Pass total portfolio value */}
+                  <PerformanceChart portfolioValue={totalPortfolioValue} />
                   {selectedMarket && (
                      <Card className="mt-4">
                         <CardHeader className="pb-2">
@@ -510,6 +505,19 @@ export default function TradingPlatformPage() {
                             <p className="mt-2"><strong>Ejemplo práctico:</strong> En una tendencia alcista, el precio podría retroceder hasta la SMA 20 y encontrar "soporte" allí antes de continuar subiendo. En una tendencia bajista, podría subir hasta la SMA 20 y encontrar "resistencia".</p>
                           </AccordionContent>
                         </AccordionItem>
+                         <AccordionItem value="sma50">
+                          <AccordionTrigger>SMA 50 (Media Móvil Simple de 50 períodos) - Ref. Bot</AccordionTrigger>
+                          <AccordionContent>
+                            <p className="mb-2">La SMA 50 calcula el <strong>precio promedio de los últimos 50 puntos de datos</strong> del gráfico.</p>
+                             <p className="mb-2"><strong>Para qué sirve (Referencia para Bot):</strong></p>
+                            <ul className="list-disc pl-5 space-y-1">
+                              <li><strong>Tendencia a Largo Plazo (Relativo al Gráfico):</strong> Es una media más lenta y menos sensible a las fluctuaciones diarias. Ayuda a identificar la tendencia principal del activo, que un bot podría usar como filtro general (ej. solo operar en largo si el precio está por encima de la SMA 50).</li>
+                              <li><strong>Confirmación de Tendencia Sólida:</strong> Si el precio se mantiene consistentemente por encima de la SMA 50, se considera una señal fuerte de tendencia alcista a largo plazo. Si está por debajo, bajista. Un bot podría requerir esta condición para entrar en operaciones de mayor duración.</li>
+                              <li><strong>Niveles Clave de Soporte/Resistencia:</strong> La SMA 50 es a menudo observada por traders e inversores como un nivel dinámico importante de soporte o resistencia. Un bot podría programarse para buscar rebotes o rupturas de este nivel.</li>
+                            </ul>
+                             <p className="mt-2"><strong>Ejemplo práctico para un bot:</strong> Un bot podría estar programado para solo buscar señales de compra de la SMA10/SMA20 si el precio actual está por encima de la SMA 50, filtrando así las señales de compra en una tendencia bajista a más largo plazo.</p>
+                          </AccordionContent>
+                        </AccordionItem>
                         <AccordionItem value="sma-general">
                           <AccordionTrigger>Uso General de Medias Móviles (SMAs)</AccordionTrigger>
                           <AccordionContent>
@@ -519,8 +527,8 @@ export default function TradingPlatformPage() {
                               <li><strong>Identificación de Tendencia:</strong> Si el precio se mantiene consistentemente por encima de una SMA, sugiere una tendencia alcista. Si se mantiene por debajo, una tendencia bajista. La inclinación de la SMA también da pistas sobre la fortaleza de la tendencia.</li>
                               <li><strong>Cruces de Medias (Crossovers):</strong>
                                 <ul className="list-circle pl-5 mt-1 space-y-1">
-                                  <li><strong>Cruce Dorado (Golden Cross):</strong> Ocurre cuando una SMA de corto plazo (ej. SMA 10 en nuestro caso) cruza por encima de una SMA de más largo plazo (ej. SMA 20). A menudo se interpreta como una señal alcista (potencial compra).</li>
-                                  <li><strong>Cruce de la Muerte (Death Cross):</strong> Ocurre cuando una SMA de corto plazo cruza por debajo de una SMA de más largo plazo. A menudo se interpreta como una señal bajista (potencial venta).</li>
+                                  <li><strong>Cruce Dorado (Golden Cross):</strong> Ocurre cuando una SMA de corto plazo (ej. SMA 10 o SMA 20) cruza por encima de una SMA de más largo plazo (ej. SMA 50). A menudo se interpreta como una señal alcista (potencial compra). Los puntos verdes claros en el gráfico indican estos cruces (SMA10 sobre SMA20).</li>
+                                  <li><strong>Cruce de la Muerte (Death Cross):</strong> Ocurre cuando una SMA de corto plazo cruza por debajo de una SMA de más largo plazo. A menudo se interpreta como una señal bajista (potencial venta). Los puntos rojos claros en el gráfico indican estos cruces (SMA10 bajo SMA20).</li>
                                 </ul>
                               </li>
                               <li><strong>Soporte y Resistencia Dinámicos:</strong> Las SMAs pueden actuar como niveles donde el precio puede encontrar soporte (en una tendencia alcista) o resistencia (en una tendencia bajista). Un rebote en una SMA puede ser una señal de continuación de tendencia.</li>
@@ -551,3 +559,4 @@ export default function TradingPlatformPage() {
   );
 }
 
+    
