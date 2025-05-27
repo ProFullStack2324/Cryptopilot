@@ -1,11 +1,12 @@
 
 "use client"
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect } from "react"; 
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import type { GenerateTradingSignalsInput, GenerateTradingSignalsOutput } from "@/ai/flows/generate-trading-signals";
+import { mockMarkets } from "@/lib/types"; // Added import
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +29,7 @@ const exampleHistoricalData = JSON.stringify([
 
 const formSchema = z.object({
   amountPerTrade: z.coerce.number().min(1, "La cantidad debe ser al menos 1 USD."),
-  cryptocurrencyForAI: z.string().min(1, "Por favor, selecciona una criptomoneda para el análisis de IA."),
+  cryptocurrencyForAI: z.string().min(1, "Por favor, selecciona un activo para el análisis de IA."),
   strategy: z.enum(['movingAverage', 'rsi', 'bollingerBands'], { required_error: "Por favor, selecciona una estrategia."}),
   riskLevel: z.enum(['high', 'medium', 'low'], { required_error: "Por favor, selecciona un nivel de riesgo."}),
   historicalData: z.string().refine(data => {
@@ -68,7 +69,9 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
   });
 
   useEffect(() => {
-    form.setValue("cryptocurrencyForAI", selectedMarketSymbol || "BTC");
+    if (selectedMarketSymbol) {
+      form.setValue("cryptocurrencyForAI", selectedMarketSymbol);
+    }
   }, [selectedMarketSymbol, form]);
 
 
@@ -80,21 +83,16 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
           historicalData: data.historicalData,
           strategy: data.strategy,
           riskLevel: data.riskLevel,
-          // Asegurarse de pasar cryptocurrencyForAI según el schema
         };
         const result = await generateSignalsAction(aiInput);
-        onSignalsGenerated(result); // onSignalsGenerated ya está siendo llamado por generateSignalsActionWrapper en page.tsx
         toast({
           title: "Señales de IA Generadas",
-          description: "Las señales de trading han sido procesadas.",
+          description: "Las señales de trading han sido procesadas por la IA.",
           variant: "default",
         });
       } catch (error) {
-        console.error("Error generando señales desde BotControls:", error);
-        // onGenerationError ya está siendo llamado por generateSignalsActionWrapper en page.tsx
-        // Solo mostramos un toast aquí si el error no fue ya manejado (lo cual no debería pasar)
         const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
-        if(!form.formState.isSubmitting) { // Evitar doble toast si el error ya se manejó arriba
+        if(!form.formState.isSubmitting){ 
             toast({
             title: "Error al Generar Señales",
             description: errorMessage,
@@ -111,7 +109,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
 
     toast({
       title: `Bot ${newBotStatus ? "Iniciado (Simulación)" : "Detenido (Simulación)"}`,
-      description: `El bot de trading ahora está ${newBotStatus ? "activo" : "inactivo"} en modo simulación. La ejecución de trades es solo bajo demanda y simulada.`,
+      description: `El bot de trading ahora está ${newBotStatus ? "activo" : "inactivo"} en modo simulación. La generación de señales es bajo demanda.`,
       variant: newBotStatus ? "default" : "destructive"
     });
   };
@@ -146,7 +144,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               <Info className="h-4 w-4 !text-accent" />
               <AlertTitle className="text-sm font-semibold text-accent">Modo Simulación</AlertTitle>
               <AlertDescription className="text-xs">
-                La generación de señales es bajo demanda por el usuario. La ejecución automática de trades y el funcionamiento continuo del bot requerirían integración con un exchange real.
+                La generación de señales es bajo demanda por el usuario. La IA puede simular trades automáticamente si las señales son de alta confianza. La ejecución automática y continua requeriría integración con un exchange real.
               </AlertDescription>
             </Alert>
 
@@ -156,10 +154,13 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="amountPerTrade"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center text-muted-foreground"><DollarSign className="h-4 w-4 mr-1" />Cantidad por Operación (USD - Simulado)</FormLabel>
+                  <FormLabel className="flex items-center text-muted-foreground"><DollarSign className="h-4 w-4 mr-1" />Cantidad por Operación Manual (USD - Simulado)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="ej: 100" {...field} className="bg-input text-foreground placeholder:text-muted-foreground/70"/>
                   </FormControl>
+                   <FormDescription className="text-xs text-muted-foreground/70">
+                    Este monto se usa para operaciones manuales desde el formulario de órdenes. Las operaciones simuladas por IA usan una cantidad predefinida.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -178,12 +179,11 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent className="bg-popover text-popover-foreground">
-                      <SelectItem value="BTC">Bitcoin (BTC)</SelectItem>
-                      <SelectItem value="ETH">Ethereum (ETH)</SelectItem>
-                      <SelectItem value="SOL">Solana (SOL)</SelectItem>
-                      <SelectItem value="ADA">Cardano (ADA)</SelectItem>
-                      <SelectItem value="XRP">Ripple (XRP)</SelectItem>
-                      <SelectItem value="DOGE">Dogecoin (DOGE)</SelectItem>
+                      {mockMarkets.map(market => (
+                        <SelectItem key={market.id} value={market.baseAsset}>
+                          {market.name.split('/')[0]} ({market.baseAsset})
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormDescription className="text-xs text-muted-foreground/70">
@@ -268,3 +268,5 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
     </Card>
   );
 }
+
+    
