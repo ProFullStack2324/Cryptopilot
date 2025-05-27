@@ -6,7 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { AISignalData, ParsedSignals, SignalItem } from "@/lib/types";
-import { Lightbulb, Terminal, Info, AlertTriangle, CheckCircle2, Zap } from "lucide-react"; // Changed icons
+import { Lightbulb, Terminal, Info, AlertTriangle, CheckCircle2, Zap, Brain } from "lucide-react"; 
 import { useEffect, useState } from "react";
 
 interface SignalDisplayProps {
@@ -15,53 +15,52 @@ interface SignalDisplayProps {
   error: string | null;
 }
 
+// Helper (puede moverse a utils si se usa en más sitios)
+const isValidSignalItem = (item: any): item is SignalItem => {
+  return typeof item === 'object' && item !== null &&
+         typeof item.signal === 'string' && ['BUY', 'SELL', 'HOLD'].includes(item.signal) &&
+         typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1;
+};
+
+
 export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayProps) {
   const [parsedSignals, setParsedSignals] = useState<ParsedSignals | null>(null);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [internalParseError, setInternalParseError] = useState<string | null>(null);
 
   useEffect(() => {
+    setInternalParseError(null); // Clear previous internal parse error on new data/error prop
     if (signalData?.signals) {
       try {
         const signalsArray = JSON.parse(signalData.signals);
-        if (Array.isArray(signalsArray) && signalsArray.every(isValidSignalItem)) {
+        if (Array.isArray(signalsArray) && (signalsArray.length === 0 || signalsArray.every(isValidSignalItem))) {
           setParsedSignals(signalsArray as ParsedSignals);
-          setParseError(null);
-        } else {
-          throw new Error("Los datos analizados no son un array válido de señales.");
+        } else if (Array.isArray(signalsArray) && !signalsArray.every(isValidSignalItem)){
+          throw new Error("Uno o más objetos de señal tienen un formato incorrecto (esperado: {signal: 'BUY'|'SELL'|'HOLD', confidence: number}).");
+        } 
+        else {
+          throw new Error("El campo 'signals' no es un array JSON válido de señales.");
         }
       } catch (e) {
-        console.error("Error al analizar JSON de señales:", e);
-        setParseError("Error al analizar las señales de trading. El formato podría ser incorrecto.");
+        console.error("Error al analizar JSON de señales en SignalDisplay:", e, "Data:", signalData.signals);
+        const errorMsg = e instanceof Error ? e.message : "Formato de señales JSON inválido.";
+        setInternalParseError(`Error al procesar señales: ${errorMsg}`);
         setParsedSignals(null);
       }
     } else {
       setParsedSignals(null);
-      setParseError(null);
     }
   }, [signalData]);
-
-  const isValidSignalItem = (item: any): item is SignalItem => {
-    return typeof item === 'object' && item !== null &&
-           typeof item.signal === 'string' && ['BUY', 'SELL', 'HOLD'].includes(item.signal) &&
-           typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1;
-  };
   
   const getSignalBadgeText = (signal: 'BUY' | 'SELL' | 'HOLD'): string => {
     if (signal === 'BUY') return 'COMPRAR';
     if (signal === 'SELL') return 'VENDER';
     return 'MANTENER';
   }
-
-  const getSignalBadgeVariant = (signal: 'BUY' | 'SELL' | 'HOLD'): "default" | "destructive" | "secondary" => {
-    if (signal === 'BUY') return 'default'; // Default usually is green-ish in themes
-    if (signal === 'SELL') return 'destructive'; // Destructive is red
-    return 'secondary'; // Secondary for hold
-  }
   
   const getSignalBadgeCustomStyle = (signal: 'BUY' | 'SELL' | 'HOLD'): string => {
-    if (signal === 'BUY') return 'bg-green-500/80 text-green-50 hover:bg-green-500/90 dark:bg-green-600/80 dark:text-green-50 dark:hover:bg-green-600/90 border-green-700';
-    if (signal === 'SELL') return 'bg-red-500/80 text-red-50 hover:bg-red-500/90 dark:bg-red-600/80 dark:text-red-50 dark:hover:bg-red-600/90 border-red-700';
-    return 'bg-gray-500/80 text-gray-50 hover:bg-gray-500/90 dark:bg-gray-600/80 dark:text-gray-50 dark:hover:bg-gray-600/90 border-gray-700';
+    if (signal === 'BUY') return 'bg-green-500/90 text-green-50 hover:bg-green-500 dark:bg-green-600/90 dark:text-green-50 dark:hover:bg-green-600 border-green-700 shadow-md';
+    if (signal === 'SELL') return 'bg-red-500/90 text-red-50 hover:bg-red-500 dark:bg-red-600/90 dark:text-red-50 dark:hover:bg-red-600 border-red-700 shadow-md';
+    return 'bg-slate-500/90 text-slate-50 hover:bg-slate-500 dark:bg-slate-600/90 dark:text-slate-50 dark:hover:bg-slate-600 border-slate-700 shadow-md';
   }
 
 
@@ -70,8 +69,8 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
       <Card className="shadow-lg bg-card text-card-foreground">
         <CardHeader>
           <CardTitle className="flex items-center text-primary">
-            <Zap className="h-5 w-5 mr-2 animate-pulse" />
-            Señales de Trading IA
+            <Brain className="h-5 w-5 mr-2 animate-pulse" />
+            Análisis de IA en Progreso
           </CardTitle>
           <CardDescription className="text-muted-foreground">Generando señales, por favor espera...</CardDescription>
         </CardHeader>
@@ -83,12 +82,15 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
     );
   }
 
-  if (error) {
+  // Prioritize prop 'error' (from API call) over internalParseError
+  const displayError = error || internalParseError;
+
+  if (displayError) {
     return (
-      <Alert variant="destructive" className="mt-4 bg-destructive/10 border-destructive text-destructive-foreground">
+      <Alert variant="destructive" className="mt-4 bg-destructive/10 border-destructive/50 text-destructive-foreground">
         <AlertTriangle className="h-5 w-5" />
-        <AlertTitle>Error al Generar Señales</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
+        <AlertTitle>Error con Señales de IA</AlertTitle>
+        <AlertDescription>{displayError}</AlertDescription>
       </Alert>
     );
   }
@@ -103,11 +105,11 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
-          <Alert className="bg-accent/10 border-accent text-accent-foreground">
-            <Lightbulb className="h-5 w-5" />
-            <AlertTitle>Aún No Se Han Generado Señales</AlertTitle>
+          <Alert className="bg-accent/10 border-accent/50 text-accent-foreground">
+            <Lightbulb className="h-5 w-5 !text-accent" />
+            <AlertTitle className="text-accent">Aún No Se Han Generado Señales</AlertTitle>
             <AlertDescription>
-              Configura los parámetros y haz clic en "Generar Señales con IA" para ver las recomendaciones.
+              Usa los "Controles del Bot y Estrategia IA" para solicitar un análisis y generar señales.
             </AlertDescription>
           </Alert>
         </CardContent>
@@ -115,22 +117,12 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
     );
   }
   
-  if (parseError) {
-     return (
-      <Alert variant="destructive" className="mt-4 bg-destructive/10 border-destructive text-destructive-foreground">
-        <AlertTriangle className="h-5 w-5" />
-        <AlertTitle>Error de Visualización de Señal</AlertTitle>
-        <AlertDescription>{parseError}</AlertDescription>
-      </Alert>
-    );
-  }
-
   return (
     <Card className="shadow-lg bg-card text-card-foreground">
       <CardHeader>
         <CardTitle className="flex items-center text-primary">
           <CheckCircle2 className="h-6 w-6 mr-2 text-green-500" />
-          Señales de Trading IA Recibidas
+          Análisis de IA Completado
         </CardTitle>
         <CardDescription className="text-muted-foreground">Revisa las señales y el análisis proporcionados por la IA.</CardDescription>
       </CardHeader>
@@ -138,15 +130,15 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
         <div>
           <h3 className="text-lg font-semibold mb-3 flex items-center text-foreground">
             <Zap className="h-5 w-5 mr-2 text-accent" />
-            Señales Clave
+            Señales Clave Identificadas
           </h3>
           {parsedSignals && parsedSignals.length > 0 ? (
             <div className="overflow-x-auto rounded-md border border-border">
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow>
-                    <TableHead className="text-foreground">Señal</TableHead>
-                    <TableHead className="text-right text-foreground">Confianza</TableHead>
+                    <TableHead className="text-foreground font-semibold">Señal</TableHead>
+                    <TableHead className="text-right text-foreground font-semibold">Confianza</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -154,33 +146,40 @@ export function SignalDisplay({ signalData, isLoading, error }: SignalDisplayPro
                     <TableRow key={index} className="hover:bg-muted/30">
                       <TableCell>
                         <Badge
-                          variant={getSignalBadgeVariant(item.signal)}
-                          className={`font-semibold text-xs py-1 px-2.5 ${getSignalBadgeCustomStyle(item.signal)}`}
+                          // variant no es necesario si usamos clases directas
+                          className={`font-semibold text-xs py-1 px-3 rounded-full ${getSignalBadgeCustomStyle(item.signal)}`}
                         >
                           {getSignalBadgeText(item.signal)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-medium text-foreground">{(item.confidence * 100).toFixed(0)}%</TableCell>
+                      <TableCell className="text-right font-medium text-foreground text-sm">{(item.confidence * 100).toFixed(0)}%</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground italic">No se generaron señales de trading específicas o no pudieron ser analizadas.</p>
+            <Alert variant="default" className="bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-300">
+                <Info className="h-4 w-4 !text-blue-500 dark:!text-blue-300" />
+                <AlertTitle className="font-medium">Sin Señales de Acción</AlertTitle>
+                <AlertDescription className="text-xs">
+                La IA no produjo señales de COMPRA/VENTA/MANTENER específicas en este análisis. Revisa la explicación para más detalles.
+                </AlertDescription>
+            </Alert>
           )}
         </div>
         
         <div>
           <h3 className="text-lg font-semibold mb-2 flex items-center text-foreground">
             <Lightbulb className="h-5 w-5 mr-2 text-accent" />
-            Análisis de la IA
+            Explicación de la IA
           </h3>
-          <div className="p-4 bg-muted/30 rounded-md border border-border text-sm leading-relaxed text-foreground/90">
-            {signalData.explanation || "No se proporcionó explicación."}
+          <div className="p-4 bg-muted/30 rounded-md border border-border text-sm leading-relaxed text-foreground/90 max-h-60 overflow-y-auto">
+            {signalData.explanation || "No se proporcionó explicación detallada."}
           </div>
         </div>
       </CardContent>
     </Card>
   );
 }
+

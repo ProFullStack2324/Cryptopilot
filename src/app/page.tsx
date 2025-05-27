@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { AISignalData, Market, OrderFormData, Trade, MarketPriceDataPoint, SignalEvent, SimulatedPosition, ParsedSignals } from "@/lib/types";
+import type { AISignalData, Market, OrderFormData, Trade, MarketPriceDataPoint, SignalEvent, SimulatedPosition, ParsedSignals, SignalItem } from "@/lib/types";
 import { mockMarkets, mockMarketPriceHistory, initialMockTrades } from "@/lib/types";
 import { AppHeader } from "@/components/dashboard/header";
 import { BalanceCard } from "@/components/dashboard/balance-card";
@@ -22,7 +22,14 @@ import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, 
 import { useToast } from "@/hooks/use-toast";
 
 const MAX_SIGNAL_EVENTS_ON_CHART = 5;
-const AI_TRADE_CONFIDENCE_THRESHOLD = 0.7; // Confianza mínima para que la IA simule un trade
+const AI_TRADE_CONFIDENCE_THRESHOLD = 0.7; 
+
+// Helper to validate individual signal items
+const isValidSignalItem = (item: any): item is SignalItem => {
+  return typeof item === 'object' && item !== null &&
+         typeof item.signal === 'string' && ['BUY', 'SELL', 'HOLD'].includes(item.signal) &&
+         typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1;
+};
 
 // Componente para mostrar P&L de posición simulada
 function SimulatedPnLDisplay({ position, currentPrice, market }: { position: SimulatedPosition | null; currentPrice: number | undefined; market: Market | null }) {
@@ -106,10 +113,8 @@ export default function TradingPlatformPage() {
 
 
   useEffect(() => {
-    // Simulación de saldo inicial
     const initialQuote = Math.random() * 25000 + 5000; 
     setAvailableQuoteBalance(initialQuote);
-    // Simulación de saldo del activo base para el mercado por defecto
     const defaultMarketBaseBalance = Math.random() * (mockMarkets[0].baseAsset === 'BTC' ? 0.5 : 10) + 0.1;
     setCurrentBaseAssetBalance(defaultMarketBaseBalance);
   }, []);
@@ -131,11 +136,13 @@ export default function TradingPlatformPage() {
     }
   };
 
-  const handlePlaceOrder = (orderData: OrderFormData, isAISimulated: boolean = false) => {
+  const handlePlaceOrder = (orderData: OrderFormData, isAISimulated: boolean = false): boolean => {
     const priceToUse = orderData.orderType === 'limit' && orderData.price ? orderData.price : (currentMarketPriceHistory.length > 0 ? currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price : selectedMarket.latestPrice || 0);
     
     if (priceToUse <= 0) {
-      toast({ title: "Error de Precio", description: "No se pudo determinar un precio válido para la orden.", variant: "destructive" });
+      if (!isAISimulated) {
+        toast({ title: "Error de Precio", description: "No se pudo determinar un precio válido para la orden.", variant: "destructive" });
+      }
       return false;
     }
     const totalCostOrProceeds = orderData.amount * priceToUse;
@@ -170,12 +177,12 @@ export default function TradingPlatformPage() {
         });
         return true;
       } else {
-        if (!isAISimulated) { // No mostrar toast de error para trades de IA fallidos por fondos
+        if (!isAISimulated) { 
           toast({ title: "Fondos Insuficientes (Simulado)", description: `No tienes suficiente ${selectedMarket.quoteAsset} para comprar ${orderData.amount} ${selectedMarket.baseAsset}.`, variant: "destructive" });
         }
         return false;
       }
-    } else { // orderData.type === 'sell'
+    } else { 
       if (currentBaseAssetBalance >= orderData.amount) {
         setCurrentBaseAssetBalance(currentBaseAssetBalance - orderData.amount);
         setAvailableQuoteBalance((availableQuoteBalance || 0) + totalCostOrProceeds);
@@ -204,77 +211,88 @@ export default function TradingPlatformPage() {
 
   const handleSignalsGenerated = (data: AISignalData) => {
     setAiSignalData(data);
-    setIsLoadingAiSignals(false);
-    setAiError(null);
+    setAiError(null); // Clear previous errors if generation is successful this time
 
+    let parsedSignalsArray: ParsedSignals | null = null;
     try {
-      const parsedSignalsArray = JSON.parse(data.signals) as ParsedSignals;
-      if (Array.isArray(parsedSignalsArray) && currentMarketPriceHistory.length > 0) {
-        const latestPricePoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
-        if (!latestPricePoint) return;
-
-        const newEvents: SignalEvent[] = parsedSignalsArray
-          .filter(s => s.signal === 'BUY' || s.signal === 'SELL')
-          .map(s => ({
-            timestamp: latestPricePoint.timestamp,
-            price: latestPricePoint.price,
-            type: s.signal as 'BUY' | 'SELL',
-            confidence: s.confidence,
-          }));
-
-        setSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_SIGNAL_EVENTS_ON_CHART));
-
-        // Simular ejecución de trade por IA
-        for (const signal of parsedSignalsArray) {
-          if ((signal.signal === 'BUY' || signal.signal === 'SELL') && signal.confidence >= AI_TRADE_CONFIDENCE_THRESHOLD) {
-            let tradeAmount = 0.01; // Cantidad base para simulación
-            if (selectedMarket.baseAsset === 'BTC') tradeAmount = 0.0005;
-            else if (selectedMarket.baseAsset === 'ETH') tradeAmount = 0.005;
-            else if (selectedMarket.quoteAsset === 'USD' && latestPricePoint.price > 0) {
-                 // Simular invertir ~ $10-$50 USD
-                const dollarAmountToInvest = Math.random() * 40 + 10;
-                tradeAmount = dollarAmountToInvest / latestPricePoint.price;
-            }
-            
-            // Asegurar que tradeAmount no sea demasiado pequeño o grande
-            tradeAmount = parseFloat(tradeAmount.toFixed(6));
-            if (tradeAmount <=0) continue;
-
-
-            const simulatedOrder: OrderFormData = {
-              type: signal.signal === 'BUY' ? 'buy' : 'sell',
-              marketId: selectedMarket.id,
-              amount: tradeAmount,
-              orderType: 'market',
-              price: latestPricePoint.price // Precio de mercado
-            };
-            const success = handlePlaceOrder(simulatedOrder, true); // isAISimulated = true
-            if (success) {
-                 console.log(`IA simuló un trade ${signal.signal} de ${tradeAmount} ${selectedMarket.baseAsset} con confianza ${signal.confidence}`);
-                 // Podríamos romper el bucle si solo queremos que la IA haga un trade por generación de señal
-                 // break; 
-            }
-            break; // Solo ejecutar el primer trade de alta confianza simulado por la IA
-          }
-        }
-
+      const rawParsed = JSON.parse(data.signals);
+      if (Array.isArray(rawParsed) && rawParsed.every(isValidSignalItem)) {
+        parsedSignalsArray = rawParsed as ParsedSignals;
+      } else {
+        throw new Error("Los datos de señales de IA no son un array de objetos de señal válidos.");
       }
     } catch (e) {
-      console.error("Error al analizar señales JSON para eventos del gráfico en page.tsx:", e, "Datos recibidos:", data.signals);
-       toast({
-        title: "Error de Formato de Señal",
-        description: "Las señales de IA no pudieron ser visualizadas en el gráfico debido a un formato inesperado.",
+      const errorMsg = e instanceof Error ? e.message : "Formato de señales JSON inesperado.";
+      console.error("Error al analizar señales JSON en page.tsx:", errorMsg, "Datos recibidos:", data.signals);
+      setAiError(`Error de formato en señales de IA: ${errorMsg}. Revise la consola para más detalles.`);
+      setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: "Error al procesar señales."}); // Clear signals for display
+      toast({
+        title: "Error de Formato de Señal IA",
+        description: errorMsg,
         variant: "destructive",
       });
+      return; // Stop further processing if parsing fails
+    }
+
+    if (parsedSignalsArray && currentMarketPriceHistory.length > 0) {
+      const latestPricePoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
+      if (!latestPricePoint) return;
+
+      const newEvents: SignalEvent[] = parsedSignalsArray
+        .filter(s => s.signal === 'BUY' || s.signal === 'SELL')
+        .map(s => ({
+          timestamp: latestPricePoint.timestamp,
+          price: latestPricePoint.price,
+          type: s.signal as 'BUY' | 'SELL',
+          confidence: s.confidence,
+        }));
+
+      setSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_SIGNAL_EVENTS_ON_CHART));
+
+      // Simular ejecución de trade por IA
+      for (const signal of parsedSignalsArray) {
+        if ((signal.signal === 'BUY' || signal.signal === 'SELL') && signal.confidence >= AI_TRADE_CONFIDENCE_THRESHOLD) {
+          let tradeAmount = 0.01; 
+          if (selectedMarket.baseAsset === 'BTC') tradeAmount = 0.0005;
+          else if (selectedMarket.baseAsset === 'ETH') tradeAmount = 0.005;
+          else if (selectedMarket.quoteAsset === 'USD' && latestPricePoint.price > 0) {
+              const dollarAmountToInvest = Math.random() * 40 + 10;
+              tradeAmount = dollarAmountToInvest / latestPricePoint.price;
+          }
+          
+          tradeAmount = parseFloat(tradeAmount.toFixed(6));
+          if (tradeAmount <=0) continue;
+
+          const simulatedOrder: OrderFormData = {
+            type: signal.signal === 'BUY' ? 'buy' : 'sell',
+            marketId: selectedMarket.id,
+            amount: tradeAmount,
+            orderType: 'market',
+            price: latestPricePoint.price 
+          };
+          const success = handlePlaceOrder(simulatedOrder, true); 
+          if (success) {
+               console.log(`IA simuló un trade ${signal.signal} de ${tradeAmount} ${selectedMarket.baseAsset} con confianza ${signal.confidence}`);
+          }
+          break; 
+        }
+      }
+    } else if (parsedSignalsArray === null) {
+        // This case is now handled by the try-catch block if JSON.parse fails or validation fails
     }
   };
 
 
   const handleGenerationError = (errorMsg: string) => {
     setAiSignalData(null);
-    setIsLoadingAiSignals(false);
-    setAiError(errorMsg);
+    setAiError(errorMsg); // Set the error message to be displayed by SignalDisplay
+    toast({
+      title: "Error en Generación de Señales IA",
+      description: errorMsg,
+      variant: "destructive",
+    });
   };
+  
 
   const clearSignalData = () => {
     setAiSignalData(null);
@@ -283,14 +301,22 @@ export default function TradingPlatformPage() {
 
   const generateSignalsActionWrapper = async (input: any) => {
     setIsLoadingAiSignals(true);
-    setAiError(null);
+    setAiError(null); 
+    setAiSignalData(null); // Clear previous data before new request
     try {
       const result = await handleGenerateSignalsAction(input);
+      // Validate structure of result before processing
+      if (typeof result.signals !== 'string' || typeof result.explanation !== 'string') {
+        throw new Error("La respuesta de la IA no tiene la estructura esperada (signals/explanation).");
+      }
       handleSignalsGenerated(result);
+      setIsLoadingAiSignals(false);
       return result; 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
+        console.error("Error en generateSignalsActionWrapper:", errorMessage, error);
         handleGenerationError(errorMessage);
+        setIsLoadingAiSignals(false); // Ensure loading state is reset on error
         throw error; 
     }
   };
@@ -315,7 +341,6 @@ export default function TradingPlatformPage() {
       <main className="flex-1">
         <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem)]">
 
-          {/* Columna Izquierda: Libro de Órdenes (Placeholder), Trades del Mercado (Placeholder), Historial de Operaciones */}
           <aside className={`col-span-12 ${isLeftSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <Card>
@@ -342,7 +367,6 @@ export default function TradingPlatformPage() {
             </ScrollArea>
           </aside>
 
-          {/* Columna Central: Gráfico de Precios, Formulario de Órdenes */}
           <section className={`col-span-12 ${centralColSpan} p-1 md:p-2 flex flex-col gap-2 transition-all duration-300 ease-in-out`}>
             <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
               <MarketPriceChart
@@ -358,13 +382,12 @@ export default function TradingPlatformPage() {
                 market={selectedMarket}
                 balanceQuoteAsset={availableQuoteBalance || 0}
                 balanceBaseAsset={currentBaseAssetBalance}
-                onSubmit={(orderData) => handlePlaceOrder(orderData, false)} // isAISimulated = false for manual orders
+                onSubmit={(orderData) => handlePlaceOrder(orderData, false)} 
                 currentPrice={latestPriceForPnl}
               />
             </div>
           </section>
 
-          {/* Columna Derecha: Selector de Mercado, Pestañas (Control IA, Saldo, Guía), P&L, Señales IA */}
           <aside className={`col-span-12 ${isRightSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
@@ -381,10 +404,10 @@ export default function TradingPlatformPage() {
                 </TabsList>
                 <TabsContent value="ai-controls">
                    <BotControls
-                    onSignalsGenerated={handleSignalsGenerated} // sigue siendo manejado aquí para mostrar en SignalDisplay
+                    onSignalsGenerated={handleSignalsGenerated}
                     onGenerationError={handleGenerationError}
                     clearSignalData={clearSignalData}
-                    generateSignalsAction={generateSignalsActionWrapper} // este es el wrapper
+                    generateSignalsAction={generateSignalsActionWrapper} 
                     selectedMarketSymbol={selectedMarket.baseAsset} 
                   />
                 </TabsContent>
