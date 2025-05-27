@@ -96,22 +96,31 @@ const generateTradingSignalsFlow = ai.defineFlow(
     const {output} = await prompt(input);
     // Basic validation to ensure the output isn't completely empty or malformed before returning
     if (!output || typeof output.signals !== 'string' || typeof output.explanation !== 'string') {
-        console.error('AI flow returned malformed output:', output);
+        console.error('AI flow returned malformed output (missing signals/explanation strings):', output);
         // Attempt to return a valid-looking empty/error response
         return {
             signals: "[]",
-            explanation: "Error: AI service returned an invalid response structure. Please check the AI flow logs."
+            explanation: "Error: AI service returned an invalid response structure (missing signals or explanation strings). Please check the AI flow logs."
         };
     }
     try {
-        JSON.parse(output.signals); // Test if signals is valid JSON
+        const parsedSignals = JSON.parse(output.signals);
+        if (!Array.isArray(parsedSignals)) {
+            console.error('AI flow returned signals that are not a JSON array:', output.signals);
+            return {
+                signals: "[]", 
+                explanation: `Error: AI service returned signals that are not a JSON array. Explanation provided: ${output.explanation}`
+            };
+        }
     } catch (e) {
-        console.error('AI flow returned invalid JSON for signals:', output.signals, e);
+        const errorMsg = e instanceof Error ? e.message : "Unknown JSON parse error";
+        console.error('AI flow returned invalid JSON for signals:', output.signals, errorMsg);
         return {
             signals: "[]", // Default to empty array string on JSON parse error
-            explanation: `Error: AI service returned signals that could not be parsed as JSON. Explanation provided: ${output.explanation}`
+            explanation: `Error: AI service returned signals that could not be parsed as JSON (${errorMsg}). Explanation provided: ${output.explanation}`
         };
     }
     return output!;
   }
 );
+
