@@ -25,11 +25,12 @@ const GenerateTradingSignalsInputSchema = z.object({
   riskLevel: z
     .enum(['high', 'medium', 'low'])
     .describe('The risk level to use for the trading strategy.'),
-  // cryptocurrencyForAI is now included here as it's passed from BotControls
-  cryptocurrencyForAI: z.string().optional().describe('The cryptocurrency symbol the AI should focus its analysis on, e.g., BTC, ETH. This provides context.'),
+  cryptocurrencyForAI: z.string().optional().describe('The cryptocurrency symbol the AI should focus its analysis on, e.g., BTC, ETH. This provides context for the asset being analyzed.'),
 });
 export type GenerateTradingSignalsInput = z.infer<typeof GenerateTradingSignalsInputSchema>;
 
+// Este schema no se usa directamente como output del prompt, pero es una referencia útil.
+// El prompt devuelve un string JSON que DEBE ser parseable a SignalItem[]
 const SignalItemSchema = z.object({
   signal: z.enum(['BUY', 'SELL', 'HOLD']).describe("The trading signal: BUY, SELL, or HOLD."),
   confidence: z.number().min(0).max(1).describe("The confidence level of the signal, from 0.0 to 1.0.")
@@ -39,11 +40,11 @@ const GenerateTradingSignalsOutputSchema = z.object({
   signals: z
     .string()
     .describe(
-      'Trading signals as a JSON string representing an array of objects. Each object MUST have a "signal" (string: "BUY", "SELL", or "HOLD") and a "confidence" (number: 0.0 to 1.0). Example: \'[{"signal": "BUY", "confidence": 0.85}, {"signal": "HOLD", "confidence": 0.6}]\' '
+      'Trading signals as a JSON string representing an array of objects. Each object in the array MUST contain exactly two keys: "signal" (string: "BUY", "SELL", or "HOLD") and "confidence" (number: 0.0 to 1.0). Example: \'[{"signal": "BUY", "confidence": 0.85}, {"signal": "HOLD", "confidence": 0.6}]\', or \'[]\' if no specific action signal.'
     ),
   explanation: z
     .string()
-    .describe('Detailed human-readable explanation of the generated trading signals and the reasoning behind them.'),
+    .describe('Detailed human-readable explanation of the generated trading signals and the reasoning behind them. If providing a signal, try to briefly mention its potential or key factors for its success.'),
 });
 export type GenerateTradingSignalsOutput = z.infer<typeof GenerateTradingSignalsOutputSchema>;
 
@@ -57,14 +58,14 @@ const prompt = ai.definePrompt({
   name: 'generateTradingSignalsPrompt',
   input: {schema: GenerateTradingSignalsInputSchema},
   output: {schema: GenerateTradingSignalsOutputSchema},
-  prompt: `You are an expert in financial markets and trading strategy for {{cryptocurrencyForAI}}.
+  prompt: `You are an expert in financial markets and trading strategy for {{#if cryptocurrencyForAI}}{{cryptocurrencyForAI}}{{else}}the specified cryptocurrency{{/if}}.
 
 You will analyze historical price patterns and generate trading signals based on the selected strategy and risk level.
 
 Historical Data: {{{historicalData}}}
 Strategy: {{{strategy}}}
 Risk Level: {{{riskLevel}}}
-Contextual Asset for Analysis: {{cryptocurrencyForAI}}
+Contextual Asset for Analysis: {{#if cryptocurrencyForAI}}{{cryptocurrencyForAI}}{{else}}Not specified{{/if}}
 
 Based on this data, provide trading signals and explain your reasoning.
 
@@ -76,9 +77,12 @@ Example of a valid JSON string for the 'signals' field:
 '[{"signal": "BUY", "confidence": 0.85}, {"signal": "HOLD", "confidence": 0.60}]'
 '[{"signal": "SELL", "confidence": 0.75}]'
 '[{"signal": "HOLD", "confidence": 0.90}]'
+'[]' (This is also valid if no specific BUY/SELL/HOLD signal is identified, but try to provide at least a HOLD if unsure)
 
-If you cannot determine a strong BUY or SELL signal, provide a HOLD signal with appropriate confidence.
-Ensure the JSON is perfectly formatted. Also include a detailed human-readable explanation in the 'explanation' field.
+If you cannot determine a strong BUY or SELL signal, it's generally better to provide a HOLD signal with appropriate confidence rather than an empty array, unless the data is truly inconclusive.
+Ensure the JSON is perfectly formatted.
+
+Also include a detailed human-readable explanation in the 'explanation' field. In your explanation, if you are providing a BUY or SELL signal, try to briefly mention the potential outlook for this signal or key factors that might influence its success (e.g., "This BUY signal is based on a strong upward momentum and a breakout above a key resistance level, suggesting potential for further gains if volume supports the move. However, watch for resistance near $X.").
 `,
 });
 
@@ -90,7 +94,24 @@ const generateTradingSignalsFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
+    // Basic validation to ensure the output isn't completely empty or malformed before returning
+    if (!output || typeof output.signals !== 'string' || typeof output.explanation !== 'string') {
+        console.error('AI flow returned malformed output:', output);
+        // Attempt to return a valid-looking empty/error response
+        return {
+            signals: "[]",
+            explanation: "Error: AI service returned an invalid response structure. Please check the AI flow logs."
+        };
+    }
+    try {
+        JSON.parse(output.signals); // Test if signals is valid JSON
+    } catch (e) {
+        console.error('AI flow returned invalid JSON for signals:', output.signals, e);
+        return {
+            signals: "[]", // Default to empty array string on JSON parse error
+            explanation: `Error: AI service returned signals that could not be parsed as JSON. Explanation provided: ${output.explanation}`
+        };
+    }
     return output!;
   }
 );
-

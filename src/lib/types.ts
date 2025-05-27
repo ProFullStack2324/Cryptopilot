@@ -16,9 +16,9 @@ export interface Trade {
 export interface MarketPriceDataPoint {
   timestamp: number; // Unix timestamp en segundos
   price: number;
-  sma10?: number; // Para Media Móvil Simple de 10 períodos
-  sma20?: number; // Para Media Móvil Simple de 20 períodos
-  sma50?: number; // Para Media Móvil Simple de 50 períodos
+  sma10?: number; 
+  sma20?: number; 
+  sma50?: number; 
 }
 
 export interface Market {
@@ -40,32 +40,32 @@ export const mockMarkets: Market[] = [
   { id: "DOGEUSDT", baseAsset: "DOGE", quoteAsset: "USD", name: "DOGE/USD", latestPrice: 0.15, change24h: 2.5 },
 ];
 
-// Generar historial con timestamps en segundos y más puntos para la simulación inicial
 const generateInitialPriceHistory = (basePrice: number, volatility: number, points: number, minutesInterval: number): MarketPriceDataPoint[] => {
   const history: MarketPriceDataPoint[] = [];
   let currentPrice = basePrice;
   const nowInSeconds = Math.floor(Date.now() / 1000);
 
   for (let i = 0; i < points; i++) {
-    const timestamp = nowInSeconds - (points - 1 - i) * minutesInterval * 60;
+    const timestamp = nowInSeconds - (points - 1 - i) * minutesInterval * 60; // Timestamps yendo hacia atrás desde ahora
     history.push({
       timestamp: timestamp,
       price: parseFloat(currentPrice.toFixed(5)),
     });
-    currentPrice *= (1 + (Math.random() - 0.5) * volatility);
-    if (currentPrice <= 0) currentPrice = basePrice * 0.1;
+    // Simular movimiento de precio
+    currentPrice *= (1 + (Math.random() - 0.5) * volatility); 
+    if (currentPrice <= 0) currentPrice = basePrice * 0.1; // Evitar precios negativos o cero
   }
   return history;
 };
 
 
 export const mockMarketPriceHistory: Record<string, MarketPriceDataPoint[]> = {
-  "BTCUSDT": generateInitialPriceHistory(61500, 0.005, 200, 1),
-  "ETHUSDT": generateInitialPriceHistory(3400, 0.007, 200, 1),
-  "SOLUSDT": generateInitialPriceHistory(150, 0.01, 200, 1),
-  "ADAUSDT": generateInitialPriceHistory(0.42, 0.015, 200, 1),
-  "XRPUSDT": generateInitialPriceHistory(0.52, 0.012, 200, 1),
-  "DOGEUSDT": generateInitialPriceHistory(0.15, 0.02, 200, 1),
+  "BTCUSDT": generateInitialPriceHistory(61500, 0.0005, 200, 1), // 200 puntos, 1 min de intervalo
+  "ETHUSDT": generateInitialPriceHistory(3400, 0.0007, 200, 1),
+  "SOLUSDT": generateInitialPriceHistory(150, 0.001, 200, 1),
+  "ADAUSDT": generateInitialPriceHistory(0.42, 0.0015, 200, 1),
+  "XRPUSDT": generateInitialPriceHistory(0.52, 0.0012, 200, 1),
+  "DOGEUSDT": generateInitialPriceHistory(0.15, 0.002, 200, 1),
 };
 
 
@@ -82,17 +82,25 @@ export const marketPriceChartConfigDark = {
     label: "SMA 20",
     color: "hsl(var(--chart-2))", 
   },
-  sma50: { // Nueva métrica
+  sma50: {
     label: "SMA 50 (Ref. Bot)",
-    color: "hsl(var(--chart-4))", // Usando chart-4 para un color distintivo
+    color: "hsl(var(--chart-4))", 
   },
-  buySignal: {
+  aiBuySignal: { // Renombrado para claridad
     label: "Compra IA",
-    color: "hsl(var(--chart-3))",
+    color: "hsl(var(--chart-3))", // Verde más brillante
   },
-  sellSignal: {
+  aiSellSignal: { // Renombrado para claridad
     label: "Venta IA",
-    color: "hsl(var(--chart-4))", // Podríamos necesitar otro color si chart-4 se usa para SMA50
+    color: "hsl(var(--destructive))", // Rojo destructivo
+  },
+  smaCrossBuySignal: {
+    label: "Cruce SMA Compra",
+    color: "hsl(var(--chart-3) / 0.7)", // Verde más claro/transparente
+  },
+  smaCrossSellSignal: {
+    label: "Cruce SMA Venta",
+    color: "hsl(var(--destructive) / 0.7)", // Rojo más claro/transparente
   }
 } satisfies ChartConfig;
 
@@ -103,7 +111,7 @@ export interface SignalItem {
 }
 
 export interface AISignalData {
-  signals: string;
+  signals: string; // JSON string de SignalItem[]
   explanation: string;
 }
 
@@ -113,7 +121,7 @@ export interface OrderFormData {
   type: 'buy' | 'sell';
   marketId: string;
   amount: number;
-  price?: number;
+  price?: number; // Opcional para órdenes de mercado
   orderType: 'market' | 'limit';
 }
 
@@ -123,7 +131,7 @@ export const initialMockTrades: Trade[] = [
 ];
 
 export interface PerformanceDataPoint {
-  date: string;
+  date: string; // Formato HH:mm:ss
   value: number;
 }
 export const mockPerformanceChartConfigDark = {
@@ -133,11 +141,17 @@ export const mockPerformanceChartConfigDark = {
   },
 } satisfies ChartConfig;
 
-export interface SignalEvent {
+export interface SignalEvent { // Usado para señales de IA
   timestamp: number;
   price: number;
   type: 'BUY' | 'SELL';
   confidence: number;
+}
+
+export interface SmaCrossoverEvent { // Nuevo tipo para cruces de SMA
+    timestamp: number;
+    price: number;
+    type: 'SMA_CROSS_BUY' | 'SMA_CROSS_SELL';
 }
 
 export interface SimulatedPosition {
@@ -145,5 +159,5 @@ export interface SimulatedPosition {
   entryPrice: number;
   amount: number;
   type: 'buy' | 'sell'; 
-  timestamp: number;
+  timestamp: number; // Unix timestamp del momento de entrada
 }
