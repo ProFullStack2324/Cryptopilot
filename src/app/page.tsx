@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const MAX_SIGNAL_EVENTS_ON_CHART = 5;
 
-// Nuevo componente para mostrar P&L
+// Componente para mostrar P&L de posición simulada
 function SimulatedPnLDisplay({ position, currentPrice, market }: { position: SimulatedPosition | null; currentPrice: number | undefined; market: Market | null }) {
   if (!position || currentPrice === undefined || !market) {
     return (
@@ -44,15 +44,16 @@ function SimulatedPnLDisplay({ position, currentPrice, market }: { position: Sim
   let pnlPercentage = 0;
   const quoteAsset = market.quoteAsset;
 
-  if (position.type === 'buy') { // Comprado activo base, esperando que suba
+  if (position.type === 'buy') {
     pnl = (currentPrice - position.entryPrice) * position.amount;
-  } else { // Vendido activo base (short), esperando que baje
+  } else {
     pnl = (position.entryPrice - currentPrice) * position.amount;
   }
 
-  if (position.entryPrice > 0) {
+  if (position.entryPrice * position.amount !== 0) { // Evitar división por cero
     pnlPercentage = (pnl / (position.entryPrice * position.amount)) * 100;
   }
+
 
   const pnlColor = pnl >= 0 ? 'text-green-500' : 'text-red-500';
 
@@ -95,6 +96,12 @@ export default function TradingPlatformPage() {
   );
   const [currentSimulatedPosition, setCurrentSimulatedPosition] = useState<SimulatedPosition | null>(null);
 
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+
+  const toggleLeftSidebar = () => setIsLeftSidebarOpen(!isLeftSidebarOpen);
+  const toggleRightSidebar = () => setIsRightSidebarOpen(!isRightSidebarOpen);
+
 
   useEffect(() => {
     const initialQuote = Math.random() * 25000 + 5000;
@@ -106,7 +113,7 @@ export default function TradingPlatformPage() {
   useEffect(() => {
     setCurrentMarketPriceHistory(mockMarketPriceHistory[selectedMarket.id] || []);
     setSignalEvents([]);
-    setCurrentSimulatedPosition(null); // Cerrar posición simulada al cambiar de mercado
+    setCurrentSimulatedPosition(null); 
   }, [selectedMarket]);
 
 
@@ -115,7 +122,6 @@ export default function TradingPlatformPage() {
     if (newMarket) {
       setSelectedMarket(newMarket);
       clearSignalData();
-      // Simular un nuevo balance para el activo base del nuevo mercado
       const newBaseBalance = Math.random() * (newMarket.baseAsset === 'BTC' ? 0.2 : 5) + (newMarket.baseAsset === 'BTC' ? 0.01 : 0.5);
       setCurrentBaseAssetBalance(newBaseBalance);
     }
@@ -185,7 +191,7 @@ export default function TradingPlatformPage() {
       amount: orderData.amount,
       price: priceToUse,
       total: totalCostOrProceeds,
-      status: 'Completado', // Todas las simulaciones son completadas instantáneamente
+      status: 'Completado', 
     };
 
     if (orderData.type === 'buy') {
@@ -209,13 +215,11 @@ export default function TradingPlatformPage() {
         toast({ title: "Fondos Insuficientes (Simulado)", description: `No tienes suficiente ${selectedMarket.quoteAsset} para comprar ${orderData.amount} ${selectedMarket.baseAsset}.`, variant: "destructive" });
         return;
       }
-    } else { // Venta
+    } else { 
       if (currentBaseAssetBalance >= orderData.amount) {
         setCurrentBaseAssetBalance(currentBaseAssetBalance - orderData.amount);
         setAvailableQuoteBalance((availableQuoteBalance || 0) + totalCostOrProceeds);
         setTradeHistory(prev => [newTrade, ...prev]);
-        // Simular cierre de posición si había una de compra, o abrir una de venta (short)
-        // Por simplicidad, cada venta ahora crea una posición de "venta" (potencial short)
         setCurrentSimulatedPosition({
             marketId: selectedMarket.id,
             entryPrice: priceToUse,
@@ -237,15 +241,26 @@ export default function TradingPlatformPage() {
   
   const latestPriceForPnl = currentMarketPriceHistory.length > 0 ? currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price : undefined;
 
+  let centralColSpan = 'md:col-span-12';
+  if (isLeftSidebarOpen && isRightSidebarOpen) {
+    centralColSpan = 'md:col-span-6';
+  } else if (isLeftSidebarOpen || isRightSidebarOpen) {
+    centralColSpan = 'md:col-span-9';
+  }
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
-      <AppHeader />
+      <AppHeader 
+        toggleLeftSidebar={toggleLeftSidebar}
+        isLeftSidebarOpen={isLeftSidebarOpen}
+        toggleRightSidebar={toggleRightSidebar}
+        isRightSidebarOpen={isRightSidebarOpen}
+      />
       <main className="flex-1">
         <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem)]">
 
           {/* Columna Izquierda: Libro de Órdenes (Placeholder), Trades del Mercado (Placeholder), Historial de Operaciones */}
-          <aside className="col-span-12 md:col-span-3 p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto">
+          <aside className={`col-span-12 ${isLeftSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <Card>
                 <CardHeader>
@@ -272,10 +287,10 @@ export default function TradingPlatformPage() {
           </aside>
 
           {/* Columna Central: Gráfico de Precios, Formulario de Órdenes */}
-          <section className="col-span-12 md:col-span-6 p-1 md:p-2 flex flex-col gap-2">
+          <section className={`col-span-12 ${centralColSpan} p-1 md:p-2 flex flex-col gap-2 transition-all duration-300 ease-in-out`}>
             <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
               <MarketPriceChart
-                key={selectedMarket.id} // Clave para forzar el re-renderizado del gráfico al cambiar de mercado
+                key={selectedMarket.id} 
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
                 initialPriceHistory={currentMarketPriceHistory}
@@ -294,7 +309,7 @@ export default function TradingPlatformPage() {
           </section>
 
           {/* Columna Derecha: Selector de Mercado, Pestañas (Control IA, Saldo), P&L, Señales IA */}
-          <aside className="col-span-12 md:col-span-3 p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto">
+          <aside className={`col-span-12 ${isRightSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
                 markets={mockMarkets}
@@ -350,4 +365,3 @@ export default function TradingPlatformPage() {
     </div>
   );
 }
-

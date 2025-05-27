@@ -34,7 +34,6 @@ interface MarketPriceChartProps {
   signalEvents?: SignalEvent[];
 }
 
-// Helper function to calculate SMA
 const calculateSMA = (data: MarketPriceDataPoint[], period: number): (number | undefined)[] => {
   if (!data || data.length < period) {
     return data.map(() => undefined);
@@ -53,12 +52,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Ensure initial history has enough points for SMA calculation or pad with undefined
     let processedInitialHistory = initialPriceHistory.slice(-MAX_DATA_POINTS);
-    if (processedInitialHistory.length < SMA20_PERIOD) {
-        // Not ideal, but prevents crashing if initial data is too short. 
-        // SMAs will just not show until enough data points accumulate.
-    }
     setPriceHistory(processedInitialHistory);
   }, [initialPriceHistory, marketId]);
 
@@ -71,11 +65,19 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
     intervalRef.current = setInterval(() => {
       setPriceHistory(prevHistory => {
         if (prevHistory.length === 0) {
-          return [];
+          // Si no hay historial (ej. mercado nuevo sin datos iniciales), no intentar generar nuevos puntos.
+          // Esto podría pasar si initialPriceHistory es un array vacío.
+          // Considerar cargar datos iniciales o un placeholder si es el caso.
+          return prevHistory; 
         }
         const lastPoint = prevHistory[prevHistory.length - 1];
-        let newPrice = lastPoint.price * (1 + (Math.random() - 0.495) * 0.001); // Smaller variation
-        if (newPrice <=0) newPrice = lastPoint.price * 0.99; // Prevent zero or negative price
+        // Asegurar que lastPoint y lastPoint.price existan
+        if (!lastPoint || typeof lastPoint.price !== 'number') {
+            return prevHistory; // No se puede generar un nuevo punto sin un precio base
+        }
+
+        let newPrice = lastPoint.price * (1 + (Math.random() - 0.495) * 0.001); 
+        if (newPrice <=0) newPrice = lastPoint.price > 0 ? lastPoint.price * 0.99 : 0.00001; // Evitar cero o negativo, usar un precio base mínimo si lastPoint.price era 0
         
         const newPoint: MarketPriceDataPoint = {
           timestamp: Math.floor(Date.now() / 1000), 
@@ -95,14 +97,14 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
         clearInterval(intervalRef.current);
       }
     };
-  }, [marketId]); 
+  }, [marketId]); // Se re-ejecuta si cambia el marketId para reiniciar el intervalo con el nuevo mercado
 
   const chartDataWithSMAs = useMemo(() => {
     const sma10Values = calculateSMA(priceHistory, SMA10_PERIOD);
     const sma20Values = calculateSMA(priceHistory, SMA20_PERIOD);
     return priceHistory.map((point, index) => ({
       ...point,
-      date: format(fromUnixTime(point.timestamp), 'HH:mm:ss', { locale: es }), // More granular time for X-axis
+      date: format(fromUnixTime(point.timestamp), 'HH:mm:ss', { locale: es }),
       sma10: sma10Values[index],
       sma20: sma20Values[index],
     }));
@@ -126,7 +128,8 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
     );
   }
   
-  const lastPoint = chartDataWithSMAs.length > 0 ? chartDataWithSMAs[chartDataWithSMAs.length -1] : { price: 0 };
+  const lastPoint = chartDataWithSMAs.length > 0 ? chartDataWithSMAs[chartDataWithSMAs.length -1] : { price: 0, sma10: undefined, sma20: undefined };
+  const quoteAsset = marketId.split('USD')[1] || 'USD'; // Asume 'USD' como quote, o toma la parte después de USD si es algo como USD[T]
   
   return (
     <Card className="shadow-lg bg-card text-card-foreground h-full flex flex-col">
@@ -147,7 +150,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
                 left: -10, 
                 right: 20,
                 top: 5,
-                bottom: 20, // Increased bottom margin for legend
+                bottom: 20, 
               }}
             >
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.3)" />
@@ -157,7 +160,6 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
                 axisLine={false}
                 tickMargin={8}
                 tickFormatter={(value, index) => {
-                   // Show fewer labels to prevent clutter
                   if (chartDataWithSMAs.length > 10 && index % Math.floor(chartDataWithSMAs.length / 7) !== 0 && index !== chartDataWithSMAs.length -1 && index !== 0) return '';
                   return value; 
                 }}
@@ -166,11 +168,11 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
                 interval="preserveStartEnd"
               />
               <YAxis
-                yAxisId="left" // Ensure YAxis has an ID if multiple are used (though not here yet)
+                yAxisId="left" 
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tickFormatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketId.includes('BTC') || marketId.includes('ETH') ? 2 : 5})}`}
+                tickFormatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}`}
                 stroke="hsl(var(--muted-foreground))"
                 domain={['auto', 'auto']}
                 fontSize={11}
@@ -183,22 +185,24 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
                             labelClassName="text-foreground text-sm" 
                             className="bg-popover text-popover-foreground border-popover-foreground/50 shadow-xl" 
                             formatter={(value, name, props) => {
-                              const currency = marketId.startsWith('BTC') || marketId.startsWith('ETH') ? 'USD' : (marketId.split('/')[1] || 'USD');
+                              const currency = quoteAsset;
+                              const rawValue = props.payload?.[name as keyof typeof props.payload] as number | undefined;
+                              
                               if (name === 'price' || name === 'sma10' || name === 'sma20') {
                                 return [
-                                  `${(props.payload?.[name] as number)?.toLocaleString(undefined, {style: 'currency', currency: currency, minimumFractionDigits: 2, maximumFractionDigits: marketId.includes('BTC') || marketId.includes('ETH') ? 2 : 5})}`,
+                                  rawValue?.toLocaleString(undefined, {style: 'currency', currency: currency, minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5}),
                                   marketPriceChartConfigDark[name]?.label || name
                                 ];
                               }
                               return [value, name];
                             }}
                             labelFormatter={(label, payload) => {
-                              const point = payload && payload.length > 0 && payload[0].payload;
-                              return point ? format(fromUnixTime(point.timestamp), "Pp", { locale: es }) : label;
+                              const point = payload && payload.length > 0 && payload[0].payload as MarketPriceDataPoint & { date: string };
+                              return point && point.timestamp ? format(fromUnixTime(point.timestamp), "Pp", { locale: es }) : label;
                             }}
                           />}
               />
-              <Legend verticalAlign="bottom" height={30} wrapperStyle={{fontSize: "10px"}}/>
+              <Legend verticalAlign="bottom" height={30} wrapperStyle={{fontSize: "10px", textTransform: 'capitalize'}}/>
               <Line
                 yAxisId="left"
                 dataKey="price"
@@ -218,7 +222,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
                 dot={false}
                 activeDot={{ r: 4, fill: "hsl(var(--chart-5))", stroke: "hsl(var(--background))", strokeWidth: 1 }}
                 name={marketPriceChartConfigDark.sma10.label as string}
-                connectNulls={true} // Important for SMAs that might have initial undefined values
+                connectNulls={true} 
               />
               <Line
                 yAxisId="left"
@@ -241,14 +245,14 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
                   fill={event.type === 'BUY' ? "hsl(var(--chart-3))" : "hsl(var(--chart-4))"} 
                   stroke="hsl(var(--background))"
                   strokeWidth={2}
-                  ifOverflow="extendDomain"
+                  ifOverflow="extendDomain" // Intenta asegurar que el punto sea visible
                   isFront={true}
                 >
                   <RechartsTooltip
                     content={() => (
-                      <div className="bg-popover text-popover-foreground p-2 rounded shadow-lg text-xs border">
-                        <p>Señal IA: {event.type}</p>
-                        <p>Precio: ${event.price.toFixed(marketId.includes('BTC') || marketId.includes('ETH') ? 2 : 5)}</p>
+                      <div className="bg-popover text-popover-foreground p-2 rounded shadow-lg text-xs border border-border">
+                        <p className="font-semibold">Señal IA: {event.type === 'BUY' ? 'COMPRA' : 'VENTA'}</p>
+                        <p>Precio: ${event.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</p>
                         <p>Confianza: {(event.confidence * 100).toFixed(0)}%</p>
                         <p>Hora: {format(fromUnixTime(event.timestamp), 'HH:mm:ss', { locale: es })}</p>
                       </div>
@@ -264,9 +268,9 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
       </CardContent>
        <CardFooter className="flex-col items-start gap-1 text-xs pt-1 pb-3">
         <div className="flex gap-2 font-medium leading-none text-foreground">
-          Último precio (simulado): ${lastPoint.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketId.includes('BTC') || marketId.includes('ETH') ? 2 : 5})}.
-           {lastPoint.sma10 && ` SMA10: $${lastPoint.sma10.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketId.includes('BTC') || marketId.includes('ETH') ? 2 : 5})}`}
-           {lastPoint.sma20 && ` SMA20: $${lastPoint.sma20.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketId.includes('BTC') || marketId.includes('ETH') ? 2 : 5})}`}
+          Último precio ({marketName}): ${lastPoint.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}.
+           {lastPoint.sma10 !== undefined && ` SMA10: $${lastPoint.sma10.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}`}
+           {lastPoint.sma20 !== undefined && ` SMA20: $${lastPoint.sma20.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}`}
         </div>
         <div className="leading-none text-muted-foreground">
           Actualizando cada {UPDATE_INTERVAL_MS / 1000} segundos. Mostrando últimos {MAX_DATA_POINTS} puntos.
@@ -275,4 +279,3 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, si
     </Card>
   )
 }
-
