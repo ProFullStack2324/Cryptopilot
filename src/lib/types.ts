@@ -18,6 +18,7 @@ export interface MarketPriceDataPoint {
   price: number;
   sma10?: number; // Para Media Móvil Simple de 10 períodos
   sma20?: number; // Para Media Móvil Simple de 20 períodos
+  sma50?: number; // Para Media Móvil Simple de 50 períodos
 }
 
 export interface Market {
@@ -49,17 +50,17 @@ const generateInitialPriceHistory = (basePrice: number, volatility: number, poin
     const timestamp = nowInSeconds - (points - 1 - i) * minutesInterval * 60;
     history.push({
       timestamp: timestamp,
-      price: parseFloat(currentPrice.toFixed(5)), // Reducir decimales para evitar problemas de flotantes muy largos
+      price: parseFloat(currentPrice.toFixed(5)),
     });
     currentPrice *= (1 + (Math.random() - 0.5) * volatility);
-    if (currentPrice <= 0) currentPrice = basePrice * 0.1; // Evitar precios negativos o cero
+    if (currentPrice <= 0) currentPrice = basePrice * 0.1;
   }
   return history;
 };
 
 
 export const mockMarketPriceHistory: Record<string, MarketPriceDataPoint[]> = {
-  "BTCUSDT": generateInitialPriceHistory(61500, 0.005, 200, 1), // Más puntos, cada 1 minuto
+  "BTCUSDT": generateInitialPriceHistory(61500, 0.005, 200, 1),
   "ETHUSDT": generateInitialPriceHistory(3400, 0.007, 200, 1),
   "SOLUSDT": generateInitialPriceHistory(150, 0.01, 200, 1),
   "ADAUSDT": generateInitialPriceHistory(0.42, 0.015, 200, 1),
@@ -75,11 +76,15 @@ export const marketPriceChartConfigDark = {
   },
   sma10: {
     label: "SMA 10",
-    color: "hsl(var(--chart-5))", // Usar un color diferente
+    color: "hsl(var(--chart-5))", 
   },
   sma20: {
     label: "SMA 20",
-    color: "hsl(var(--chart-2))", // Usar un color diferente (antes era amarillo)
+    color: "hsl(var(--chart-2))", 
+  },
+  sma50: { // Nueva métrica
+    label: "SMA 50 (Ref. Bot)",
+    color: "hsl(var(--chart-4))", // Usando chart-4 para un color distintivo
   },
   buySignal: {
     label: "Compra IA",
@@ -87,7 +92,7 @@ export const marketPriceChartConfigDark = {
   },
   sellSignal: {
     label: "Venta IA",
-    color: "hsl(var(--chart-4))",
+    color: "hsl(var(--chart-4))", // Podríamos necesitar otro color si chart-4 se usa para SMA50
   }
 } satisfies ChartConfig;
 
@@ -135,11 +140,10 @@ export interface SignalEvent {
   confidence: number;
 }
 
-// Para la simulación de P&L de una posición abierta
 export interface SimulatedPosition {
   marketId: string;
   entryPrice: number;
   amount: number;
-  type: 'buy' | 'sell'; // 'buy' significa que se compró el activo base, 'sell' que se vendió (short)
+  type: 'buy' | 'sell'; 
   timestamp: number;
 }
