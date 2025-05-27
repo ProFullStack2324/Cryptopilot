@@ -15,7 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Power, Settings2, DollarSign, Repeat, Waypoints, ShieldCheck, Sparkles, Loader2, BrainCircuit } from "lucide-react";
+import { Power, Settings2, DollarSign, Repeat, Waypoints, ShieldCheck, Sparkles, Loader2, BrainCircuit, Info } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const exampleHistoricalData = JSON.stringify([
   {"timestamp": "2023-10-01T00:00:00Z", "open": 27000, "high": 27200, "low": 26800, "close": 27100, "volume": 1000},
@@ -28,8 +29,8 @@ const exampleHistoricalData = JSON.stringify([
 const formSchema = z.object({
   amountPerTrade: z.coerce.number().min(1, "La cantidad debe ser al menos 1 USD."),
   cryptocurrency: z.string().min(1, "Por favor, selecciona una criptomoneda."),
-  strategy: z.enum(['movingAverage', 'rsi', 'bollingerBands']),
-  riskLevel: z.enum(['high', 'medium', 'low']),
+  strategy: z.enum(['movingAverage', 'rsi', 'bollingerBands'], { required_error: "Por favor, selecciona una estrategia."}),
+  riskLevel: z.enum(['high', 'medium', 'low'], { required_error: "Por favor, selecciona un nivel de riesgo."}),
   historicalData: z.string().refine(data => {
     try {
       JSON.parse(data);
@@ -99,8 +100,8 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
     setIsBotRunning(newBotStatus);
     
     toast({
-      title: `Bot ${newBotStatus ? "Iniciado" : "Detenido"}`,
-      description: `El bot de trading ahora está ${newBotStatus ? "activo" : "inactivo"}.`,
+      title: `Bot ${newBotStatus ? "Iniciado (Simulación)" : "Detenido (Simulación)"}`,
+      description: `El bot de trading ahora está ${newBotStatus ? "activo" : "inactivo"} en modo simulación. Las operaciones no son reales.`,
        variant: newBotStatus ? "default" : "destructive"
     });
   };
@@ -113,7 +114,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
           <Settings2 className="h-5 w-5 mr-2" />
           Controles del Bot y Estrategia
         </CardTitle>
-        <CardDescription className="text-muted-foreground">Configura los parámetros del bot y genera señales de trading con IA.</CardDescription>
+        <CardDescription className="text-muted-foreground">Configura los parámetros y genera señales con IA. La ejecución de trades es simulada.</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -125,12 +126,20 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
                 type="button"
                 variant={isBotRunning ? "destructive" : "default"}
                 onClick={toggleBotStatus}
-                className="w-[150px] font-semibold"
+                className="w-[170px] font-semibold" // Ajustado ancho para nuevo texto
               >
                 <Power className="mr-2 h-4 w-4" />
                 {isBotRunning ? "Detener Bot" : "Iniciar Bot"}
               </Button>
             </div>
+             <Alert variant="default" className="bg-accent/10 border-accent/30 text-accent-foreground/80">
+              <Info className="h-4 w-4 !text-accent" />
+              <AlertTitle className="text-sm font-semibold text-accent">Modo Simulación</AlertTitle>
+              <AlertDescription className="text-xs">
+                La generación de señales es bajo demanda. La ejecución automática de trades y el funcionamiento continuo del bot requerirían integración con un exchange real.
+              </AlertDescription>
+            </Alert>
+
 
             <FormField
               control={form.control}
@@ -151,7 +160,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="cryptocurrency"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center text-muted-foreground"><Repeat className="h-4 w-4 mr-1" />Criptomoneda</FormLabel>
+                  <FormLabel className="flex items-center text-muted-foreground"><Repeat className="h-4 w-4 mr-1" />Criptomoneda (para análisis IA)</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger className="bg-input text-foreground">
@@ -165,6 +174,9 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
                       <SelectItem value="ADA">Cardano (ADA)</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormDescription className="text-xs text-muted-foreground/70">
+                    Esta selección es para la IA. El mercado de trading se elige arriba.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -175,7 +187,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="strategy"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center text-muted-foreground"><Waypoints className="h-4 w-4 mr-1" />Estrategia de Trading</FormLabel>
+                  <FormLabel className="flex items-center text-muted-foreground"><Waypoints className="h-4 w-4 mr-1" />Estrategia de Trading (IA)</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger className="bg-input text-foreground">
@@ -198,7 +210,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="riskLevel"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center text-muted-foreground"><ShieldCheck className="h-4 w-4 mr-1" />Nivel de Riesgo</FormLabel>
+                  <FormLabel className="flex items-center text-muted-foreground"><ShieldCheck className="h-4 w-4 mr-1" />Nivel de Riesgo (IA)</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger className="bg-input text-foreground">
@@ -221,12 +233,12 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="historicalData"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-muted-foreground">Datos Históricos de Precios (JSON)</FormLabel>
+                  <FormLabel className="text-muted-foreground">Datos Históricos de Precios (JSON para IA)</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="Ingresa datos históricos como cadena JSON" {...field} rows={5} className="font-mono text-xs bg-input text-foreground placeholder:text-muted-foreground/70"/>
+                    <Textarea placeholder="Ingresa datos históricos como cadena JSON" {...field} rows={3} className="font-mono text-xs bg-input text-foreground placeholder:text-muted-foreground/70"/>
                   </FormControl>
                   <FormDescription className="text-muted-foreground/80">
-                    Pega los datos históricos de precios. Cada objeto debe contener timestamp, open, high, low, close y volume.
+                    Pega los datos para el análisis de la IA. Deben contener timestamp, open, high, low, close, volume.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

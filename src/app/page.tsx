@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LineChart, PackageSearch } from "lucide-react";
+import { LineChart, PackageSearch, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function TradingPlatformPage() {
@@ -34,8 +34,10 @@ export default function TradingPlatformPage() {
   useEffect(() => {
     const initialQuote = Math.random() * 25000 + 5000;
     setAvailableQuoteBalance(initialQuote);
-    setCurrentBaseAssetBalance(Math.random() * (selectedMarket.baseAsset === 'BTC' ? 0.5 : 10) + 0.1); // Balance inicial para el activo base del mercado por defecto
-  }, [selectedMarket.baseAsset]);
+    // Simular un balance inicial para el activo base del mercado por defecto
+    const defaultMarketBaseBalance = Math.random() * (mockMarkets[0].baseAsset === 'BTC' ? 0.5 : 10) + 0.1;
+    setCurrentBaseAssetBalance(defaultMarketBaseBalance);
+  }, []);
 
 
   const handleMarketChange = (marketId: string) => {
@@ -82,12 +84,12 @@ export default function TradingPlatformPage() {
     const newTrade: Trade = {
       id: (tradeHistory.length + 1).toString() + Date.now().toString(), // ID más único
       date: new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-      type: orderData.type === 'buy' ? 'Buy' : 'Sell',
+      type: orderData.type === 'buy' ? 'Compra' : 'Venta', // Traducido
       asset: selectedMarket.name,
       amount: orderData.amount,
       price: priceToUse,
       total: totalCostOrProceeds,
-      status: 'Filled', // Simular como completado
+      status: 'Completado', // Simular como completado, traducido
     };
 
     if (orderData.type === 'buy') {
@@ -135,7 +137,54 @@ export default function TradingPlatformPage() {
       <main className="flex-1">
         <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem)]"> {/* 4rem es la altura del header */}
           
-          <aside className="col-span-12 md:col-span-3 p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto">
+          {/* Columna Izquierda (antes derecha) */}
+          <aside className="col-span-12 md:col-span-3 p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto">
+            <ScrollArea className="flex-1 pr-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center"><PackageSearch className="w-4 h-4 mr-2"/>Libro de Órdenes</CardTitle>
+                  <CardDescription className="text-xs">Visualización del Libro de Órdenes (Simulación Avanzada - Próximamente).</CardDescription>
+                </CardHeader>
+                <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+                  (Simulación de Libro de Órdenes)
+                </CardContent>
+              </Card>
+              <Separator className="my-2" />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center"><LineChart className="w-4 h-4 mr-2"/>Trades del Mercado</CardTitle>
+                   <CardDescription className="text-xs">Últimas transacciones en el mercado (Simulación Avanzada - Próximamente).</CardDescription>
+                </CardHeader>
+                <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+                   (Simulación de Trades del Mercado)
+                </CardContent>
+              </Card>
+              <Separator className="my-2" />
+              <TradeHistoryTable trades={tradeHistory} />
+            </ScrollArea>
+          </aside>
+
+          {/* Columna Central (Gráfico y Formulario de Órdenes) */}
+          <section className="col-span-12 md:col-span-6 p-1 md:p-2 flex flex-col gap-2">
+            <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
+              <MarketPriceChart
+                marketId={selectedMarket.id}
+                marketName={selectedMarket.name}
+                priceHistory={mockMarketPriceHistory[selectedMarket.id] || []}
+              />
+            </div>
+            <div className="flex-grow-[2] min-h-[280px] md:min-h-0">
+              <OrderForm
+                market={selectedMarket}
+                balanceQuoteAsset={availableQuoteBalance || 0}
+                balanceBaseAsset={currentBaseAssetBalance}
+                onSubmit={handlePlaceOrder}
+              />
+            </div>
+          </section>
+
+          {/* Columna Derecha (antes izquierda) */}
+          <aside className="col-span-12 md:col-span-3 p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto">
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
                 markets={mockMarkets}
@@ -158,73 +207,29 @@ export default function TradingPlatformPage() {
                 </TabsContent>
                 <TabsContent value="balance">
                   <BalanceCard balance={availableQuoteBalance} asset={`${selectedMarket.quoteAsset} (Total Estimado)`} />
-                   {/* Podríamos añadir aquí el balance del activo base si quisiéramos */}
+                  {/* Información del activo actual - movida aquí para consistencia */}
+                  {selectedMarket && (
+                     <Card className="mt-4">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-lg flex items-center"><Info className="w-4 h-4 mr-2 text-primary"/>{selectedMarket.name}</CardTitle>
+                          <CardDescription>Información del Activo (Simulada)</CardDescription>
+                        </CardHeader>
+                        <CardContent className="text-sm space-y-1">
+                          <p>Precio Actual: <span className="font-semibold text-primary">${selectedMarket.latestPrice?.toLocaleString() || 'N/A'}</span></p>
+                          <p>Cambio 24h: <span className={ (selectedMarket.change24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{selectedMarket.change24h?.toFixed(2) || 'N/A'}%</span></p>
+                          <p>Volumen 24h (Simulado): ${(Math.random() * 100000000).toLocaleString(undefined, {maximumFractionDigits:0})}</p>
+                        </CardContent>
+                      </Card>
+                  )}
                 </TabsContent>
               </Tabs>
              
-              {selectedMarket && (
-                 <Card className="mt-4">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-lg">{selectedMarket.name}</CardTitle>
-                      <CardDescription>Información del Activo (Simulada)</CardDescription>
-                    </CardHeader>
-                    <CardContent className="text-sm space-y-1">
-                      <p>Precio Actual: <span className="font-semibold text-primary">${selectedMarket.latestPrice?.toLocaleString() || 'N/A'}</span></p>
-                      <p>Cambio 24h: <span className={ (selectedMarket.change24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{selectedMarket.change24h?.toFixed(2) || 'N/A'}%</span></p>
-                      <p>Volumen 24h (Simulado): ${(Math.random() * 100000000).toLocaleString()}</p>
-                    </CardContent>
-                  </Card>
-              )}
                <Separator className="my-4" />
                <SignalDisplay 
                 signalData={aiSignalData} 
                 isLoading={isLoadingAiSignals}
                 error={aiError}
               />
-            </ScrollArea>
-          </aside>
-
-          <section className="col-span-12 md:col-span-6 p-1 md:p-2 flex flex-col gap-2">
-            <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
-              <MarketPriceChart
-                marketId={selectedMarket.id}
-                marketName={selectedMarket.name}
-                priceHistory={mockMarketPriceHistory[selectedMarket.id] || []}
-              />
-            </div>
-            <div className="flex-grow-[2] min-h-[280px] md:min-h-0">
-              <OrderForm
-                market={selectedMarket}
-                balanceQuoteAsset={availableQuoteBalance || 0}
-                balanceBaseAsset={currentBaseAssetBalance}
-                onSubmit={handlePlaceOrder}
-              />
-            </div>
-          </section>
-
-          <aside className="col-span-12 md:col-span-3 p-1 md:p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto">
-            <ScrollArea className="flex-1 pr-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center"><PackageSearch className="w-4 h-4 mr-2"/>Libro de Órdenes</CardTitle>
-                  <CardDescription className="text-xs">Ofertas de compra y venta.</CardDescription>
-                </CardHeader>
-                <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                  (Libro de órdenes simulado - Próximamente)
-                </CardContent>
-              </Card>
-              <Separator className="my-2" />
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center"><LineChart className="w-4 h-4 mr-2"/>Trades del Mercado</CardTitle>
-                   <CardDescription className="text-xs">Últimas transacciones en el mercado.</CardDescription>
-                </CardHeader>
-                <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                   (Trades del mercado simulados - Próximamente)
-                </CardContent>
-              </Card>
-              <Separator className="my-2" />
-              <TradeHistoryTable trades={tradeHistory} />
             </ScrollArea>
           </aside>
         </div>
@@ -235,3 +240,4 @@ export default function TradingPlatformPage() {
     </div>
   );
 }
+
