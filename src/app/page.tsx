@@ -13,6 +13,7 @@ import { PerformanceChart } from "@/components/dashboard/performance-chart";
 import { handleGenerateSignalsAction } from "./actions";
 import { MarketSelector } from "@/components/trading/market-selector";
 import { MarketPriceChart } from "@/components/trading/market-price-chart";
+// import { OrderForm } from "@/components/trading/order-form"; // Ya no se usa directamente aquí, está en la sección central
 import { OrderForm } from "@/components/trading/order-form";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -113,6 +114,7 @@ export default function TradingPlatformPage() {
 
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+  
   const [isBotRunning, setIsBotRunning] = useState(false);
   const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -125,7 +127,7 @@ export default function TradingPlatformPage() {
       const newBotStatus = !prev;
       toast({
         title: `Bot ${newBotStatus ? "Iniciado" : "Detenido"}`,
-        description: `El bot de trading ahora está ${newBotStatus ? "activo" : "inactivo"} (Simulación).`,
+        description: `El bot de trading ahora está ${newBotStatus ? "activo (simulación)" : "inactivo (simulación)"}.`,
         variant: newBotStatus ? "default" : "destructive",
       });
       return newBotStatus;
@@ -145,53 +147,65 @@ export default function TradingPlatformPage() {
     setAiSignalEvents([]);
     setSmaCrossoverEvents([]);
     setCurrentSimulatedPosition(null); 
-  }, [selectedMarket]);
+    // Si el bot está corriendo y se cambia de mercado, limpiar intervalo y que se reinicie en el efecto del bot
+    if (isBotRunning && botIntervalRef.current) {
+        console.log("Cambio de mercado con bot activo, reiniciando ciclo IA para nuevo mercado.");
+        clearInterval(botIntervalRef.current);
+        botIntervalRef.current = null; 
+        // El useEffect de isBotRunning se encargará de reiniciar el intervalo
+    }
+  }, [selectedMarket, isBotRunning]); // Agregado isBotRunning para que el intervalo se reinicie si es necesario
 
   
   useEffect(() => {
-    if (isBotRunning) {
-      const runAutoSignalGeneration = async () => {
-        if (isLoadingAiSignals) {
-          console.log("Ciclo automático IA: Esperando que termine la generación anterior.");
-          return;
-        }
-        console.log("Ciclo automático IA: Iniciando generación de señales para", selectedMarket.baseAsset);
-        toast({
-          title: "Ciclo Automático IA",
-          description: `El bot está analizando ${selectedMarket.name}...`,
-          variant: "default",
-          duration: 5000, 
-        });
-        
-        
-        const autoSignalInput: GenerateTradingSignalsInput = {
-          historicalData: exampleHistoricalDataForAI, 
-          strategy: "movingAverage", 
-          riskLevel: "medium", 
-          cryptocurrencyForAI: selectedMarket.baseAsset,
-        };
-        await generateSignalsActionWrapper(autoSignalInput, true); 
+    const runAutoSignalGeneration = async () => {
+      if (isLoadingAiSignals) {
+        console.log("Ciclo automático IA: Esperando que termine la generación anterior.");
+        return;
+      }
+      console.log("Ciclo automático IA: Iniciando generación de señales para", selectedMarket.baseAsset);
+      toast({
+        title: "Ciclo Automático IA",
+        description: `El bot está analizando ${selectedMarket.name}...`,
+        variant: "default",
+        duration: 3000, 
+      });
+      
+      const autoSignalInput: GenerateTradingSignalsInput = {
+        historicalData: exampleHistoricalDataForAI, 
+        strategy: "movingAverage", 
+        riskLevel: "medium", 
+        cryptocurrencyForAI: selectedMarket.baseAsset,
       };
+      await generateSignalsActionWrapper(autoSignalInput, true); 
+    };
 
-      
-      runAutoSignalGeneration(); 
-      
+    if (isBotRunning) {
+      console.log("Bot iniciado, configurando intervalo para", selectedMarket.name);
+      // Limpiar cualquier intervalo existente antes de crear uno nuevo
+      if (botIntervalRef.current) {
+          clearInterval(botIntervalRef.current);
+      }
+      runAutoSignalGeneration(); // Ejecutar una vez inmediatamente
       botIntervalRef.current = setInterval(runAutoSignalGeneration, BOT_AUTO_SIGNAL_INTERVAL_MS);
     } else {
       if (botIntervalRef.current) {
+        console.log("Bot detenido, limpiando intervalo.");
         clearInterval(botIntervalRef.current);
         botIntervalRef.current = null;
-        console.log("Ciclo automático IA: Detenido.");
       }
     }
     
+    // Función de limpieza para cuando el componente se desmonte o las dependencias cambien
     return () => {
       if (botIntervalRef.current) {
+        console.log("Limpiando intervalo del bot (desmontaje o cambio de dependencias).");
         clearInterval(botIntervalRef.current);
         botIntervalRef.current = null;
       }
     };
-  }, [isBotRunning, selectedMarket, isLoadingAiSignals]); 
+  // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, [isBotRunning, selectedMarket.id]); // Quitado isLoadingAiSignals de aquí, se maneja dentro de runAutoSignalGeneration. selectedMarket.id para reiniciar si cambia el mercado.
 
 
   const handleMarketChange = (marketId: string) => {
@@ -284,6 +298,7 @@ export default function TradingPlatformPage() {
  const handleSignalsGenerated = (data: AISignalData, isAutoCall: boolean = false) => {
     setAiSignalData(data);
     setAiError(null);
+    let operationsSimulatedByAI = 0;
 
     let parsedSignalsArray: ParsedSignals | null = null;
     try {
@@ -292,7 +307,7 @@ export default function TradingPlatformPage() {
         parsedSignalsArray = rawParsed as ParsedSignals;
       } else {
         let errorDetail = "Los datos de señales de IA no son un array válido de objetos de señal.";
-        if (Array.isArray(rawParsed)) {
+        if (Array.isArray(rawParsed) && rawParsed.length > 0 && !rawParsed.every(isValidSignalItem)) { // Verifica si es array pero los items son inválidos
             errorDetail = "Uno o más objetos de señal tienen un formato incorrecto (esperado: {signal: 'BUY'|'SELL'|'HOLD', confidence: number}).";
         }
         console.error("Error al analizar señales JSON para eventos de gráfico:", errorDetail, "Datos recibidos:", data.signals);
@@ -304,14 +319,14 @@ export default function TradingPlatformPage() {
               variant: "destructive",
           });
         }
-        setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: "Error al procesar señales."});
+        setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: prev?.explanation || "Error al procesar señales."});
         return; 
       }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Formato de señales JSON inesperado.";
       console.error("Error al analizar señales JSON en page.tsx:", errorMsg, "Datos recibidos:", data.signals);
       setAiError(`Error de formato en señales de IA: ${errorMsg}. Revise la consola para más detalles.`);
-      setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: "Error al procesar señales."});
+      setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: prev?.explanation || "Error al procesar señales."});
       if (!isAutoCall) { 
         toast({
           title: "Error de Formato de Señal IA",
@@ -360,6 +375,7 @@ export default function TradingPlatformPage() {
           };
           const success = handlePlaceOrder(simulatedOrder, true); 
           if (success) {
+               operationsSimulatedByAI++;
                console.log(`IA simuló un trade ${signal.signal} de ${tradeAmount} ${selectedMarket.baseAsset} con confianza ${signal.confidence}`);
                toast({
                   title: `IA Simuló ${signal.signal === 'BUY' ? 'Compra' : 'Venta'} Exitosa`,
@@ -368,6 +384,7 @@ export default function TradingPlatformPage() {
                });
           } else {
             console.warn(`IA intentó simular un trade ${signal.signal} de ${tradeAmount} ${selectedMarket.baseAsset} pero falló (ej. fondos insuficientes).`);
+             // Mostrar toast de intento fallido solo si es una llamada manual o si es una señal BUY/SELL en ciclo automático
              if (!isAutoCall || (isAutoCall && (signal.signal === 'BUY' || signal.signal === 'SELL'))) { 
                  toast({
                     title: `IA Intentó ${signal.signal === 'BUY' ? 'Comprar' : 'Vender'} (Fallido)`,
@@ -377,9 +394,29 @@ export default function TradingPlatformPage() {
                  });
              }
           }
-          break; 
+          break; // Simular solo el primer trade de alta confianza
         }
       }
+    }
+     if (isAutoCall && operationsSimulatedByAI === 0 && parsedSignalsArray && parsedSignalsArray.length > 0) {
+        // Si es una llamada automática y no se simuló ninguna operación PERO la IA sí dio señales (aunque no de alta confianza, o solo HOLD)
+        const hasActionableSignal = parsedSignalsArray.some(s => s.signal === 'BUY' || s.signal === 'SELL');
+        if (!hasActionableSignal || parsedSignalsArray.every(s => s.signal === 'HOLD' || s.confidence < AI_TRADE_CONFIDENCE_THRESHOLD)) {
+             toast({
+                title: `Ciclo IA: ${selectedMarket.name}`,
+                description: "Análisis completado, sin nuevas operaciones de alta confianza.",
+                variant: "default",
+                duration: 5000,
+            });
+        }
+    } else if (isAutoCall && operationsSimulatedByAI === 0 && (!parsedSignalsArray || parsedSignalsArray.length === 0)) {
+        // Si es una llamada automática y no hubo señales en absoluto (array vacío o nulo después del parseo)
+        toast({
+            title: `Ciclo IA: ${selectedMarket.name}`,
+            description: "Análisis completado, la IA no identificó señales específicas.",
+            variant: "default",
+            duration: 5000,
+        });
     }
   };
 
@@ -395,7 +432,12 @@ export default function TradingPlatformPage() {
         });
     } else {
         console.error("Error en ciclo automático de IA:", errorMsg);
-         
+        toast({
+            title: "Error en Ciclo IA",
+            description: `Fallo al analizar ${selectedMarket.name}. Reintentando...`,
+            variant: "destructive",
+            duration: 3000,
+        });
     }
   };
 
@@ -409,8 +451,9 @@ export default function TradingPlatformPage() {
     if (!isAutoCall) { 
         setIsLoadingAiSignals(true);
         setAiError(null);
-        setAiSignalData(null);
+        setAiSignalData(null); // Limpiar datos antiguos al generar manualmente
     } else {
+        // No limpiar aiSignalData aquí para que la UI no parpadee si el usuario está viendo señales antiguas
         setIsLoadingAiSignals(true); 
     }
 
@@ -420,8 +463,10 @@ export default function TradingPlatformPage() {
         cryptocurrencyForAI: input.cryptocurrencyForAI || selectedMarket.baseAsset,
       };
       const result = await handleGenerateSignalsAction(completeInput);
+      
       if (typeof result.signals !== 'string' || typeof result.explanation !== 'string') {
-        throw new Error("La respuesta de la IA no tiene la estructura esperada (signals/explanation strings).");
+        console.error("Respuesta de IA inválida (faltan signals/explanation strings):", result);
+        throw new Error("La respuesta de la IA no tiene la estructura esperada.");
       }
       handleSignalsGenerated(result, isAutoCall);
     } catch (error) {
@@ -464,13 +509,13 @@ export default function TradingPlatformPage() {
       <main className="flex-1">
         <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem-2rem)]"> 
 
-          
+          {/* Columna Izquierda (antes Derecha) */}
           <aside className={`col-span-12 ${isLeftSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center"><PackageSearch className="w-4 h-4 mr-2"/>Libro de Órdenes</CardTitle>
-                  <CardDescription className="text-xs">Visualización del Libro de Órdenes (Simulación Avanzada - Próximamente).</CardDescription>
+                  <CardDescription className="text-xs">Visualización del Libro de Órdenes (Simulación Avanzada - Próximamente). Muestra la profundidad del mercado con ofertas de compra y venta a diferentes niveles de precio.</CardDescription>
                 </CardHeader>
                 <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
                   (Simulación de Libro de Órdenes)
@@ -480,7 +525,7 @@ export default function TradingPlatformPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center"><LineChart className="w-4 h-4 mr-2"/>Trades del Mercado</CardTitle>
-                   <CardDescription className="text-xs">Últimas transacciones en el mercado (Simulación Avanzada - Próximamente).</CardDescription>
+                   <CardDescription className="text-xs">Últimas transacciones realizadas en el mercado (Simulación Avanzada - Próximamente). Refleja la actividad comercial reciente.</CardDescription>
                 </CardHeader>
                 <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
                    (Simulación de Trades del Mercado)
@@ -491,7 +536,7 @@ export default function TradingPlatformPage() {
             </ScrollArea>
           </aside>
 
-          
+          {/* Columna Central */}
           <section className={`col-span-12 ${centralColSpan} p-1 md:p-2 flex flex-col gap-2 transition-all duration-300 ease-in-out`}>
             <div className="flex-grow-[3] min-h-[300px] md:min-h-0"> 
               <MarketPriceChart
@@ -499,8 +544,8 @@ export default function TradingPlatformPage() {
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
                 initialPriceHistory={currentMarketPriceHistory}
-                aiSignalEvents={aiSignalEvents}
-                smaCrossoverEvents={smaCrossoverEvents}
+                aiSignalEvents={aiSignalEvents} // Pasar aiSignalEvents
+                smaCrossoverEvents={smaCrossoverEvents} // Pasar smaCrossoverEvents
                 onSmaCrossoverGenerated={(event) => setSmaCrossoverEvents(prev => [...prev, event].slice(-MAX_SMA_CROSSOVER_EVENTS_ON_CHART))}
               />
             </div>
@@ -515,7 +560,7 @@ export default function TradingPlatformPage() {
             </div>
           </section>
 
-          
+          {/* Columna Derecha (antes Izquierda) */}
           <aside className={`col-span-12 ${isRightSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
@@ -588,9 +633,9 @@ export default function TradingPlatformPage() {
                             <ul className="list-disc pl-5 space-y-1">
                               <li><strong>Tendencia a Corto Plazo:</strong> Al ser una media de corto plazo, reacciona rápidamente a los cambios recientes en el precio, ayudando a identificar la dirección inmediata del mercado.</li>
                               <li><strong>Suavizar Ruido:</strong> Ayuda a filtrar fluctuaciones muy pequeñas y momentáneas del precio, ofreciendo una visión un poco más clara de la tendencia subyacente.</li>
-                              <li><strong>Posibles Señales:</strong> El cruce del precio por encima o por debajo de la SMA 10 puede ser usado por algunos traders como una indicación temprana de un cambio de dirección.</li>
+                              <li><strong>Posibles Señales:</strong> El cruce del precio por encima o por debajo de la SMA 10 puede ser usado por algunos traders como una indicación temprana de un cambio de dirección. Los cruces con otras SMAs (ej. SMA 20) pueden generar señales más robustas.</li>
                             </ul>
-                             <p className="mt-2"><strong>Ejemplo práctico:</strong> Si el precio cruza hacia arriba la SMA 10 después de haber estado por debajo, podría indicar una fortaleza compradora emergente. Si cruza hacia abajo, debilidad.</p>
+                             <p className="mt-2"><strong>Ejemplo práctico:</strong> Si el precio cruza hacia arriba la SMA 10 después de haber estado por debajo, podría indicar una fortaleza compradora emergente. Si cruza hacia abajo, debilidad. Un cruce de la SMA10 por encima de la SMA20 se considera una señal de compra (Cruce Dorado), y viceversa para venta (Cruce de la Muerte).</p>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma20">
@@ -635,6 +680,32 @@ export default function TradingPlatformPage() {
                               <li><strong>Soporte y Resistencia Dinámicos:</strong> Las SMAs pueden actuar como niveles donde el precio puede encontrar soporte (en una tendencia alcista) o resistencia (en una tendencia bajista). Un rebote en una SMA puede ser una señal de continuación de tendencia.</li>
                             </ul>
                             <p className="mt-2"><strong>Importante:</strong> Las SMAs son indicadores rezagados (se basan en precios pasados) y funcionan mejor en mercados con tendencia. En mercados laterales o muy volátiles, pueden generar señales falsas. No existe una configuración única que funcione para todos los activos o condiciones de mercado. Los traders suelen combinar SMAs con otros indicadores y análisis para tomar decisiones.</p>
+                          </AccordionContent>
+                        </AccordionItem>
+                         <AccordionItem value="ai-signals">
+                          <AccordionTrigger>Señales de IA (Puntos Verde/Rojo Sólido)</AccordionTrigger>
+                          <AccordionContent>
+                            <p className="mb-2">Los puntos <strong>verdes sólidos</strong> (COMPRA) y <strong>rojos sólidos</strong> (VENTA) en el gráfico representan las señales generadas por el análisis de la IA.</p>
+                            <p className="mb-2"><strong>Cómo se generan:</strong> Cuando solicitas un análisis ("Generar Señales con IA"), el sistema envía los datos históricos (de ejemplo), la estrategia seleccionada y el nivel de riesgo a un modelo de IA. La IA procesa esta información y devuelve recomendaciones.</p>
+                            <p className="mb-2"><strong>Interpretación:</strong></p>
+                            <ul className="list-disc pl-5 space-y-1">
+                              <li>Un <strong>punto verde sólido</strong> aparece en el precio y momento en que la IA identificó una oportunidad de COMPRA con una confianza igual o superior al umbral definido (`AI_TRADE_CONFIDENCE_THRESHOLD`). Si el bot está "iniciado", intentará simular una compra.</li>
+                              <li>Un <strong>punto rojo sólido</strong> aparece de manera similar para una señal de VENTA.</li>
+                              <li>El tooltip sobre estos puntos te dará el tipo de señal, el precio, la confianza y la hora.</li>
+                            </ul>
+                            <p className="mt-2">Estas señales son el resultado del análisis de la IA y pueden ser diferentes de las señales puramente técnicas como los cruces de SMA.</p>
+                          </AccordionContent>
+                        </AccordionItem>
+                        <AccordionItem value="sma-crossover-signals">
+                          <AccordionTrigger>Señales de Cruce SMA (Puntos Verde/Rojo Claro)</AccordionTrigger>
+                          <AccordionContent>
+                            <p className="mb-2">Los puntos <strong>verdes claros</strong> y <strong>rojos claros</strong> en el gráfico indican los momentos en que la Media Móvil Simple de 10 períodos (SMA 10) ha cruzado la Media Móvil Simple de 20 períodos (SMA 20).</p>
+                            <p className="mb-2"><strong>Interpretación:</strong></p>
+                            <ul className="list-disc pl-5 space-y-1">
+                              <li>Un <strong>punto verde claro</strong> (Cruce SMA: COMPRAR) aparece cuando la SMA 10 (línea más rápida) cruza por encima de la SMA 20 (línea más lenta). Esto es a menudo considerado por los analistas técnicos como una señal alcista o "Cruce Dorado".</li>
+                              <li>Un <strong>punto rojo claro</strong> (Cruce SMA: VENDER) aparece cuando la SMA 10 cruza por debajo de la SMA 20. Esto es a menudo considerado una señal bajista o "Cruce de la Muerte".</li>
+                            </ul>
+                            <p className="mt-2">Estas señales son puramente técnicas, basadas en el comportamiento de las medias móviles. No son generadas por la IA directamente, sino calculadas por la lógica del gráfico. Pueden o no coincidir con las señales de la IA.</p>
                           </AccordionContent>
                         </AccordionItem>
                       </Accordion>
