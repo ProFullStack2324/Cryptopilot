@@ -2,8 +2,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { AISignalData, Market, OrderFormData } from "@/lib/types";
-import { mockMarkets, mockMarketPriceHistory } from "@/lib/types"; // Importar mercados
+import type { AISignalData, Market, OrderFormData, Trade } from "@/lib/types";
+import { mockMarkets, mockMarketPriceHistory, initialMockTrades } from "@/lib/types";
 import { AppHeader } from "@/components/dashboard/header";
 import { BalanceCard } from "@/components/dashboard/balance-card";
 import { TradeHistoryTable } from "@/components/dashboard/trade-history-table";
@@ -18,27 +18,33 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LineChart, PackageSearch } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function TradingPlatformPage() {
   const [selectedMarket, setSelectedMarket] = useState<Market>(mockMarkets[0]);
   const [aiSignalData, setAiSignalData] = useState<AISignalData | null>(null);
   const [isLoadingAiSignals, setIsLoadingAiSignals] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const { toast } = useToast();
   
-  // Simulación de saldo general
-  const [totalBalanceUSD, setTotalBalanceUSD] = useState<number | null>(null);
+  const [availableQuoteBalance, setAvailableQuoteBalance] = useState<number | null>(null); // Ej: USD
+  const [currentBaseAssetBalance, setCurrentBaseAssetBalance] = useState<number>(0); // Ej: BTC, ETH del mercado seleccionado
+  const [tradeHistory, setTradeHistory] = useState<Trade[]>(initialMockTrades);
 
   useEffect(() => {
-    // Simula la obtención del saldo
-    setTotalBalanceUSD(Math.random() * 25000 + 5000); 
-  }, []);
+    const initialQuote = Math.random() * 25000 + 5000;
+    setAvailableQuoteBalance(initialQuote);
+    setCurrentBaseAssetBalance(Math.random() * (selectedMarket.baseAsset === 'BTC' ? 0.5 : 10) + 0.1); // Balance inicial para el activo base del mercado por defecto
+  }, [selectedMarket.baseAsset]);
 
 
   const handleMarketChange = (marketId: string) => {
     const newMarket = mockMarkets.find(m => m.id === marketId);
     if (newMarket) {
       setSelectedMarket(newMarket);
-      clearSignalData(); // Limpiar señales de IA al cambiar de mercado
+      clearSignalData();
+      // Simular un balance diferente para el activo base del nuevo mercado
+      setCurrentBaseAssetBalance(Math.random() * (newMarket.baseAsset === 'BTC' ? 0.5 : 10) + 0.1);
     }
   };
 
@@ -70,10 +76,57 @@ export default function TradingPlatformPage() {
   };
 
   const handlePlaceOrder = (orderData: OrderFormData) => {
-    console.log("Nueva Orden (Simulada):", orderData);
-    // Aquí, en una app real, se llamaría a una API para colocar la orden.
-    // Podríamos simular la actualización del balance o historial de trades.
-    alert(`Orden ${orderData.type.toUpperCase()} de ${orderData.amount} ${selectedMarket.baseAsset} a ${orderData.price ? orderData.price : 'mercado'} ${orderData.orderType === 'limit' ? '(Límite)' : '(Mercado)'} para ${selectedMarket.name} enviada (simulado).`);
+    const priceToUse = orderData.price || selectedMarket.latestPrice || 0;
+    const totalCostOrProceeds = orderData.amount * priceToUse;
+
+    const newTrade: Trade = {
+      id: (tradeHistory.length + 1).toString() + Date.now().toString(), // ID más único
+      date: new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      type: orderData.type === 'buy' ? 'Buy' : 'Sell',
+      asset: selectedMarket.name,
+      amount: orderData.amount,
+      price: priceToUse,
+      total: totalCostOrProceeds,
+      status: 'Filled', // Simular como completado
+    };
+
+    if (orderData.type === 'buy') {
+      if (availableQuoteBalance !== null && availableQuoteBalance >= totalCostOrProceeds) {
+        setAvailableQuoteBalance(availableQuoteBalance - totalCostOrProceeds);
+        setCurrentBaseAssetBalance(currentBaseAssetBalance + orderData.amount);
+        setTradeHistory(prev => [newTrade, ...prev]);
+        toast({
+          title: "Orden de Compra (Simulada) Exitosa",
+          description: `Comprados ${orderData.amount} ${selectedMarket.baseAsset} a $${priceToUse.toFixed(2)}`,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "Fondos Insuficientes (Simulado)",
+          description: `No tienes suficiente ${selectedMarket.quoteAsset} para comprar ${orderData.amount} ${selectedMarket.baseAsset}.`,
+          variant: "destructive"
+        });
+        return;
+      }
+    } else { // Venta
+      if (currentBaseAssetBalance >= orderData.amount) {
+        setCurrentBaseAssetBalance(currentBaseAssetBalance - orderData.amount);
+        setAvailableQuoteBalance((availableQuoteBalance || 0) + totalCostOrProceeds);
+        setTradeHistory(prev => [newTrade, ...prev]);
+        toast({
+          title: "Orden de Venta (Simulada) Exitosa",
+          description: `Vendidos ${orderData.amount} ${selectedMarket.baseAsset} a $${priceToUse.toFixed(2)}`,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "Fondos Insuficientes (Simulado)",
+          description: `No tienes suficiente ${selectedMarket.baseAsset} para vender ${orderData.amount}.`,
+          variant: "destructive"
+        });
+        return;
+      }
+    }
   };
 
   return (
@@ -82,7 +135,6 @@ export default function TradingPlatformPage() {
       <main className="flex-1">
         <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem)]"> {/* 4rem es la altura del header */}
           
-          {/* Columna Izquierda: Selector de Mercado y Controles de IA */}
           <aside className="col-span-12 md:col-span-3 p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto">
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
@@ -105,7 +157,8 @@ export default function TradingPlatformPage() {
                   />
                 </TabsContent>
                 <TabsContent value="balance">
-                  <BalanceCard balance={totalBalanceUSD} asset="USD (Total Estimado)" />
+                  <BalanceCard balance={availableQuoteBalance} asset={`${selectedMarket.quoteAsset} (Total Estimado)`} />
+                   {/* Podríamos añadir aquí el balance del activo base si quisiéramos */}
                 </TabsContent>
               </Tabs>
              
@@ -131,7 +184,6 @@ export default function TradingPlatformPage() {
             </ScrollArea>
           </aside>
 
-          {/* Columna Central: Gráfico y Formulario de Órdenes */}
           <section className="col-span-12 md:col-span-6 p-1 md:p-2 flex flex-col gap-2">
             <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
               <MarketPriceChart
@@ -143,14 +195,13 @@ export default function TradingPlatformPage() {
             <div className="flex-grow-[2] min-h-[280px] md:min-h-0">
               <OrderForm
                 market={selectedMarket}
-                balanceUSD={totalBalanceUSD || 0} // Simulado
-                baseAssetBalance={Math.random() * 10} // Simulado
+                balanceQuoteAsset={availableQuoteBalance || 0}
+                balanceBaseAsset={currentBaseAssetBalance}
                 onSubmit={handlePlaceOrder}
               />
             </div>
           </section>
 
-          {/* Columna Derecha: Libro de Órdenes (Placeholder) e Historial de Trades */}
           <aside className="col-span-12 md:col-span-3 p-1 md:p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto">
             <ScrollArea className="flex-1 pr-2">
               <Card>
@@ -173,12 +224,11 @@ export default function TradingPlatformPage() {
                 </CardContent>
               </Card>
               <Separator className="my-2" />
-              <TradeHistoryTable />
+              <TradeHistoryTable trades={tradeHistory} />
             </ScrollArea>
           </aside>
         </div>
       </main>
-      {/* El footer podría eliminarse o simplificarse para un look de plataforma */}
        <footer className="py-2 text-center text-xs text-muted-foreground border-t border-border">
         © {new Date().getFullYear()} CryptoPilot (Simulación). Precios y balances no reales.
       </footer>
