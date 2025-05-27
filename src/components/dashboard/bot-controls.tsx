@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Power, Settings2, DollarSign, Repeat, Waypoints, ShieldCheck, Sparkles, Loader2, BrainCircuit, Info } from "lucide-react";
+import { Power, Settings2, DollarSign, Repeat, Waypoints, ShieldCheck, BrainCircuit, Info, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const exampleHistoricalData = JSON.stringify([
@@ -28,7 +28,7 @@ const exampleHistoricalData = JSON.stringify([
 
 const formSchema = z.object({
   amountPerTrade: z.coerce.number().min(1, "La cantidad debe ser al menos 1 USD."),
-  cryptocurrency: z.string().min(1, "Por favor, selecciona una criptomoneda."),
+  cryptocurrencyForAI: z.string().min(1, "Por favor, selecciona una criptomoneda para el análisis de IA."),
   strategy: z.enum(['movingAverage', 'rsi', 'bollingerBands'], { required_error: "Por favor, selecciona una estrategia."}),
   riskLevel: z.enum(['high', 'medium', 'low'], { required_error: "Por favor, selecciona un nivel de riesgo."}),
   historicalData: z.string().refine(data => {
@@ -48,9 +48,10 @@ interface BotControlsProps {
   onGenerationError: (errorMsg: string) => void;
   clearSignalData: () => void;
   generateSignalsAction: (input: GenerateTradingSignalsInput) => Promise<GenerateTradingSignalsOutput>;
+  selectedMarketSymbol: string; 
 }
 
-export function BotControls({ onSignalsGenerated, onGenerationError, clearSignalData, generateSignalsAction }: BotControlsProps) {
+export function BotControls({ onSignalsGenerated, onGenerationError, clearSignalData, generateSignalsAction, selectedMarketSymbol }: BotControlsProps) {
   const [isBotRunning, setIsBotRunning] = useState(false);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
@@ -59,12 +60,17 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
     resolver: zodResolver(formSchema),
     defaultValues: {
       amountPerTrade: 100,
-      cryptocurrency: "BTC",
+      cryptocurrencyForAI: selectedMarketSymbol || "BTC",
       strategy: "movingAverage",
       riskLevel: "medium",
       historicalData: exampleHistoricalData,
     },
   });
+
+  useEffect(() => {
+    form.setValue("cryptocurrencyForAI", selectedMarketSymbol || "BTC");
+  }, [selectedMarketSymbol, form]);
+
 
  const onSubmit: SubmitHandler<BotControlsFormValues> = async (data) => {
     clearSignalData();
@@ -97,12 +103,12 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
 
   const toggleBotStatus = () => {
     const newBotStatus = !isBotRunning;
-    setIsBotRunning(newBotStatus);
-    
+    setIsBotRunning(newBotStatus); 
+
     toast({
       title: `Bot ${newBotStatus ? "Iniciado (Simulación)" : "Detenido (Simulación)"}`,
-      description: `El bot de trading ahora está ${newBotStatus ? "activo" : "inactivo"} en modo simulación. Las operaciones no son reales.`,
-       variant: newBotStatus ? "default" : "destructive"
+      description: `El bot de trading ahora está ${newBotStatus ? "activo" : "inactivo"} en modo simulación. La ejecución de trades es solo bajo demanda y simulada.`,
+      variant: newBotStatus ? "default" : "destructive"
     });
   };
 
@@ -112,9 +118,9 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
       <CardHeader>
         <CardTitle className="flex items-center text-primary">
           <Settings2 className="h-5 w-5 mr-2" />
-          Controles del Bot y Estrategia
+          Controles del Bot y Estrategia IA
         </CardTitle>
-        <CardDescription className="text-muted-foreground">Configura los parámetros y genera señales con IA. La ejecución de trades es simulada.</CardDescription>
+        <CardDescription className="text-muted-foreground">Configura parámetros y genera señales con IA. La ejecución de trades es simulada.</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -126,7 +132,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
                 type="button"
                 variant={isBotRunning ? "destructive" : "default"}
                 onClick={toggleBotStatus}
-                className="w-[170px] font-semibold" // Ajustado ancho para nuevo texto
+                className="w-[170px] font-semibold"
               >
                 <Power className="mr-2 h-4 w-4" />
                 {isBotRunning ? "Detener Bot" : "Iniciar Bot"}
@@ -136,7 +142,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               <Info className="h-4 w-4 !text-accent" />
               <AlertTitle className="text-sm font-semibold text-accent">Modo Simulación</AlertTitle>
               <AlertDescription className="text-xs">
-                La generación de señales es bajo demanda. La ejecución automática de trades y el funcionamiento continuo del bot requerirían integración con un exchange real.
+                La generación de señales es bajo demanda por el usuario. La ejecución automática de trades y el funcionamiento continuo del bot requerirían integración con un exchange real.
               </AlertDescription>
             </Alert>
 
@@ -146,7 +152,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
               name="amountPerTrade"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center text-muted-foreground"><DollarSign className="h-4 w-4 mr-1" />Cantidad por Operación (USD)</FormLabel>
+                  <FormLabel className="flex items-center text-muted-foreground"><DollarSign className="h-4 w-4 mr-1" />Cantidad por Operación (USD - Simulado)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="ej: 100" {...field} className="bg-input text-foreground placeholder:text-muted-foreground/70"/>
                   </FormControl>
@@ -157,14 +163,14 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
 
             <FormField
               control={form.control}
-              name="cryptocurrency"
+              name="cryptocurrencyForAI"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center text-muted-foreground"><Repeat className="h-4 w-4 mr-1" />Criptomoneda (para análisis IA)</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger className="bg-input text-foreground">
-                        <SelectValue placeholder="Selecciona una criptomoneda" />
+                        <SelectValue placeholder="Selecciona cripto para IA" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent className="bg-popover text-popover-foreground">
@@ -172,10 +178,12 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
                       <SelectItem value="ETH">Ethereum (ETH)</SelectItem>
                       <SelectItem value="SOL">Solana (SOL)</SelectItem>
                       <SelectItem value="ADA">Cardano (ADA)</SelectItem>
+                      <SelectItem value="XRP">Ripple (XRP)</SelectItem>
+                      <SelectItem value="DOGE">Dogecoin (DOGE)</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormDescription className="text-xs text-muted-foreground/70">
-                    Esta selección es para la IA. El mercado de trading se elige arriba.
+                    Esta selección es para el contexto de la IA. El mercado para operar se elige en "Mercados".
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -204,7 +212,7 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
                 </FormItem>
               )}
             />
-            
+
             <FormField
               control={form.control}
               name="riskLevel"
@@ -256,3 +264,4 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
     </Card>
   );
 }
+

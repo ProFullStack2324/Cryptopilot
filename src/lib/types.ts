@@ -5,26 +5,29 @@ export interface Trade {
   id: string;
   date: string;
   type: 'Compra' | 'Venta';
-  asset: string; 
+  asset: string;
   amount: number;
   price: number;
   total: number;
   status: 'Completado' | 'Pendiente' | 'Fallido';
+  pnl?: number; // Ganancia/Pérdida realizada para esta operación
 }
 
 export interface MarketPriceDataPoint {
   timestamp: number; // Unix timestamp en segundos
   price: number;
+  sma10?: number; // Para Media Móvil Simple de 10 períodos
+  sma20?: number; // Para Media Móvil Simple de 20 períodos
 }
 
 export interface Market {
-  id: string; 
-  baseAsset: string; 
-  quoteAsset: string; 
-  name: string; 
-  icon?: React.ComponentType<{ className?: string }>; 
-  latestPrice?: number; 
-  change24h?: number; 
+  id: string;
+  baseAsset: string;
+  quoteAsset: string;
+  name: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  latestPrice?: number;
+  change24h?: number;
 }
 
 export const mockMarkets: Market[] = [
@@ -46,28 +49,37 @@ const generateInitialPriceHistory = (basePrice: number, volatility: number, poin
     const timestamp = nowInSeconds - (points - 1 - i) * minutesInterval * 60;
     history.push({
       timestamp: timestamp,
-      price: currentPrice,
+      price: parseFloat(currentPrice.toFixed(5)), // Reducir decimales para evitar problemas de flotantes muy largos
     });
-    currentPrice *= (1 + (Math.random() - 0.5) * volatility); // Mover el precio
+    currentPrice *= (1 + (Math.random() - 0.5) * volatility);
+    if (currentPrice <= 0) currentPrice = basePrice * 0.1; // Evitar precios negativos o cero
   }
   return history;
 };
 
 
 export const mockMarketPriceHistory: Record<string, MarketPriceDataPoint[]> = {
-  "BTCUSDT": generateInitialPriceHistory(61500, 0.01, 200, 15), // 200 puntos, cada 15 minutos
-  "ETHUSDT": generateInitialPriceHistory(3400, 0.015, 200, 15),
-  "SOLUSDT": generateInitialPriceHistory(150, 0.02, 200, 15),
-  "ADAUSDT": generateInitialPriceHistory(0.42, 0.025, 200, 15),
-  "XRPUSDT": generateInitialPriceHistory(0.52, 0.022, 200, 15),
-  "DOGEUSDT": generateInitialPriceHistory(0.15, 0.03, 200, 15),
+  "BTCUSDT": generateInitialPriceHistory(61500, 0.005, 200, 1), // Más puntos, cada 1 minuto
+  "ETHUSDT": generateInitialPriceHistory(3400, 0.007, 200, 1),
+  "SOLUSDT": generateInitialPriceHistory(150, 0.01, 200, 1),
+  "ADAUSDT": generateInitialPriceHistory(0.42, 0.015, 200, 1),
+  "XRPUSDT": generateInitialPriceHistory(0.52, 0.012, 200, 1),
+  "DOGEUSDT": generateInitialPriceHistory(0.15, 0.02, 200, 1),
 };
 
 
 export const marketPriceChartConfigDark = {
   price: {
     label: "Precio",
-    color: "hsl(var(--chart-1))", 
+    color: "hsl(var(--chart-1))",
+  },
+  sma10: {
+    label: "SMA 10",
+    color: "hsl(var(--chart-5))", // Usar un color diferente
+  },
+  sma20: {
+    label: "SMA 20",
+    color: "hsl(var(--chart-2))", // Usar un color diferente (antes era amarillo)
   },
   buySignal: {
     label: "Compra IA",
@@ -86,7 +98,7 @@ export interface SignalItem {
 }
 
 export interface AISignalData {
-  signals: string; 
+  signals: string;
   explanation: string;
 }
 
@@ -95,8 +107,8 @@ export type ParsedSignals = SignalItem[];
 export interface OrderFormData {
   type: 'buy' | 'sell';
   marketId: string;
-  amount: number; 
-  price?: number; 
+  amount: number;
+  price?: number;
   orderType: 'market' | 'limit';
 }
 
@@ -106,20 +118,28 @@ export const initialMockTrades: Trade[] = [
 ];
 
 export interface PerformanceDataPoint {
-  date: string; 
+  date: string;
   value: number;
 }
 export const mockPerformanceChartConfigDark = {
-  value: { 
+  value: {
     label: "Valor Portafolio",
-    color: "hsl(var(--chart-2))", 
+    color: "hsl(var(--chart-2))",
   },
 } satisfies ChartConfig;
 
-// Nuevo tipo para eventos de señal en el gráfico
 export interface SignalEvent {
-  timestamp: number; // Unix timestamp en segundos, coincidiendo con MarketPriceDataPoint
+  timestamp: number;
   price: number;
   type: 'BUY' | 'SELL';
   confidence: number;
+}
+
+// Para la simulación de P&L de una posición abierta
+export interface SimulatedPosition {
+  marketId: string;
+  entryPrice: number;
+  amount: number;
+  type: 'buy' | 'sell'; // 'buy' significa que se compró el activo base, 'sell' que se vendió (short)
+  timestamp: number;
 }
