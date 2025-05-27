@@ -146,7 +146,7 @@ export default function TradingPlatformPage() {
   useEffect(() => {
     setCurrentMarketPriceHistory(mockMarketPriceHistory[selectedMarket.id] || []);
     setAiSignalEvents([]);
-    setSmaCrossoverEvents([]);
+    setSmaCrossoverEvents([]); // Limpiar eventos de cruce al cambiar de mercado
     setCurrentSimulatedPosition(null); 
   }, [selectedMarket]);
 
@@ -296,7 +296,7 @@ export default function TradingPlatformPage() {
 
  const handleSignalsGenerated = (data: AISignalData, isAutoCall: boolean = false) => {
     setAiSignalData(data);
-    setAiError(null); // Limpiar error previo al recibir nuevas señales
+    setAiError(null); 
     let operationsSimulatedByAI = 0;
 
     let parsedSignalsArray: ParsedSignals | null = null;
@@ -310,7 +310,7 @@ export default function TradingPlatformPage() {
             errorDetail = "Uno o más objetos de señal tienen un formato incorrecto (esperado: {signal: 'BUY'|'SELL'|'HOLD', confidence: number}).";
         }
         console.error("Error al analizar señales JSON para eventos de gráfico:", errorDetail, "Datos recibidos:", data.signals);
-        setAiError(`Error de formato en señales de IA: ${errorDetail}. Revise la consola.`); // Establecer error para SignalDisplay
+        setAiError(`Error de formato en señales de IA: ${errorDetail}. Revise la consola.`);
         if (!isAutoCall) { 
           toast({
               title: "Error de Formato de Señal IA (Gráfico)",
@@ -318,7 +318,6 @@ export default function TradingPlatformPage() {
               variant: "destructive",
           });
         }
-        // Dejar la explicación intacta, pero marcar las señales como vacías para evitar más errores de renderizado.
         setAiSignalData(prev => prev ? {...prev, signals: "[]"} : {signals: "[]", explanation: prev?.explanation || "Error al procesar señales."});
         return; 
       }
@@ -356,15 +355,13 @@ export default function TradingPlatformPage() {
 
       setAiSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_AI_SIGNAL_EVENTS_ON_CHART));
 
-      
-      // Lógica para que la IA simule un trade si hay alta confianza
       for (const signal of parsedSignalsArray) {
         if ((signal.signal === 'BUY' || signal.signal === 'SELL') && signal.confidence >= AI_TRADE_CONFIDENCE_THRESHOLD) {
           let tradeAmount = 0.01; 
           if (selectedMarket.baseAsset === 'BTC') tradeAmount = 0.0005;
           else if (selectedMarket.baseAsset === 'ETH') tradeAmount = 0.005;
           else if (selectedMarket.quoteAsset === 'USD' && latestPricePoint.price > 0) {
-              const dollarAmountToInvest = Math.random() * 40 + 10; // Simular inversión entre 10-50 USD
+              const dollarAmountToInvest = Math.random() * 40 + 10; 
               tradeAmount = dollarAmountToInvest / latestPricePoint.price;
           }
 
@@ -382,11 +379,11 @@ export default function TradingPlatformPage() {
             orderType: 'market', 
             price: latestPricePoint.price 
           };
-          const success = handlePlaceOrder(simulatedOrder, true); // isAISimulated = true
+          const success = handlePlaceOrder(simulatedOrder, true); 
           if (success) {
                operationsSimulatedByAI++;
                console.log(`IA simuló un trade ${signal.signal} de ${tradeAmount} ${selectedMarket.baseAsset} con confianza ${signal.confidence}`);
-               if(isAutoCall){ // Solo mostrar toast si es una acción de IA
+               if(isAutoCall){ 
                   toast({
                     title: `IA Simuló ${signal.signal === 'BUY' ? 'Compra' : 'Venta'} Exitosa`,
                     description: `${signal.signal === 'BUY' ? 'Comprados' : 'Vendidos'} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} a $${latestPricePoint.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5})} (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
@@ -395,7 +392,7 @@ export default function TradingPlatformPage() {
                }
           } else {
             console.warn(`IA intentó simular un trade ${signal.signal} de ${tradeAmount} ${selectedMarket.baseAsset} pero falló (ej. fondos insuficientes).`);
-             if (isAutoCall && (signal.signal === 'BUY' || signal.signal === 'SELL')) { // Mostrar toast de fallo solo si es IA y es BUY/SELL
+             if (isAutoCall && (signal.signal === 'BUY' || signal.signal === 'SELL')) { 
                  toast({
                     title: `IA Intentó ${signal.signal === 'BUY' ? 'Comprar' : 'Vender'} (Fallido)`,
                     description: `No se pudo simular la operación de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset}. (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
@@ -404,11 +401,10 @@ export default function TradingPlatformPage() {
                  });
              }
           }
-          break; // Simular solo el primer trade de alta confianza encontrado en este ciclo de IA
+          break; 
         }
       }
     }
-    // Feedback para el ciclo automático si no se simuló ninguna operación
      if (isAutoCall && operationsSimulatedByAI === 0) {
         const hasActionableSignal = parsedSignalsArray && parsedSignalsArray.some(s => s.signal === 'BUY' || s.signal === 'SELL');
         if (!parsedSignalsArray || parsedSignalsArray.length === 0) {
@@ -436,9 +432,9 @@ export default function TradingPlatformPage() {
 
 
   const handleGenerationError = (errorMsg: string, isAutoCall: boolean = false) => {
-    setAiSignalData(null); // Limpiar datos de señal en caso de error
-    setAiError(errorMsg); // Mostrar el error en SignalDisplay
-     if (!isAutoCall) { // Mostrar toast solo si no es un ciclo automático
+    setAiSignalData(null); 
+    setAiError(errorMsg); 
+     if (!isAutoCall) { 
         toast({
             title: "Error al Generar Señales IA",
             description: errorMsg,
@@ -464,10 +460,10 @@ export default function TradingPlatformPage() {
   const generateSignalsActionWrapper = async (input: GenerateTradingSignalsInput, isAutoCall: boolean = false) => {
     if (!isAutoCall) { 
         setIsLoadingAiSignals(true);
-        setAiError(null); // Limpiar errores antes de una nueva petición manual
-        setAiSignalData(null); // Limpiar datos previos antes de una nueva petición manual
+        setAiError(null); 
+        setAiSignalData(null); 
     } else {
-        setIsLoadingAiSignals(true); // Solo poner en carga si es automático, no limpiar datos previos para que se vea la última señal hasta que llegue la nueva
+        setIsLoadingAiSignals(true); 
     }
 
     try {
@@ -477,7 +473,6 @@ export default function TradingPlatformPage() {
       };
       const result = await handleGenerateSignalsAction(completeInput);
       
-      // Validar estructura básica de la respuesta de la IA
       if (!result || typeof result.signals !== 'string' || typeof result.explanation !== 'string') {
         console.error("Respuesta de IA inválida (faltan signals/explanation strings):", result);
         throw new Error("La respuesta de la IA no tiene la estructura esperada (signals o explanation ausentes).");
@@ -698,27 +693,27 @@ export default function TradingPlatformPage() {
                          <AccordionItem value="ai-signals">
                           <AccordionTrigger>Señales de IA (Puntos Verde/Rojo Sólido)</AccordionTrigger>
                           <AccordionContent>
-                            <p className="mb-2">Los puntos <strong>verdes sólidos</strong> (COMPRA) y <strong>rojos sólidos</strong> (VENTA) en el gráfico representan las señales generadas por el análisis de la IA.</p>
-                            <p className="mb-2"><strong>Cómo se generan:</strong> Cuando solicitas un análisis ("Generar Señales con IA"), el sistema envía los datos históricos (de ejemplo), la estrategia seleccionada y el nivel de riesgo a un modelo de IA. La IA procesa esta información y devuelve recomendaciones.</p>
+                            <p className="mb-2">Los puntos <strong>verdes sólidos</strong> (COMPRA) y <strong>rojos sólidos</strong> (VENTA) en el gráfico representan las señales generadas por el análisis de la IA que han superado el umbral de confianza configurado y que, por lo tanto, **han desencadenado una operación simulada por el bot** (si el bot está "iniciado" y en ciclo automático, o si se generaron manualmente y cumplieron el criterio).</p>
+                            <p className="mb-2"><strong>Cómo se generan:</strong> Cuando solicitas un análisis ("Generar Señales con IA") o cuando el bot lo hace en su ciclo automático, el sistema envía los datos históricos (de ejemplo), la estrategia seleccionada y el nivel de riesgo a un modelo de IA. La IA procesa esta información y devuelve recomendaciones.</p>
                             <p className="mb-2"><strong>Interpretación:</strong></p>
                             <ul className="list-disc pl-5 space-y-1">
-                              <li>Un <strong>punto verde sólido</strong> aparece en el precio y momento en que la IA identificó una oportunidad de COMPRA. Si el bot está "iniciado" y la confianza de esta señal supera el umbral `AI_TRADE_CONFIDENCE_THRESHOLD`, el sistema intentará simular automáticamente una compra.</li>
+                              <li>Un <strong>punto verde sólido</strong> aparece en el precio y momento en que la IA identificó una oportunidad de COMPRA con suficiente confianza. Esto resulta en una simulación de compra (afectando tu saldo y P&L).</li>
                               <li>Un <strong>punto rojo sólido</strong> aparece de manera similar para una señal de VENTA.</li>
                               <li>El tooltip sobre estos puntos te dará el tipo de señal, el precio, la confianza y la hora.</li>
                             </ul>
-                            <p className="mt-2">Estas señales son el resultado del análisis de la IA y pueden ser diferentes de las señales puramente técnicas como los cruces de SMA. La ejecución automática por IA depende del umbral de confianza.</p>
+                            <p className="mt-2">Estas señales son el resultado del análisis de la IA. El bot simula la operación automáticamente si la confianza de la señal de IA supera el umbral establecido (`AI_TRADE_CONFIDENCE_THRESHOLD` actualmente en {AI_TRADE_CONFIDENCE_THRESHOLD * 100}% para fines demostrativos).</p>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma-crossover-signals">
                           <AccordionTrigger>Señales de Cruce SMA (Puntos Verde/Rojo Claro)</AccordionTrigger>
                           <AccordionContent>
                             <p className="mb-2">Los puntos <strong>verdes claros</strong> y <strong>rojos claros</strong> en el gráfico indican los momentos en que la Media Móvil Simple de 10 períodos (SMA 10) ha cruzado la Media Móvil Simple de 20 períodos (SMA 20).</p>
-                            <p className="mb-2"><strong>Interpretación:</strong></p>
+                            <p className="mb-2"><strong>Interpretación (Indicador Técnico):</strong></p>
                             <ul className="list-disc pl-5 space-y-1">
                               <li>Un <strong>punto verde claro</strong> (Cruce SMA: COMPRAR) aparece cuando la SMA 10 (línea más rápida) cruza por encima de la SMA 20 (línea más lenta). Esto es a menudo considerado por los analistas técnicos como una señal alcista o "Cruce Dorado".</li>
                               <li>Un <strong>punto rojo claro</strong> (Cruce SMA: VENDER) aparece cuando la SMA 10 cruza por debajo de la SMA 20. Esto es a menudo considerado una señal bajista o "Cruce de la Muerte".</li>
                             </ul>
-                            <p className="mt-2">Estas señales son puramente técnicas, basadas en el comportamiento de las medias móviles. No son generadas por la IA directamente, sino calculadas por la lógica del gráfico. Pueden o no coincidir con las señales de la IA. El bot actual **no** opera automáticamente basado en estos cruces de SMA, solo en las señales de IA de alta confianza.</p>
+                            <p className="mt-2">Estas señales son puramente técnicas, basadas en el comportamiento de las medias móviles. No son generadas por la IA directamente, sino calculadas por la lógica del gráfico. Pueden o no coincidir con las señales de la IA. El bot actual **no** opera automáticamente basado en estos cruces de SMA; solo lo hace basado en las señales de IA de alta confianza (como se explicó en la sección anterior).</p>
                           </AccordionContent>
                         </AccordionItem>
                       </Accordion>
