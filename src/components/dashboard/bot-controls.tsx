@@ -1,22 +1,22 @@
 
 "use client"
 
-import { useState, useTransition, useEffect } from "react"; 
+import { useTransition, useEffect } from "react"; 
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import type { GenerateTradingSignalsInput, GenerateTradingSignalsOutput } from "@/ai/flows/generate-trading-signals";
-import { mockMarkets } from "@/lib/types"; // Added import
+import { mockMarkets } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+// import { Label } from "@/components/ui/label"; // Label se usa a través de FormLabel
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Power, Settings2, DollarSign, Repeat, Waypoints, ShieldCheck, BrainCircuit, Info, Loader2 } from "lucide-react";
+import { Settings2, DollarSign, Repeat, Waypoints, ShieldCheck, BrainCircuit, Info, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const exampleHistoricalData = JSON.stringify([
@@ -48,12 +48,17 @@ interface BotControlsProps {
   onSignalsGenerated: (data: GenerateTradingSignalsOutput) => void;
   onGenerationError: (errorMsg: string) => void;
   clearSignalData: () => void;
-  generateSignalsAction: (input: GenerateTradingSignalsInput) => Promise<GenerateTradingSignalsOutput>;
+  generateSignalsAction: (input: GenerateTradingSignalsInput) => Promise<void>; // Retorna Promise<void> ahora
   selectedMarketSymbol: string; 
 }
 
-export function BotControls({ onSignalsGenerated, onGenerationError, clearSignalData, generateSignalsAction, selectedMarketSymbol }: BotControlsProps) {
-  const [isBotRunning, setIsBotRunning] = useState(false);
+export function BotControls({ 
+  onSignalsGenerated, 
+  onGenerationError, 
+  clearSignalData, 
+  generateSignalsAction, 
+  selectedMarketSymbol 
+}: BotControlsProps) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -83,37 +88,29 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
           historicalData: data.historicalData,
           strategy: data.strategy,
           riskLevel: data.riskLevel,
+          cryptocurrencyForAI: data.cryptocurrencyForAI, // Asegurar que se pasa
         };
-        const result = await generateSignalsAction(aiInput);
+        // generateSignalsAction ya maneja onSignalsGenerated y onGenerationError internamente
+        await generateSignalsAction(aiInput); 
         toast({
-          title: "Señales de IA Generadas",
-          description: "Las señales de trading han sido procesadas por la IA.",
+          title: "Petición de Señales IA Enviada",
+          description: "Las señales de trading están siendo procesadas por la IA.",
           variant: "default",
         });
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
-        if(!form.formState.isSubmitting){ 
-            toast({
-            title: "Error al Generar Señales",
-            description: errorMessage,
-            variant: "destructive",
-            });
-        }
+        // Este catch es por si generateSignalsAction (el wrapper) relanza un error que no fue manejado internamente
+        // o si hay un error en la propia transición.
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al enviar la petición de señales.";
+        console.error("Error en BotControls onSubmit:", errorMessage, error);
+        // onGenerationError(errorMessage); // onGenerationError es llamado dentro de generateSignalsActionWrapper
+        toast({
+          title: "Error al Solicitar Señales",
+          description: errorMessage,
+          variant: "destructive",
+        });
       }
     });
   };
-
-  const toggleBotStatus = () => {
-    const newBotStatus = !isBotRunning;
-    setIsBotRunning(newBotStatus); 
-
-    toast({
-      title: `Bot ${newBotStatus ? "Iniciado (Simulación)" : "Detenido (Simulación)"}`,
-      description: `El bot de trading ahora está ${newBotStatus ? "activo" : "inactivo"} en modo simulación. La generación de señales es bajo demanda.`,
-      variant: newBotStatus ? "default" : "destructive"
-    });
-  };
-
 
   return (
     <Card className="shadow-lg bg-card text-card-foreground">
@@ -127,27 +124,13 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <CardContent className="space-y-6">
-            <div className="flex items-center justify-between p-4 border rounded-lg bg-background/30">
-              <Label htmlFor="bot-status" className="text-base font-medium text-foreground">Estado del Bot:</Label>
-              <Button
-                id="bot-status"
-                type="button"
-                variant={isBotRunning ? "destructive" : "default"}
-                onClick={toggleBotStatus}
-                className="w-[170px] font-semibold"
-              >
-                <Power className="mr-2 h-4 w-4" />
-                {isBotRunning ? "Detener Bot" : "Iniciar Bot"}
-              </Button>
-            </div>
              <Alert variant="default" className="bg-accent/10 border-accent/30 text-accent-foreground/80">
               <Info className="h-4 w-4 !text-accent" />
               <AlertTitle className="text-sm font-semibold text-accent">Modo Simulación</AlertTitle>
               <AlertDescription className="text-xs">
-                La generación de señales es bajo demanda por el usuario. La IA puede simular trades automáticamente si las señales son de alta confianza. La ejecución automática y continua requeriría integración con un exchange real.
+                El estado del bot (Iniciado/Detenido) es visual. La generación de señales es bajo demanda. La IA puede simular trades automáticamente si las señales son de alta confianza.
               </AlertDescription>
             </Alert>
-
 
             <FormField
               control={form.control}
@@ -268,5 +251,3 @@ export function BotControls({ onSignalsGenerated, onGenerationError, clearSignal
     </Card>
   );
 }
-
-    

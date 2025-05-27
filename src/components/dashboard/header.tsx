@@ -1,5 +1,5 @@
 
-import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet } from 'lucide-react';
+import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 
 interface AppHeaderProps {
@@ -8,9 +8,19 @@ interface AppHeaderProps {
   toggleRightSidebar: () => void;
   isRightSidebarOpen: boolean;
   portfolioBalance: number | null;
+  isBotRunning: boolean;
+  toggleBotStatus: () => void;
 }
 
-export function AppHeader({ toggleLeftSidebar, isLeftSidebarOpen, toggleRightSidebar, isRightSidebarOpen, portfolioBalance }: AppHeaderProps) {
+export function AppHeader({ 
+  toggleLeftSidebar, 
+  isLeftSidebarOpen, 
+  toggleRightSidebar, 
+  isRightSidebarOpen, 
+  portfolioBalance,
+  isBotRunning,
+  toggleBotStatus
+}: AppHeaderProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center">
@@ -44,6 +54,17 @@ export function AppHeader({ toggleLeftSidebar, isLeftSidebarOpen, toggleRightSid
                     <span>Cargando saldo...</span>
                 </div>
             )}
+
+            <Button
+                variant={isBotRunning ? "destructive" : "default"}
+                onClick={toggleBotStatus}
+                size="sm"
+                className="font-semibold hidden sm:inline-flex" // Ocultar en pantallas muy pequeñas si es necesario
+              >
+                <Power className="mr-2 h-4 w-4" />
+                {isBotRunning ? "Detener Bot" : "Iniciar Bot"}
+            </Button>
+            
             <span className="text-xs text-muted-foreground hidden sm:inline border-l pl-3">Entorno de Simulación</span>
             
             {/* Botón para escritorio (Derecha) */}
