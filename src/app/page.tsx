@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { AISignalData, Market, OrderFormData, Trade } from "@/lib/types";
+import type { AISignalData, Market, OrderFormData, Trade, MarketPriceDataPoint, SignalEvent } from "@/lib/types";
 import { mockMarkets, mockMarketPriceHistory, initialMockTrades } from "@/lib/types";
 import { AppHeader } from "@/components/dashboard/header";
 import { BalanceCard } from "@/components/dashboard/balance-card";
@@ -12,13 +12,15 @@ import { SignalDisplay } from "@/components/dashboard/signal-display";
 import { handleGenerateSignalsAction } from "./actions";
 import { MarketSelector } from "@/components/trading/market-selector";
 import { MarketPriceChart } from "@/components/trading/market-price-chart";
-import { OrderForm } from "@/components/trading/order-form";
+import { OrderForm } from "@/components/trading/order-form"; // Added missing import
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LineChart, PackageSearch, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+const MAX_SIGNAL_EVENTS_ON_CHART = 5; 
 
 export default function TradingPlatformPage() {
   const [selectedMarket, setSelectedMarket] = useState<Market>(mockMarkets[0]);
@@ -27,17 +29,26 @@ export default function TradingPlatformPage() {
   const [aiError, setAiError] = useState<string | null>(null);
   const { toast } = useToast();
   
-  const [availableQuoteBalance, setAvailableQuoteBalance] = useState<number | null>(null); // Ej: USD
-  const [currentBaseAssetBalance, setCurrentBaseAssetBalance] = useState<number>(0); // Ej: BTC, ETH del mercado seleccionado
+  const [availableQuoteBalance, setAvailableQuoteBalance] = useState<number | null>(null);
+  const [currentBaseAssetBalance, setCurrentBaseAssetBalance] = useState<number>(0);
   const [tradeHistory, setTradeHistory] = useState<Trade[]>(initialMockTrades);
+  const [signalEvents, setSignalEvents] = useState<SignalEvent[]>([]);
+  const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>(
+    mockMarketPriceHistory[mockMarkets[0].id] || []
+  );
+
 
   useEffect(() => {
     const initialQuote = Math.random() * 25000 + 5000;
     setAvailableQuoteBalance(initialQuote);
-    // Simular un balance inicial para el activo base del mercado por defecto
     const defaultMarketBaseBalance = Math.random() * (mockMarkets[0].baseAsset === 'BTC' ? 0.5 : 10) + 0.1;
     setCurrentBaseAssetBalance(defaultMarketBaseBalance);
   }, []);
+
+  useEffect(() => {
+    setCurrentMarketPriceHistory(mockMarketPriceHistory[selectedMarket.id] || []);
+    setSignalEvents([]); 
+  }, [selectedMarket]);
 
 
   const handleMarketChange = (marketId: string) => {
@@ -45,7 +56,6 @@ export default function TradingPlatformPage() {
     if (newMarket) {
       setSelectedMarket(newMarket);
       clearSignalData();
-      // Simular un balance diferente para el activo base del nuevo mercado
       setCurrentBaseAssetBalance(Math.random() * (newMarket.baseAsset === 'BTC' ? 0.5 : 10) + 0.1);
     }
   };
@@ -54,6 +64,27 @@ export default function TradingPlatformPage() {
     setAiSignalData(data);
     setIsLoadingAiSignals(false);
     setAiError(null);
+
+    try {
+      const signalsArray = JSON.parse(data.signals);
+      if (Array.isArray(signalsArray)) {
+        const latestPricePoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
+        if (!latestPricePoint) return;
+
+        const newEvents: SignalEvent[] = signalsArray
+          .filter(s => s.signal === 'BUY' || s.signal === 'SELL')
+          .map(s => ({
+            timestamp: latestPricePoint.timestamp, 
+            price: latestPricePoint.price, 
+            type: s.signal as 'BUY' | 'SELL',
+            confidence: s.confidence,
+          }));
+        
+        setSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_SIGNAL_EVENTS_ON_CHART));
+      }
+    } catch (e) {
+      console.error("Error parsing signals for chart events:", e);
+    }
   };
 
   const handleGenerationError = (errorMsg: string) => {
@@ -73,7 +104,7 @@ export default function TradingPlatformPage() {
     try {
       return await handleGenerateSignalsAction(input);
     } finally {
-      // setIsLoadingAiSignals(false); // Se maneja en los callbacks
+      // setIsLoadingAiSignals(false); // Managed in callbacks
     }
   };
 
@@ -82,14 +113,14 @@ export default function TradingPlatformPage() {
     const totalCostOrProceeds = orderData.amount * priceToUse;
 
     const newTrade: Trade = {
-      id: (tradeHistory.length + 1).toString() + Date.now().toString(), // ID más único
+      id: (tradeHistory.length + 1).toString() + Date.now().toString(),
       date: new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-      type: orderData.type === 'buy' ? 'Compra' : 'Venta', // Traducido
+      type: orderData.type === 'buy' ? 'Compra' : 'Venta',
       asset: selectedMarket.name,
       amount: orderData.amount,
       price: priceToUse,
       total: totalCostOrProceeds,
-      status: 'Completado', // Simular como completado, traducido
+      status: 'Completado',
     };
 
     if (orderData.type === 'buy') {
@@ -99,7 +130,7 @@ export default function TradingPlatformPage() {
         setTradeHistory(prev => [newTrade, ...prev]);
         toast({
           title: "Orden de Compra (Simulada) Exitosa",
-          description: `Comprados ${orderData.amount} ${selectedMarket.baseAsset} a $${priceToUse.toFixed(2)}`,
+          description: `Comprados ${orderData.amount} ${selectedMarket.baseAsset} a $${priceToUse.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5})}`,
           variant: "default"
         });
       } else {
@@ -110,14 +141,14 @@ export default function TradingPlatformPage() {
         });
         return;
       }
-    } else { // Venta
+    } else { 
       if (currentBaseAssetBalance >= orderData.amount) {
         setCurrentBaseAssetBalance(currentBaseAssetBalance - orderData.amount);
         setAvailableQuoteBalance((availableQuoteBalance || 0) + totalCostOrProceeds);
         setTradeHistory(prev => [newTrade, ...prev]);
         toast({
           title: "Orden de Venta (Simulada) Exitosa",
-          description: `Vendidos ${orderData.amount} ${selectedMarket.baseAsset} a $${priceToUse.toFixed(2)}`,
+          description: `Vendidos ${orderData.amount} ${selectedMarket.baseAsset} a $${priceToUse.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5})}`,
           variant: "default"
         });
       } else {
@@ -135,9 +166,8 @@ export default function TradingPlatformPage() {
     <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
       <AppHeader />
       <main className="flex-1">
-        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem)]"> {/* 4rem es la altura del header */}
+        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem)]">
           
-          {/* Columna Izquierda (antes derecha) */}
           <aside className="col-span-12 md:col-span-3 p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto">
             <ScrollArea className="flex-1 pr-2">
               <Card>
@@ -164,13 +194,14 @@ export default function TradingPlatformPage() {
             </ScrollArea>
           </aside>
 
-          {/* Columna Central (Gráfico y Formulario de Órdenes) */}
           <section className="col-span-12 md:col-span-6 p-1 md:p-2 flex flex-col gap-2">
             <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
               <MarketPriceChart
+                key={selectedMarket.id} 
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
-                priceHistory={mockMarketPriceHistory[selectedMarket.id] || []}
+                initialPriceHistory={currentMarketPriceHistory}
+                signalEvents={signalEvents}
               />
             </div>
             <div className="flex-grow-[2] min-h-[280px] md:min-h-0">
@@ -183,7 +214,6 @@ export default function TradingPlatformPage() {
             </div>
           </section>
 
-          {/* Columna Derecha (antes izquierda) */}
           <aside className="col-span-12 md:col-span-3 p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto">
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
@@ -207,7 +237,6 @@ export default function TradingPlatformPage() {
                 </TabsContent>
                 <TabsContent value="balance">
                   <BalanceCard balance={availableQuoteBalance} asset={`${selectedMarket.quoteAsset} (Total Estimado)`} />
-                  {/* Información del activo actual - movida aquí para consistencia */}
                   {selectedMarket && (
                      <Card className="mt-4">
                         <CardHeader className="pb-2">
@@ -215,7 +244,7 @@ export default function TradingPlatformPage() {
                           <CardDescription>Información del Activo (Simulada)</CardDescription>
                         </CardHeader>
                         <CardContent className="text-sm space-y-1">
-                          <p>Precio Actual: <span className="font-semibold text-primary">${selectedMarket.latestPrice?.toLocaleString() || 'N/A'}</span></p>
+                          <p>Precio Actual: <span className="font-semibold text-primary">${selectedMarket.latestPrice?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5}) || 'N/A'}</span></p>
                           <p>Cambio 24h: <span className={ (selectedMarket.change24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{selectedMarket.change24h?.toFixed(2) || 'N/A'}%</span></p>
                           <p>Volumen 24h (Simulado): ${(Math.random() * 100000000).toLocaleString(undefined, {maximumFractionDigits:0})}</p>
                         </CardContent>
