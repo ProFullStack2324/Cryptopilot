@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react'; // Added BitcoinIcon
+import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 
 interface AppHeaderProps {
@@ -51,19 +51,22 @@ export function AppHeader({
       // Podríamos decidir mantener el precio anterior o ponerlo a null
       // setBitcoinPrice(null); 
     } finally {
-      setIsLoadingBitcoinPrice(false); // Solo la primera vez o si queremos resetear en error
+      // Solo poner isLoadingBitcoinPrice a false la primera vez o si se resetea en error
+      if(isLoadingBitcoinPrice) setIsLoadingBitcoinPrice(false);
     }
   };
 
   useEffect(() => {
+    setIsLoadingBitcoinPrice(true); // Asegurar que cargue al montar
     fetchBitcoinPrice(); // Carga inicial
     const intervalId = setInterval(fetchBitcoinPrice, BITCOIN_PRICE_UPDATE_INTERVAL_MS);
     return () => clearInterval(intervalId); // Limpiar intervalo al desmontar
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center">
+      <div className="container flex h-16 max-w-screen-2xl items-center px-4 md:px-6">
         <Button variant="ghost" size="icon" onClick={toggleLeftSidebar} className="mr-2 md:hidden">
           {isLeftSidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
           <span className="sr-only">Alternar barra lateral izquierda</span>
@@ -73,41 +76,50 @@ export function AppHeader({
           <span className="sr-only">Alternar barra lateral izquierda</span>
         </Button>
 
-        <div className="mr-4 flex items-center">
+        <div className="mr-4 hidden items-center md:flex">
           <Bot className="h-8 w-8 mr-3 text-primary" />
           <h1 className="text-2xl font-bold text-foreground">CryptoPilot</h1>
         </div>
+        
+        <div className="flex items-center md:hidden mr-auto">
+            <Bot className="h-7 w-7 mr-2 text-primary" />
+            <h1 className="text-xl font-bold text-foreground">CryptoPilot</h1>
+        </div>
+
 
         <Button
           variant={isBotRunning ? "destructive" : "default"}
           onClick={toggleBotStatus}
           size="sm"
-          className="font-semibold hidden sm:inline-flex mx-4"
+          className="font-semibold hidden sm:inline-flex mx-2 md:mx-4"
         >
           <Power className="mr-2 h-4 w-4" />
           {isBotRunning ? "Detener Bot" : "Iniciar Bot"}
         </Button>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2 md:gap-3">
           {/* Bitcoin Price Indicator */}
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground p-2 rounded-md bg-card/50 border border-border shadow-sm">
-            <BitcoinIcon className="h-5 w-5 text-yellow-500" />
+          <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm font-semibold text-foreground p-1.5 md:p-2 rounded-md bg-card/50 border border-border shadow-sm">
+            <BitcoinIcon className="h-4 w-4 md:h-5 md:w-5 text-yellow-500" />
             {isLoadingBitcoinPrice ? (
               <span className="text-muted-foreground text-xs">Cargando BTC...</span>
             ) : bitcoinPrice !== null ? (
-              <span>
+              <span className="hidden sm:inline">
                 BTC/USD: ${bitcoinPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             ) : (
-              <span className="text-red-500 text-xs" title={bitcoinPriceError || undefined}>Error BTC</span>
+              <span className="text-red-500 text-xs" title={bitcoinPriceError || "Error cargando precio de BTC"}>Error BTC</span>
             )}
           </div>
 
           {portfolioBalance !== null ? (
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground p-2 rounded-md bg-card/50 border border-border shadow-sm">
-              <Wallet className="h-5 w-5 text-accent" />
-              <span>
+            <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm font-semibold text-foreground p-1.5 md:p-2 rounded-md bg-card/50 border border-border shadow-sm">
+              <Wallet className="h-4 w-4 md:h-5 md:w-5 text-accent" />
+              <span className="hidden sm:inline">
                 {portfolioBalance.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+               <span className="sm:hidden">
+                {`$${(portfolioBalance / 1000).toFixed(1)}k`}
               </span>
             </div>
           ) : (
@@ -117,7 +129,7 @@ export function AppHeader({
             </div>
           )}
 
-          <span className="text-xs text-muted-foreground hidden sm:inline border-l pl-3">Entorno de Simulación</span>
+          <span className="text-xs text-muted-foreground hidden xl:inline border-l pl-3 ml-1">Entorno de Simulación</span>
 
           <Button variant="ghost" size="icon" onClick={toggleRightSidebar} className="hidden md:inline-flex">
             {isRightSidebarOpen ? <PanelRightClose className="h-5 w-5" /> : <PanelRightOpen className="h-5 w-5" />}
@@ -132,3 +144,4 @@ export function AppHeader({
     </header>
   );
 }
+
