@@ -31,35 +31,43 @@ export function AppHeader({
   const [bitcoinPriceError, setBitcoinPriceError] = useState<string | null>(null);
 
   const fetchBitcoinPrice = useCallback(async () => {
-    // No establecer isLoadingBitcoinPrice a true aquí, solo al inicio o si queremos reintentos con indicador
-    setBitcoinPriceError(null); // Limpiar error anterior
+    // No establecer isLoadingBitcoinPrice a true aquí para cada fetch, solo al inicio o si es un reintento manual
+    setBitcoinPriceError(null); 
     try {
       const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
       if (!response.ok) {
+        const errorData = await response.text(); // Intentar obtener más detalles del error
+        console.error("Error API CoinGecko:", response.status, errorData);
         throw new Error(`Error API CoinGecko: ${response.status}`);
       }
       const data = await response.json();
       if (data.bitcoin && data.bitcoin.usd) {
         setBitcoinPrice(data.bitcoin.usd);
+        setBitcoinPriceError(null); // Limpiar error si fue exitoso
       } else {
+        console.error('Respuesta de API CoinGecko inesperada:', data);
         throw new Error('Respuesta de API CoinGecko inesperada');
       }
     } catch (error) {
       console.error("Error al obtener precio de Bitcoin:", error);
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido al obtener precio BTC';
       setBitcoinPriceError(errorMessage);
-      setBitcoinPrice(null); // Asegurar que el precio se anule en caso de error
+      setBitcoinPrice(null); 
     } finally {
-      setIsLoadingBitcoinPrice(false); // Siempre finalizar estado de carga tras intento
+      // Solo poner isLoadingBitcoinPrice a false si es la carga inicial
+      // Si ya estaba cargado y falla una actualización, no queremos mostrar el loader de nuevo.
+      if (isLoadingBitcoinPrice) {
+        setIsLoadingBitcoinPrice(false);
+      }
     }
-  }, []); // useCallback con dependencias vacías porque no usa nada del scope de AppHeader que cambie
+  }, [isLoadingBitcoinPrice]); // Incluir isLoadingBitcoinPrice para que el finally funcione bien en la carga inicial
 
   useEffect(() => {
-    setIsLoadingBitcoinPrice(true); // Estado de carga inicial
+    setIsLoadingBitcoinPrice(true); // Indicar carga al montar
     fetchBitcoinPrice(); // Carga inicial
     const intervalId = setInterval(fetchBitcoinPrice, BITCOIN_PRICE_UPDATE_INTERVAL_MS);
-    return () => clearInterval(intervalId); // Limpiar intervalo al desmontar
-  }, [fetchBitcoinPrice]); // Añadir fetchBitcoinPrice a las dependencias de useEffect
+    return () => clearInterval(intervalId); 
+  }, [fetchBitcoinPrice]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -101,17 +109,16 @@ export function AppHeader({
             {isLoadingBitcoinPrice ? (
               <span className="text-muted-foreground text-xs">Cargando BTC...</span>
             ) : bitcoinPrice !== null ? (
-              <span className="hidden sm:inline">
-                BTC/USD: ${bitcoinPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            ) : (
-              <span className="text-red-500 text-xs" title={bitcoinPriceError || "No se pudo cargar el precio de BTC"}>Error BTC</span>
-            )}
-             {/* Display for smaller screens if bitcoinPrice is available */}
-             { !isLoadingBitcoinPrice && bitcoinPrice !== null && (
+              <>
+                <span className="hidden sm:inline">
+                  BTC/USD: ${bitcoinPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
                 <span className="sm:hidden">
                     BTC: ${bitcoinPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                 </span>
+              </>
+            ) : (
+              <span className="text-red-500 text-xs" title={bitcoinPriceError || "No se pudo cargar el precio de BTC"}>Error BTC</span>
             )}
           </div>
 
