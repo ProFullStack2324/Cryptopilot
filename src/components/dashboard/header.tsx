@@ -1,9 +1,9 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
 import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+import { useBitcoinPrice } from "@/hooks/useBitcoinPrice"; // Importar el hook
 
 interface AppHeaderProps {
   toggleLeftSidebar: () => void;
@@ -15,8 +15,6 @@ interface AppHeaderProps {
   toggleBotStatus: () => void;
 }
 
-const BITCOIN_PRICE_UPDATE_INTERVAL_MS = 60000; // Actualizar cada 60 segundos
-
 export function AppHeader({
   toggleLeftSidebar,
   isLeftSidebarOpen,
@@ -26,54 +24,7 @@ export function AppHeader({
   isBotRunning,
   toggleBotStatus
 }: AppHeaderProps) {
-  const [bitcoinPrice, setBitcoinPrice] = useState<number | null>(null);
-  const [isLoadingBitcoinPrice, setIsLoadingBitcoinPrice] = useState(true); // Solo true al inicio
-  const [bitcoinPriceError, setBitcoinPriceError] = useState<string | null>(null);
-
-  const fetchBitcoinPrice = useCallback(async () => {
-    // No establecer isLoadingBitcoinPrice a true aquí en cada fetch
-    // setBitcoinPriceError(null); // Se maneja mejor si solo se limpia en caso de éxito
-    try {
-      const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
-      if (!response.ok) {
-        let errorDetails = `Error API CoinGecko: ${response.status}`;
-        try {
-            const errorData = await response.text();
-            errorDetails += ` - ${errorData}`;
-        } catch (e) {
-            // No hacer nada si no se puede leer el cuerpo del error
-        }
-        console.error(errorDetails);
-        throw new Error(errorDetails);
-      }
-      const data = await response.json();
-      if (data.bitcoin && data.bitcoin.usd) {
-        setBitcoinPrice(data.bitcoin.usd);
-        setBitcoinPriceError(null); // Limpiar error si fue exitoso
-      } else {
-        console.error('Respuesta de API CoinGecko inesperada:', data);
-        throw new Error('Respuesta de API CoinGecko inesperada');
-      }
-    } catch (error) {
-      console.error("Error al obtener precio de Bitcoin:", error);
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido al obtener precio BTC';
-      setBitcoinPriceError(errorMessage);
-      setBitcoinPrice(null); 
-    } finally {
-      // Solo poner isLoadingBitcoinPrice a false si era la carga inicial
-      if (isLoadingBitcoinPrice) {
-        setIsLoadingBitcoinPrice(false);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoadingBitcoinPrice]); // isLoadingBitcoinPrice se usa en el finally, es correcto aquí
-
-  useEffect(() => {
-    // setIsLoadingBitcoinPrice(true); // Ya se inicializa a true
-    fetchBitcoinPrice(); // Carga inicial
-    const intervalId = setInterval(fetchBitcoinPrice, BITCOIN_PRICE_UPDATE_INTERVAL_MS);
-    return () => clearInterval(intervalId); 
-  }, [fetchBitcoinPrice]); // fetchBitcoinPrice es la dependencia correcta aquí
+  const { bitcoinPrice, isLoadingBitcoinPrice, bitcoinPriceError } = useBitcoinPrice(); // Usar el hook
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -97,7 +48,6 @@ export function AppHeader({
             <h1 className="text-xl font-bold text-foreground">CryptoPilot</h1>
         </div>
 
-
         <Button
           variant={isBotRunning ? "destructive" : "default"}
           onClick={toggleBotStatus}
@@ -109,7 +59,6 @@ export function AppHeader({
         </Button>
 
         <div className="ml-auto flex items-center gap-2 md:gap-3">
-          {/* Bitcoin Price Indicator */}
           <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm font-semibold text-foreground p-1.5 md:p-2 rounded-md bg-card/50 border border-border shadow-sm">
             <BitcoinIcon className="h-4 w-4 md:h-5 md:w-5 text-yellow-500" />
             {isLoadingBitcoinPrice ? (
