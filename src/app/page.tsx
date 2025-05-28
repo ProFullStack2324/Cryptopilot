@@ -25,9 +25,8 @@ import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
 import type { GenerateTradingSignalsInput } from "@/ai/flows/generate-trading-signals";
 
 const MAX_AI_SIGNAL_EVENTS_ON_CHART = 5;
-const AI_TRADE_CONFIDENCE_THRESHOLD = 0.01; 
+const AI_TRADE_CONFIDENCE_THRESHOLD = 0.01; // Reduced for demo purposes
 const BOT_AUTO_SIGNAL_INTERVAL_MS = 30000; 
-// PRICE_HISTORY_POINTS_TO_KEEP is now imported from lib/types
 
 const isValidSignalItem = (item: any): item is SignalItem => {
   return typeof item === 'object' && item !== null &&
@@ -77,15 +76,15 @@ function SimulatedPnLDisplay({ position, currentPrice, market }: { position: Sim
           P&L Posición {market.baseAsset} (Sim.)
         </CardTitle>
         <CardDescription className="text-xs">
-          Entrada: ${position.entryPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })} | Cant.: {position.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+          Entrada: ${position.entryPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 })} | Cant.: {position.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
         </CardDescription>
       </CardHeader>
       <CardContent className="text-sm space-y-1 pb-3">
         <p className={`font-semibold text-lg ${pnlColor}`}>
-          {pnl.toLocaleString(undefined, { style: 'currency', currency: quoteAsset, minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {pnl.toLocaleString('en-US', { style: 'currency', currency: quoteAsset, minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           <span className={`ml-2 text-xs ${pnlColor}`}>({pnlPercentage.toFixed(2)}%)</span>
         </p>
-        <p className="text-xs text-muted-foreground">Precio Actual: ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })}</p>
+        <p className="text-xs text-muted-foreground">Precio Actual: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 })}</p>
       </CardContent>
     </Card>
   );
@@ -139,54 +138,58 @@ export default function TradingPlatformPage() {
     setCurrentBaseAssetBalance(defaultMarketBaseBalance);
   }, []);
 
-  // Effect for loading initial market history and resetting AI/Bot states
+  // Effect for loading initial market history when selectedMarket.id changes
   useEffect(() => {
     const newMarket = mockMarkets.find(m => m.id === selectedMarket.id);
     if (!newMarket) return;
 
+    // Clear any existing simulation interval for non-BTC markets
     if (marketPriceUpdateIntervalRef.current) {
       clearInterval(marketPriceUpdateIntervalRef.current);
       marketPriceUpdateIntervalRef.current = null;
     }
-
-    let initialHistoryForMarket: MarketPriceDataPoint[] = (mockMarketPriceHistory[newMarket.id] || []).slice(-PRICE_HISTORY_POINTS_TO_KEEP);
+    
+    let initialHistory = (mockMarketPriceHistory[newMarket.id] || []).slice(-PRICE_HISTORY_POINTS_TO_KEEP);
 
     if (newMarket.id === "BTCUSDT" && realBitcoinPrice && !isLoadingRealBitcoinPrice) {
-      // If BTC and real price is available, use it for the latest point
-      const btcHistoryWithRealPrice: MarketPriceDataPoint[] = [
-        ...initialHistoryForMarket.slice(0, -1), // Keep all but last point from mock
-        { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice } // Add real price as last point
-      ];
-      setCurrentMarketPriceHistory(btcHistoryWithRealPrice);
-    } else {
-      setCurrentMarketPriceHistory(initialHistoryForMarket);
+      initialHistory = [
+        ...initialHistory.slice(0, -1),
+        { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice }
+      ].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
     }
-    
+    setCurrentMarketPriceHistory(initialHistory);
     setAiSignalEvents([]);
     setCurrentSimulatedPosition(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.id, realBitcoinPrice, isLoadingRealBitcoinPrice]); // Removed `mockMarketPriceHistory` to avoid re-triggering unless market or real price changes
+  }, [selectedMarket.id]); // Only depends on selectedMarket.id for initial load
 
-
-  // Effect for continuous price updates (real for BTC, simulated for others)
+  // Effect for continuous BTC price updates from the hook
   useEffect(() => {
-    if (marketPriceUpdateIntervalRef.current) { 
+    if (selectedMarket.id === "BTCUSDT" && realBitcoinPrice !== null && !isLoadingRealBitcoinPrice) {
+      setCurrentMarketPriceHistory(prevHistory => {
+        const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice };
+        const historyWithoutDuplicates = prevHistory.filter(p => p.timestamp !== newPoint.timestamp);
+        return [...historyWithoutDuplicates, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realBitcoinPrice, isLoadingRealBitcoinPrice, selectedMarket.id]);
+
+  // Effect for simulating price updates for non-BTC markets
+  useEffect(() => {
+    // If it's BTC market, ensure the interval is cleared and do nothing else here
+    if (selectedMarket.id === "BTCUSDT") {
+      if (marketPriceUpdateIntervalRef.current) {
         clearInterval(marketPriceUpdateIntervalRef.current);
         marketPriceUpdateIntervalRef.current = null;
+      }
+      return; 
     }
 
-    if (selectedMarket.id === "BTCUSDT") {
-      // For BTC, update with real price from the hook if available
-      if (realBitcoinPrice !== null && !isLoadingRealBitcoinPrice) {
-        setCurrentMarketPriceHistory(prevHistory => {
-          const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice };
-          const updatedHistory = [...prevHistory, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
-          return updatedHistory;
-        });
-      }
-    } else {
-      // For other markets, start random simulation interval
-      marketPriceUpdateIntervalRef.current = setInterval(() => {
+    // If not BTC, and no interval is running for the current market, start one.
+    // The interval is already cleared when selectedMarket.id changes by the first useEffect.
+    if (!marketPriceUpdateIntervalRef.current) {
+        marketPriceUpdateIntervalRef.current = setInterval(() => {
         setCurrentMarketPriceHistory(prevHistory => {
           if (prevHistory.length === 0) return prevHistory;
           const lastPricePoint = prevHistory[prevHistory.length - 1];
@@ -199,18 +202,21 @@ export default function TradingPlatformPage() {
           const newPrice = Math.max(0.01, basePrice + randomFluctuation);
           
           const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: newPrice };
-          const updatedHistory = [...prevHistory, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
-          return updatedHistory;
+          return [...prevHistory, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
         });
-      }, Math.random() * 1500 + 1500); 
+      }, Math.random() * 1500 + 1500);
     }
-    return () => { 
+
+    // Cleanup: clear interval when component unmounts 
+    // or when selectedMarket.id changes (this effect will re-run, and the top condition will clear it if it's BTC)
+    return () => {
       if (marketPriceUpdateIntervalRef.current) {
         clearInterval(marketPriceUpdateIntervalRef.current);
+        marketPriceUpdateIntervalRef.current = null;
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.id, selectedMarket.baseAsset, realBitcoinPrice, isLoadingRealBitcoinPrice]); 
+  }, [selectedMarket.id, selectedMarket.baseAsset]);
 
 
   const runAutoSignalGeneration = useCallback(async () => {
@@ -227,15 +233,15 @@ export default function TradingPlatformPage() {
     });
 
     const autoSignalInput: GenerateTradingSignalsInput = {
-      historicalData: exampleHistoricalDataForAI, // Using fixed example data for auto-mode
-      strategy: "movingAverage", // Example strategy
-      riskLevel: "medium", // Example risk level
+      historicalData: exampleHistoricalDataForAI, 
+      strategy: "movingAverage", 
+      riskLevel: "medium", 
       cryptocurrencyForAI: selectedMarket.baseAsset,
     };
-    await generateSignalsActionWrapper(autoSignalInput, true);
+    // Pass true for isAutoCall
+    await generateSignalsActionWrapper(autoSignalInput, true); 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.id, selectedMarket.name, selectedMarket.baseAsset, isLoadingAiSignals, toast]); // Removed generateSignalsActionWrapper from dependencies
-
+  }, [selectedMarket.name, selectedMarket.baseAsset, isLoadingAiSignals, toast, /* generateSignalsActionWrapper removed */]); 
 
   useEffect(() => {
     if (isBotRunning) {
@@ -322,7 +328,7 @@ export default function TradingPlatformPage() {
         if (!isAISimulated) {
           toast({
             title: "Orden de Compra (Simulada) Exitosa",
-            description: `Comprados ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse!.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })}`,
+            description: `Comprados ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })}`,
             variant: "default"
           });
         }
@@ -350,7 +356,7 @@ export default function TradingPlatformPage() {
         if (!isAISimulated) {
           toast({
             title: "Orden de Venta (Simulada) Exitosa",
-            description: `Vendidos ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse!.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })}`,
+            description: `Vendidos ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })}`,
             variant: "default"
           });
         }
@@ -419,11 +425,11 @@ export default function TradingPlatformPage() {
 
       for (const signal of parsedSignalsArray) {
         if ((signal.signal === 'BUY' || signal.signal === 'SELL') && signal.confidence >= AI_TRADE_CONFIDENCE_THRESHOLD) {
-          let tradeAmount = 0.01; // Default trade amount for non-BTC/ETH
+          let tradeAmount = 0.01; 
           if (selectedMarket.baseAsset === 'BTC') tradeAmount = 0.0005;
           else if (selectedMarket.baseAsset === 'ETH') tradeAmount = 0.005;
-          else if (priceForAISimulation > 0) { // For other assets, calculate based on a small USD amount
-            const dollarAmountToInvest = Math.random() * 40 + 10; // Invest $10-$50
+          else if (priceForAISimulation > 0) { 
+            const dollarAmountToInvest = Math.random() * 40 + 10; 
             tradeAmount = parseFloat((dollarAmountToInvest / priceForAISimulation).toFixed(6));
           }
 
@@ -440,20 +446,20 @@ export default function TradingPlatformPage() {
             orderType: 'market',
             price: priceForAISimulation
           };
-          const success = handlePlaceOrder(simulatedOrder, true); // Pass true for isAISimulated
+          const success = handlePlaceOrder(simulatedOrder, true); 
           if (success) {
             operationsSimulatedByAI++;
             console.log(`IA (ciclo aut.): Simuló un trade ${signal.signal} de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} con confianza ${signal.confidence.toFixed(2)}`);
-            if (isAutoCall) { // Only show success toast if it's an auto call, manual calls have their own toasts
+            if (isAutoCall) { 
               toast({
                 title: `IA Simuló ${signal.signal === 'BUY' ? 'Compra' : 'Venta'} Exitosa`,
-                description: `${signal.signal === 'BUY' ? 'Comprados' : 'Vendidos'} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceForAISimulation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })} (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
+                description: `${signal.signal === 'BUY' ? 'Comprados' : 'Vendidos'} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceForAISimulation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })} (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
                 variant: "default"
               });
             }
           } else {
             console.warn(`IA (ciclo aut.): Intentó simular un trade ${signal.signal} de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} pero falló (ej. fondos insuficientes).`);
-             if (isAutoCall) { // Only show specific failure toast if it's an auto call
+             if (isAutoCall) { 
               toast({
                 title: `IA Intentó ${signal.signal === 'BUY' ? 'Comprar' : 'Vender'} (Fallido)`,
                 description: `No se pudo simular la operación de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset}. (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
@@ -462,7 +468,7 @@ export default function TradingPlatformPage() {
               });
             }
           }
-          break; // Simulate only the first high-confidence trade signal
+          break; 
         }
       }
     }
@@ -645,9 +651,9 @@ export default function TradingPlatformPage() {
                       </CardHeader>
                       <CardContent className="text-xs space-y-1 pb-3">
                         <p>Balance {selectedMarket.baseAsset}: <span className="font-semibold">{currentBaseAssetBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span></p>
-                        <p>Precio Actual: <span className="font-semibold text-primary">${(latestPriceForPnl)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 }) || 'N/A'}</span></p>
+                        <p>Precio Actual: <span className="font-semibold text-primary">${(latestPriceForPnl)?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 }) || 'N/A'}</span></p>
                         <p>Cambio 24h: <span className={(selectedMarket.change24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{selectedMarket.change24h?.toFixed(2) || 'N/A'}%</span></p>
-                        <p>Volumen 24h (Simulado): ${(Math.random() * 100000000).toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                        <p>Volumen 24h (Simulado): ${(Math.random() * 100000000).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
                       </CardContent>
                     </Card>
                   )}
