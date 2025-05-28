@@ -27,18 +27,24 @@ export function AppHeader({
   toggleBotStatus
 }: AppHeaderProps) {
   const [bitcoinPrice, setBitcoinPrice] = useState<number | null>(null);
-  const [isLoadingBitcoinPrice, setIsLoadingBitcoinPrice] = useState(true);
+  const [isLoadingBitcoinPrice, setIsLoadingBitcoinPrice] = useState(true); // Solo true al inicio
   const [bitcoinPriceError, setBitcoinPriceError] = useState<string | null>(null);
 
   const fetchBitcoinPrice = useCallback(async () => {
-    // No establecer isLoadingBitcoinPrice a true aquí para cada fetch, solo al inicio o si es un reintento manual
-    setBitcoinPriceError(null); 
+    // No establecer isLoadingBitcoinPrice a true aquí en cada fetch
+    // setBitcoinPriceError(null); // Se maneja mejor si solo se limpia en caso de éxito
     try {
       const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
       if (!response.ok) {
-        const errorData = await response.text(); // Intentar obtener más detalles del error
-        console.error("Error API CoinGecko:", response.status, errorData);
-        throw new Error(`Error API CoinGecko: ${response.status}`);
+        let errorDetails = `Error API CoinGecko: ${response.status}`;
+        try {
+            const errorData = await response.text();
+            errorDetails += ` - ${errorData}`;
+        } catch (e) {
+            // No hacer nada si no se puede leer el cuerpo del error
+        }
+        console.error(errorDetails);
+        throw new Error(errorDetails);
       }
       const data = await response.json();
       if (data.bitcoin && data.bitcoin.usd) {
@@ -54,20 +60,20 @@ export function AppHeader({
       setBitcoinPriceError(errorMessage);
       setBitcoinPrice(null); 
     } finally {
-      // Solo poner isLoadingBitcoinPrice a false si es la carga inicial
-      // Si ya estaba cargado y falla una actualización, no queremos mostrar el loader de nuevo.
+      // Solo poner isLoadingBitcoinPrice a false si era la carga inicial
       if (isLoadingBitcoinPrice) {
         setIsLoadingBitcoinPrice(false);
       }
     }
-  }, [isLoadingBitcoinPrice]); // Incluir isLoadingBitcoinPrice para que el finally funcione bien en la carga inicial
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoadingBitcoinPrice]); // isLoadingBitcoinPrice se usa en el finally, es correcto aquí
 
   useEffect(() => {
-    setIsLoadingBitcoinPrice(true); // Indicar carga al montar
+    // setIsLoadingBitcoinPrice(true); // Ya se inicializa a true
     fetchBitcoinPrice(); // Carga inicial
     const intervalId = setInterval(fetchBitcoinPrice, BITCOIN_PRICE_UPDATE_INTERVAL_MS);
     return () => clearInterval(intervalId); 
-  }, [fetchBitcoinPrice]);
+  }, [fetchBitcoinPrice]); // fetchBitcoinPrice es la dependencia correcta aquí
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
