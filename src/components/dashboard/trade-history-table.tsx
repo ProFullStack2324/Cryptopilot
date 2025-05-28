@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { History } from "lucide-react"; // Removido ListCollapse que no se usaba
+import { History } from "lucide-react"; 
 
 
 interface TradeHistoryTableProps {
@@ -18,11 +18,11 @@ interface TradeHistoryTableProps {
 }
 
 const translateTradeTypeToSpanish = (type: 'Compra' | 'Venta'): string => {
-  return type; // Ya está en español desde page.tsx
+  return type; 
 };
 
 const translateTradeStatusToSpanish = (status: 'Completado' | 'Pendiente' | 'Fallido'): string => {
-  return status; // Ya está en español desde page.tsx
+  return status; 
 };
 
 const getStatusBadgeVariant = (status: 'Completado' | 'Pendiente' | 'Fallido'): "default" | "secondary" | "destructive" => {
@@ -33,7 +33,7 @@ const getStatusBadgeVariant = (status: 'Completado' | 'Pendiente' | 'Fallido'): 
 
 const getStatusBadgeStyle = (status: 'Completado' | 'Pendiente' | 'Fallido'): string => {
   if (status === 'Completado') return 'bg-green-500/80 text-green-50 border-green-700';
-  if (status === 'Pendiente') return 'bg-yellow-500/80 text-yellow-50 border-yellow-700'; // Amarillo para pendiente
+  if (status === 'Pendiente') return 'bg-yellow-500/80 text-yellow-50 border-yellow-700'; 
   return 'bg-red-500/80 text-red-50 border-red-700';
 }
 
@@ -67,7 +67,7 @@ export function TradeHistoryTable({ trades }: TradeHistoryTableProps) {
             {trades.map((trade) => (
               <TableRow key={trade.id} className="hover:bg-muted/20">
                 <TableCell className="font-mono text-[0.7rem] text-foreground/90 py-1.5 px-2 whitespace-nowrap">
-                  {/* Formato de fecha simplificado y consistente */}
+                  
                   {trade.date.split(',')[0].trim() + (trade.date.split(',')[1] ? ', ' + trade.date.split(',')[1].trim().slice(0,5) : '')}
                 </TableCell>
                 <TableCell className="py-1.5 px-2">
@@ -79,7 +79,9 @@ export function TradeHistoryTable({ trades }: TradeHistoryTableProps) {
                   </Badge>
                 </TableCell>
                 <TableCell className="font-medium text-xs text-foreground py-1.5 px-2">{trade.asset}</TableCell>
-                <TableCell className="text-right font-mono text-xs font-semibold text-foreground py-1.5 px-2">{trade.total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold text-foreground py-1.5 px-2">
+                  {trade.total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                </TableCell>
                 <TableCell className="text-center py-1.5 px-2">
                    <Badge 
                      variant={getStatusBadgeVariant(trade.status)}
