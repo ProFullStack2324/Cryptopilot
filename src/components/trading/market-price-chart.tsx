@@ -17,7 +17,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import type { MarketPriceDataPoint, SignalEvent, SmaCrossoverEvent } from "@/lib/types";
-import { marketPriceChartConfigDark, PRICE_HISTORY_POINTS_TO_KEEP } from "@/lib/types"; // Importar PRICE_HISTORY_POINTS_TO_KEEP
+import { marketPriceChartConfigDark, PRICE_HISTORY_POINTS_TO_KEEP } from "@/lib/types"; 
 import { format, fromUnixTime } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useMemo, useEffect, useState } from 'react';
@@ -67,34 +67,36 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
   useEffect(() => {
     if (chartDataWithSMAs.length < 2) return;
 
-    const lastPoint = chartDataWithSMAs[chartDataWithSMAs.length - 1];
-    const prevPoint = chartDataWithSMAs[chartDataWithSMAs.length - 2];
+    const newSmaCrossoverEvents: SmaCrossoverEvent[] = [];
 
-    if (lastPoint && prevPoint && typeof lastPoint.sma10 === 'number' && typeof lastPoint.sma20 === 'number' &&
-        typeof prevPoint.sma10 === 'number' && typeof prevPoint.sma20 === 'number') {
-      
-      let newCrossoverEvent: SmaCrossoverEvent | null = null;
+    for (let i = Math.max(1, chartDataWithSMAs.length - 5); i < chartDataWithSMAs.length; i++) {
+      const lastPoint = chartDataWithSMAs[i];
+      const prevPoint = chartDataWithSMAs[i - 1];
 
-      if (prevPoint.sma10 < prevPoint.sma20 && lastPoint.sma10 > lastPoint.sma20) {
-        newCrossoverEvent = {
-          timestamp: lastPoint.timestamp,
-          price: lastPoint.price,
-          type: 'SMA_CROSS_BUY',
-        };
+      if (lastPoint && prevPoint && typeof lastPoint.sma10 === 'number' && typeof lastPoint.sma20 === 'number' &&
+          typeof prevPoint.sma10 === 'number' && typeof prevPoint.sma20 === 'number') {
+        
+        if (prevPoint.sma10 < prevPoint.sma20 && lastPoint.sma10 > lastPoint.sma20) {
+          newSmaCrossoverEvents.push({
+            timestamp: lastPoint.timestamp,
+            price: lastPoint.price,
+            type: 'SMA_CROSS_BUY',
+          });
+        } else if (prevPoint.sma10 > prevPoint.sma20 && lastPoint.sma10 < lastPoint.sma20) {
+          newSmaCrossoverEvents.push({
+            timestamp: lastPoint.timestamp,
+            price: lastPoint.price,
+            type: 'SMA_CROSS_SELL',
+          });
+        }
       }
-      else if (prevPoint.sma10 > prevPoint.sma20 && lastPoint.sma10 < lastPoint.sma20) {
-         newCrossoverEvent = {
-          timestamp: lastPoint.timestamp,
-          price: lastPoint.price,
-          type: 'SMA_CROSS_SELL',
-        };
-      }
-
-      if (newCrossoverEvent) {
-        setSmaCrossoverEvents(prevEvents => 
-          [...prevEvents, newCrossoverEvent!].slice(-MAX_SMA_CROSSOVER_EVENTS_ON_CHART)
+    }
+    if (newSmaCrossoverEvents.length > 0) {
+         setSmaCrossoverEvents(prevEvents => 
+            [...prevEvents, ...newSmaCrossoverEvents].filter(
+                (event, index, self) => index === self.findIndex(e => e.timestamp === event.timestamp && e.type === event.type)
+            ).slice(-MAX_SMA_CROSSOVER_EVENTS_ON_CHART)
         );
-      }
     }
   }, [chartDataWithSMAs]);
 
@@ -116,7 +118,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
     );
   }
   
-  const lastPoint = chartDataWithSMAs.length > 0 ? chartDataWithSMAs[chartDataWithSMAs.length -1] : { price: 0, sma10: undefined, sma20: undefined, sma50: undefined };
+  const lastPoint = chartDataWithSMAs.length > 0 ? chartDataWithSMAs[chartDataWithSMAs.length -1] : { price: 0, sma10: undefined, sma20: undefined, sma50: undefined, timestamp: Date.now()/1000 };
   const quoteAsset = marketName.split('/')[1] || 'USD'; 
   
   return (
@@ -162,7 +164,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tickFormatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}`}
+                tickFormatter={(value) => `$${value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}`}
                 stroke="hsl(var(--muted-foreground))"
                 domain={['auto', 'auto']} 
                 fontSize={11}
@@ -180,7 +182,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
                               
                               if (name === 'price' || name === 'sma10' || name === 'sma20' || name === 'sma50') {
                                 return [
-                                  rawValue?.toLocaleString(undefined, {style: 'currency', currency: currency, minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5}),
+                                  rawValue?.toLocaleString('en-US', {style: 'currency', currency: currency, minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5}),
                                   marketPriceChartConfigDark[name as keyof typeof marketPriceChartConfigDark]?.label || name
                                 ];
                               }
@@ -253,7 +255,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
                     content={() => (
                       <div className="bg-popover text-popover-foreground p-2 rounded shadow-lg text-xs border border-border">
                         <p className="font-semibold">Señal IA: {event.type === 'BUY' ? 'COMPRA' : 'VENTA'}</p>
-                        <p>Precio: ${event.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</p>
+                        <p>Precio: ${event.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</p>
                         <p>Confianza: {(event.confidence * 100).toFixed(0)}%</p>
                         <p>Hora: {format(fromUnixTime(event.timestamp), 'HH:mm:ss', { locale: es })}</p>
                       </div>
@@ -280,7 +282,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
                     content={() => (
                       <div className="bg-popover text-popover-foreground p-2 rounded shadow-lg text-xs border border-border">
                         <p className="font-semibold">{event.type === 'SMA_CROSS_BUY' ? 'Cruce SMA: COMPRAR' : 'Cruce SMA: VENDER'}</p>
-                        <p>Precio: ${event.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</p>
+                        <p>Precio: ${event.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</p>
                         <p>Hora: {format(fromUnixTime(event.timestamp), 'HH:mm:ss', { locale: es })}</p>
                       </div>
                     )}
@@ -295,10 +297,10 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
       </CardContent>
        <CardFooter className="flex-col items-start gap-1 text-xs pt-1 pb-3">
         <div className="flex gap-2 font-medium leading-none text-foreground flex-wrap"> 
-          <span>Últ. precio ({marketName}): <span style={{color: marketPriceChartConfigDark.price.color}}>${lastPoint.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}.</span></span>
-           {lastPoint.sma10 !== undefined && <span style={{color: marketPriceChartConfigDark.sma10.color}}>SMA10: ${lastPoint.sma10.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
-           {lastPoint.sma20 !== undefined && <span style={{color: marketPriceChartConfigDark.sma20.color}}>SMA20: ${lastPoint.sma20.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
-           {lastPoint.sma50 !== undefined && <span style={{color: marketPriceChartConfigDark.sma50.color}}>SMA50: ${lastPoint.sma50.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
+          <span>Últ. precio ({marketName}): <span style={{color: marketPriceChartConfigDark.price.color}}>${lastPoint.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}.</span></span>
+           {lastPoint.sma10 !== undefined && <span style={{color: marketPriceChartConfigDark.sma10.color}}>SMA10: ${lastPoint.sma10.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
+           {lastPoint.sma20 !== undefined && <span style={{color: marketPriceChartConfigDark.sma20.color}}>SMA20: ${lastPoint.sma20.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
+           {lastPoint.sma50 !== undefined && <span style={{color: marketPriceChartConfigDark.sma50.color}}>SMA50: ${lastPoint.sma50.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
         </div>
         <div className="leading-none text-muted-foreground">
           {marketId === "BTCUSDT" ? "Actualizado desde CoinGecko." : `Simulación: actualizando cada 1.5-3s. Mostrando últimos ${PRICE_HISTORY_POINTS_TO_KEEP} puntos.`}
@@ -307,3 +309,4 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
     </Card>
   )
 }
+
