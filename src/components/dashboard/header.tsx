@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 
@@ -30,39 +30,36 @@ export function AppHeader({
   const [isLoadingBitcoinPrice, setIsLoadingBitcoinPrice] = useState(true);
   const [bitcoinPriceError, setBitcoinPriceError] = useState<string | null>(null);
 
-  const fetchBitcoinPrice = async () => {
-    // No necesitamos setIsLoadingBitcoinPrice(true) en cada fetch, solo al inicio.
-    // Si se quiere un indicador de carga para cada actualización, se puede añadir aquí.
-    setBitcoinPriceError(null);
+  const fetchBitcoinPrice = useCallback(async () => {
+    // No establecer isLoadingBitcoinPrice a true aquí, solo al inicio o si queremos reintentos con indicador
+    setBitcoinPriceError(null); // Limpiar error anterior
     try {
       const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
       if (!response.ok) {
-        throw new Error(`Error al obtener precio de BTC: ${response.status}`);
+        throw new Error(`Error API CoinGecko: ${response.status}`);
       }
       const data = await response.json();
       if (data.bitcoin && data.bitcoin.usd) {
         setBitcoinPrice(data.bitcoin.usd);
       } else {
-        throw new Error('Respuesta inesperada de la API de CoinGecko');
+        throw new Error('Respuesta de API CoinGecko inesperada');
       }
     } catch (error) {
-      console.error("Error fetching Bitcoin price:", error);
-      setBitcoinPriceError(error instanceof Error ? error.message : 'Error desconocido');
-      // Podríamos decidir mantener el precio anterior o ponerlo a null
-      // setBitcoinPrice(null); 
+      console.error("Error al obtener precio de Bitcoin:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido al obtener precio BTC';
+      setBitcoinPriceError(errorMessage);
+      setBitcoinPrice(null); // Asegurar que el precio se anule en caso de error
     } finally {
-      // Solo poner isLoadingBitcoinPrice a false la primera vez o si se resetea en error
-      if(isLoadingBitcoinPrice) setIsLoadingBitcoinPrice(false);
+      setIsLoadingBitcoinPrice(false); // Siempre finalizar estado de carga tras intento
     }
-  };
+  }, []); // useCallback con dependencias vacías porque no usa nada del scope de AppHeader que cambie
 
   useEffect(() => {
-    setIsLoadingBitcoinPrice(true); // Asegurar que cargue al montar
+    setIsLoadingBitcoinPrice(true); // Estado de carga inicial
     fetchBitcoinPrice(); // Carga inicial
     const intervalId = setInterval(fetchBitcoinPrice, BITCOIN_PRICE_UPDATE_INTERVAL_MS);
     return () => clearInterval(intervalId); // Limpiar intervalo al desmontar
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchBitcoinPrice]); // Añadir fetchBitcoinPrice a las dependencias de useEffect
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -108,7 +105,13 @@ export function AppHeader({
                 BTC/USD: ${bitcoinPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             ) : (
-              <span className="text-red-500 text-xs" title={bitcoinPriceError || "Error cargando precio de BTC"}>Error BTC</span>
+              <span className="text-red-500 text-xs" title={bitcoinPriceError || "No se pudo cargar el precio de BTC"}>Error BTC</span>
+            )}
+             {/* Display for smaller screens if bitcoinPrice is available */}
+             { !isLoadingBitcoinPrice && bitcoinPrice !== null && (
+                <span className="sm:hidden">
+                    BTC: ${bitcoinPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </span>
             )}
           </div>
 
@@ -144,4 +147,3 @@ export function AppHeader({
     </header>
   );
 }
-
