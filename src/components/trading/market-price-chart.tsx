@@ -17,10 +17,10 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import type { MarketPriceDataPoint, SignalEvent, SmaCrossoverEvent } from "@/lib/types";
-import { marketPriceChartConfigDark } from "@/lib/types";
+import { marketPriceChartConfigDark, PRICE_HISTORY_POINTS_TO_KEEP } from "@/lib/types"; // Importar PRICE_HISTORY_POINTS_TO_KEEP
 import { format, fromUnixTime } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useMemo, useEffect, useState } from 'react'; // No se necesita useRef aquí
+import { useMemo, useEffect, useState } from 'react';
 
 const SMA10_PERIOD = 10;
 const SMA20_PERIOD = 20;
@@ -31,7 +31,7 @@ const MAX_SMA_CROSSOVER_EVENTS_ON_CHART = 5;
 interface MarketPriceChartProps {
   marketId: string;
   marketName: string;
-  initialPriceHistory: MarketPriceDataPoint[]; // Renombrado para claridad, será el 'currentMarketPriceHistory' de page.tsx
+  initialPriceHistory: MarketPriceDataPoint[];
   aiSignalEvents?: SignalEvent[];
 }
 
@@ -64,7 +64,6 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
     }));
   }, [initialPriceHistory]);
 
-  // Detectar cruces de SMA
   useEffect(() => {
     if (chartDataWithSMAs.length < 2) return;
 
@@ -208,10 +207,10 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
                 yAxisId="left"
                 dataKey="sma10"
                 type="monotone"
-                stroke="hsl(var(--chart-5))" 
+                stroke={marketPriceChartConfigDark.sma10.color}
                 strokeWidth={1.5}
                 dot={false}
-                activeDot={{ r: 4, fill: "hsl(var(--chart-5))", stroke: "hsl(var(--background))", strokeWidth: 1 }}
+                activeDot={{ r: 4, fill: marketPriceChartConfigDark.sma10.color, stroke: "hsl(var(--background))", strokeWidth: 1 }}
                 name={marketPriceChartConfigDark.sma10.label as string}
                 connectNulls={true} 
               />
@@ -219,10 +218,10 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
                 yAxisId="left"
                 dataKey="sma20"
                 type="monotone"
-                stroke="hsl(var(--chart-2))" 
+                stroke={marketPriceChartConfigDark.sma20.color}
                 strokeWidth={1.5}
                 dot={false}
-                activeDot={{ r: 4, fill: "hsl(var(--chart-2))", stroke: "hsl(var(--background))", strokeWidth: 1 }}
+                activeDot={{ r: 4, fill: marketPriceChartConfigDark.sma20.color, stroke: "hsl(var(--background))", strokeWidth: 1 }}
                 name={marketPriceChartConfigDark.sma20.label as string}
                 connectNulls={true}
               />
@@ -230,10 +229,10 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
                 yAxisId="left"
                 dataKey="sma50"
                 type="monotone"
-                stroke="hsl(var(--chart-4))" 
+                stroke={marketPriceChartConfigDark.sma50.color}
                 strokeWidth={1.5}
                 dot={false}
-                activeDot={{ r: 4, fill: "hsl(var(--chart-4))", stroke: "hsl(var(--background))", strokeWidth: 1 }}
+                activeDot={{ r: 4, fill: marketPriceChartConfigDark.sma50.color, stroke: "hsl(var(--background))", strokeWidth: 1 }}
                 name={marketPriceChartConfigDark.sma50.label as string}
                 connectNulls={true}
               />
@@ -296,13 +295,13 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
       </CardContent>
        <CardFooter className="flex-col items-start gap-1 text-xs pt-1 pb-3">
         <div className="flex gap-2 font-medium leading-none text-foreground flex-wrap"> 
-          <span>Últ. precio ({marketName}): ${lastPoint.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}.</span>
+          <span>Últ. precio ({marketName}): <span style={{color: marketPriceChartConfigDark.price.color}}>${lastPoint.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}.</span></span>
            {lastPoint.sma10 !== undefined && <span style={{color: marketPriceChartConfigDark.sma10.color}}>SMA10: ${lastPoint.sma10.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
            {lastPoint.sma20 !== undefined && <span style={{color: marketPriceChartConfigDark.sma20.color}}>SMA20: ${lastPoint.sma20.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
            {lastPoint.sma50 !== undefined && <span style={{color: marketPriceChartConfigDark.sma50.color}}>SMA50: ${lastPoint.sma50.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
         </div>
         <div className="leading-none text-muted-foreground">
-          {marketId === "BTCUSDT" ? "Actualizado desde CoinGecko." : `Simulación: actualizando cada pocos segundos. Mostrando últimos ${PRICE_HISTORY_POINTS_TO_KEEP} puntos.`}
+          {marketId === "BTCUSDT" ? "Actualizado desde CoinGecko." : `Simulación: actualizando cada 1.5-3s. Mostrando últimos ${PRICE_HISTORY_POINTS_TO_KEEP} puntos.`}
         </div>
       </CardFooter>
     </Card>

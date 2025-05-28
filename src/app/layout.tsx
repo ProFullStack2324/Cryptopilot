@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className="dark"> {/* Added dark class here */}
+    <html lang="es" className="dark">
       {/* La etiqueta <head> se maneja implícitamente por Next.js a través de Metadata.
           No debe haber espacios ni contenido suelto entre <html> y <body>. */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>

@@ -3,7 +3,7 @@
 
 import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { useBitcoinPrice } from "@/hooks/useBitcoinPrice"; // Importar el hook
+import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
 
 interface AppHeaderProps {
   toggleLeftSidebar: () => void;
@@ -24,7 +24,7 @@ export function AppHeader({
   isBotRunning,
   toggleBotStatus
 }: AppHeaderProps) {
-  const { bitcoinPrice, isLoadingBitcoinPrice, bitcoinPriceError } = useBitcoinPrice(); // Usar el hook
+  const { bitcoinPrice, isLoadingBitcoinPrice, bitcoinPriceError } = useBitcoinPrice();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">

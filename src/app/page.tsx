@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { AISignalData, Market, OrderFormData, Trade, MarketPriceDataPoint, SignalEvent, SimulatedPosition, ParsedSignals, SignalItem, SmaCrossoverEvent } from "@/lib/types";
-import { mockMarkets, mockMarketPriceHistory, initialMockTrades, exampleHistoricalDataForAI } from "@/lib/types";
+import { mockMarkets, mockMarketPriceHistory, initialMockTrades, exampleHistoricalDataForAI, PRICE_HISTORY_POINTS_TO_KEEP } from "@/lib/types";
 import { AppHeader } from "@/components/dashboard/header";
 import { BalanceCard } from "@/components/dashboard/balance-card";
 import { TradeHistoryTable } from "@/components/dashboard/trade-history-table";
@@ -21,14 +21,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, Activity, Wallet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useBitcoinPrice } from "@/hooks/useBitcoinPrice"; // Importar hook de precio de Bitcoin
+import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
 import type { GenerateTradingSignalsInput } from "@/ai/flows/generate-trading-signals";
 
 const MAX_AI_SIGNAL_EVENTS_ON_CHART = 5;
-const MAX_SMA_CROSSOVER_EVENTS_ON_CHART = 5;
 const AI_TRADE_CONFIDENCE_THRESHOLD = 0.01; 
 const BOT_AUTO_SIGNAL_INTERVAL_MS = 30000; 
-const PRICE_HISTORY_POINTS_TO_KEEP = 200;
+// PRICE_HISTORY_POINTS_TO_KEEP is now imported from lib/types
 
 const isValidSignalItem = (item: any): item is SignalItem => {
   return typeof item === 'object' && item !== null &&
@@ -140,70 +139,78 @@ export default function TradingPlatformPage() {
     setCurrentBaseAssetBalance(defaultMarketBaseBalance);
   }, []);
 
-  // Efecto para cargar historial inicial del mercado y resetear estados de IA/Bot
+  // Effect for loading initial market history and resetting AI/Bot states
   useEffect(() => {
     const newMarket = mockMarkets.find(m => m.id === selectedMarket.id);
     if (!newMarket) return;
 
-    if (newMarket.id === "BTCUSDT" && realBitcoinPrice && !isLoadingRealBitcoinPrice) {
-        // Crear un historial inicial para BTC donde el último punto es el precio real
-        const btcHistoryWithRealPrice: MarketPriceDataPoint[] = [
-            ...(mockMarketPriceHistory[newMarket.id] || []).slice(0, PRICE_HISTORY_POINTS_TO_KEEP -1), // Tomar datos simulados existentes como base
-            { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice } // Añadir precio real como el más reciente
-        ];
-        setCurrentMarketPriceHistory(btcHistoryWithRealPrice.slice(-PRICE_HISTORY_POINTS_TO_KEEP));
-    } else {
-        setCurrentMarketPriceHistory((mockMarketPriceHistory[newMarket.id] || []).slice(-PRICE_HISTORY_POINTS_TO_KEEP));
+    if (marketPriceUpdateIntervalRef.current) {
+      clearInterval(marketPriceUpdateIntervalRef.current);
+      marketPriceUpdateIntervalRef.current = null;
     }
+
+    let initialHistoryForMarket: MarketPriceDataPoint[] = (mockMarketPriceHistory[newMarket.id] || []).slice(-PRICE_HISTORY_POINTS_TO_KEEP);
+
+    if (newMarket.id === "BTCUSDT" && realBitcoinPrice && !isLoadingRealBitcoinPrice) {
+      // If BTC and real price is available, use it for the latest point
+      const btcHistoryWithRealPrice: MarketPriceDataPoint[] = [
+        ...initialHistoryForMarket.slice(0, -1), // Keep all but last point from mock
+        { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice } // Add real price as last point
+      ];
+      setCurrentMarketPriceHistory(btcHistoryWithRealPrice);
+    } else {
+      setCurrentMarketPriceHistory(initialHistoryForMarket);
+    }
+    
     setAiSignalEvents([]);
     setCurrentSimulatedPosition(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket, realBitcoinPrice, isLoadingRealBitcoinPrice]); // No incluir todas las dependencias para evitar bucles con setCurrentMarketPriceHistory
+  }, [selectedMarket.id, realBitcoinPrice, isLoadingRealBitcoinPrice]); // Removed `mockMarketPriceHistory` to avoid re-triggering unless market or real price changes
 
 
-  // Efecto para actualizar el historial de precios (simulación para no-BTC, o real para BTC)
+  // Effect for continuous price updates (real for BTC, simulated for others)
   useEffect(() => {
-    if (marketPriceUpdateIntervalRef.current) {
-      clearInterval(marketPriceUpdateIntervalRef.current);
+    if (marketPriceUpdateIntervalRef.current) { 
+        clearInterval(marketPriceUpdateIntervalRef.current);
+        marketPriceUpdateIntervalRef.current = null;
     }
 
     if (selectedMarket.id === "BTCUSDT") {
-      // Para BTC, actualizamos con el precio real del hook
+      // For BTC, update with real price from the hook if available
       if (realBitcoinPrice !== null && !isLoadingRealBitcoinPrice) {
         setCurrentMarketPriceHistory(prevHistory => {
           const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice };
-          const updatedHistory = [...prevHistory.slice(1), newPoint]; // Añadir nuevo, quitar más antiguo
+          const updatedHistory = [...prevHistory, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
           return updatedHistory;
         });
       }
     } else {
-      // Para otros mercados, simulación aleatoria
+      // For other markets, start random simulation interval
       marketPriceUpdateIntervalRef.current = setInterval(() => {
         setCurrentMarketPriceHistory(prevHistory => {
           if (prevHistory.length === 0) return prevHistory;
           const lastPricePoint = prevHistory[prevHistory.length - 1];
           const basePrice = lastPricePoint.price;
-          let fluctuationFactor = 0.0001; // Ajustar según volatilidad deseada
+          let fluctuationFactor = 0.0001;
           if (selectedMarket.baseAsset === 'ETH') fluctuationFactor = 0.0005;
           else if (selectedMarket.baseAsset !== 'BTC') fluctuationFactor = 0.001;
           
           const randomFluctuation = (Math.random() - 0.5) * basePrice * fluctuationFactor * (Math.random() > 0.8 ? 5 : 1);
           const newPrice = Math.max(0.01, basePrice + randomFluctuation);
           
-          const newHistory = [
-            ...prevHistory,
-            { timestamp: Math.floor(Date.now() / 1000), price: newPrice }
-          ];
-          return newHistory.slice(-PRICE_HISTORY_POINTS_TO_KEEP);
+          const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: newPrice };
+          const updatedHistory = [...prevHistory, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
+          return updatedHistory;
         });
-      }, Math.random() * 1000 + 1000); // Intervalo de simulación aleatorio
+      }, Math.random() * 1500 + 1500); 
     }
-    return () => {
+    return () => { 
       if (marketPriceUpdateIntervalRef.current) {
         clearInterval(marketPriceUpdateIntervalRef.current);
       }
     };
-  }, [selectedMarket.id, realBitcoinPrice, isLoadingRealBitcoinPrice]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMarket.id, selectedMarket.baseAsset, realBitcoinPrice, isLoadingRealBitcoinPrice]); 
 
 
   const runAutoSignalGeneration = useCallback(async () => {
@@ -220,14 +227,14 @@ export default function TradingPlatformPage() {
     });
 
     const autoSignalInput: GenerateTradingSignalsInput = {
-      historicalData: exampleHistoricalDataForAI,
-      strategy: "movingAverage",
-      riskLevel: "medium",
+      historicalData: exampleHistoricalDataForAI, // Using fixed example data for auto-mode
+      strategy: "movingAverage", // Example strategy
+      riskLevel: "medium", // Example risk level
       cryptocurrencyForAI: selectedMarket.baseAsset,
     };
     await generateSignalsActionWrapper(autoSignalInput, true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.id, selectedMarket.name, selectedMarket.baseAsset, isLoadingAiSignals, toast]);
+  }, [selectedMarket.id, selectedMarket.name, selectedMarket.baseAsset, isLoadingAiSignals, toast]); // Removed generateSignalsActionWrapper from dependencies
 
 
   useEffect(() => {
@@ -236,7 +243,7 @@ export default function TradingPlatformPage() {
       if (botIntervalRef.current) {
         clearInterval(botIntervalRef.current);
       }
-      runAutoSignalGeneration(); // Ejecutar una vez al iniciar
+      runAutoSignalGeneration(); 
       botIntervalRef.current = setInterval(runAutoSignalGeneration, BOT_AUTO_SIGNAL_INTERVAL_MS);
     } else {
       if (botIntervalRef.current) {
@@ -253,13 +260,14 @@ export default function TradingPlatformPage() {
         botIntervalRef.current = null;
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBotRunning, selectedMarket.id, selectedMarket.name, runAutoSignalGeneration]);
 
 
   const handleMarketChange = (marketId: string) => {
     const newMarket = mockMarkets.find(m => m.id === marketId);
     if (newMarket) {
-      setSelectedMarket(newMarket); // Esto activará el useEffect para cargar el historial
+      setSelectedMarket(newMarket); 
       clearSignalData();
       const newBaseBalance = Math.random() * (newMarket.baseAsset === 'BTC' ? 0.2 : 5) + (newMarket.baseAsset === 'BTC' ? 0.01 : 0.5);
       setCurrentBaseAssetBalance(newBaseBalance);
@@ -267,7 +275,7 @@ export default function TradingPlatformPage() {
   };
 
   const handlePlaceOrder = (orderData: OrderFormData, isAISimulated: boolean = false): boolean => {
-    let priceToUse = orderData.price; // Para orden límite
+    let priceToUse = orderData.price; 
     if (orderData.orderType === 'market') {
       if (selectedMarket.id === "BTCUSDT" && realBitcoinPrice !== null) {
         priceToUse = realBitcoinPrice;
@@ -411,11 +419,11 @@ export default function TradingPlatformPage() {
 
       for (const signal of parsedSignalsArray) {
         if ((signal.signal === 'BUY' || signal.signal === 'SELL') && signal.confidence >= AI_TRADE_CONFIDENCE_THRESHOLD) {
-          let tradeAmount = 0.01;
+          let tradeAmount = 0.01; // Default trade amount for non-BTC/ETH
           if (selectedMarket.baseAsset === 'BTC') tradeAmount = 0.0005;
           else if (selectedMarket.baseAsset === 'ETH') tradeAmount = 0.005;
-          else if (priceForAISimulation > 0) {
-            const dollarAmountToInvest = Math.random() * 40 + 10;
+          else if (priceForAISimulation > 0) { // For other assets, calculate based on a small USD amount
+            const dollarAmountToInvest = Math.random() * 40 + 10; // Invest $10-$50
             tradeAmount = parseFloat((dollarAmountToInvest / priceForAISimulation).toFixed(6));
           }
 
@@ -432,11 +440,11 @@ export default function TradingPlatformPage() {
             orderType: 'market',
             price: priceForAISimulation
           };
-          const success = handlePlaceOrder(simulatedOrder, true);
+          const success = handlePlaceOrder(simulatedOrder, true); // Pass true for isAISimulated
           if (success) {
             operationsSimulatedByAI++;
             console.log(`IA (ciclo aut.): Simuló un trade ${signal.signal} de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} con confianza ${signal.confidence.toFixed(2)}`);
-            if (isAutoCall) {
+            if (isAutoCall) { // Only show success toast if it's an auto call, manual calls have their own toasts
               toast({
                 title: `IA Simuló ${signal.signal === 'BUY' ? 'Compra' : 'Venta'} Exitosa`,
                 description: `${signal.signal === 'BUY' ? 'Comprados' : 'Vendidos'} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceForAISimulation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })} (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
@@ -445,7 +453,7 @@ export default function TradingPlatformPage() {
             }
           } else {
             console.warn(`IA (ciclo aut.): Intentó simular un trade ${signal.signal} de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} pero falló (ej. fondos insuficientes).`);
-             if (isAutoCall) { // Solo mostrar toast de fallo si es autocall, para no molestar en manual
+             if (isAutoCall) { // Only show specific failure toast if it's an auto call
               toast({
                 title: `IA Intentó ${signal.signal === 'BUY' ? 'Comprar' : 'Vender'} (Fallido)`,
                 description: `No se pudo simular la operación de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset}. (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
@@ -454,24 +462,24 @@ export default function TradingPlatformPage() {
               });
             }
           }
-          break; 
+          break; // Simulate only the first high-confidence trade signal
         }
       }
     }
 
     if (isAutoCall && operationsSimulatedByAI === 0) {
-      if (!priceForAISimulation || priceForAISimulation <= 0) {
-        console.log(`Ciclo Automático IA: No se simuló ninguna operación. (No latest price or price <= 0). Parsed signals count: ${parsedSignalsArray?.length ?? 'N/A'}.`);
-      } else if (!parsedSignalsArray || parsedSignalsArray.length === 0) {
-        console.log(`Ciclo Automático IA: No se simuló ninguna operación. La IA no devolvió señales válidas o devolvió un array vacío.`);
-        toast({ title: `Ciclo IA: ${selectedMarket.name}`, description: `Análisis completado, la IA no identificó señales específicas.`, variant: "default", duration: 5000 });
-      } else {
-        const highestConfidenceSignal = parsedSignalsArray.reduce((max, s) => s.confidence > max.confidence ? s : max, parsedSignalsArray[0]);
-        if (parsedSignalsArray.every(s => s.signal === 'HOLD' || s.confidence < AI_TRADE_CONFIDENCE_THRESHOLD)) {
-          console.log(`Ciclo Automático IA: No se simuló ninguna operación. Señal de mayor confianza: ${highestConfidenceSignal.signal} con ${highestConfidenceSignal.confidence.toFixed(2)}. (Umbral necesario: ${AI_TRADE_CONFIDENCE_THRESHOLD} para BUY/SELL)`);
-          toast({ title: `Ciclo IA: ${selectedMarket.name}`, description: `Análisis completado, sin nuevas operaciones de alta confianza. Señal principal: ${highestConfidenceSignal.signal} (${(highestConfidenceSignal.confidence * 100).toFixed(0)}%)`, variant: "default", duration: 5000 });
+        if (!priceForAISimulation || priceForAISimulation <= 0) {
+            console.log(`Ciclo Automático IA: No se simuló ninguna operación. (No latest price or price <= 0). Parsed signals count: ${parsedSignalsArray?.length ?? 'N/A'}.`);
+        } else if (!parsedSignalsArray || parsedSignalsArray.length === 0) {
+            console.log(`Ciclo Automático IA: No se simuló ninguna operación. La IA no devolvió señales válidas o devolvió un array vacío.`);
+            toast({ title: `Ciclo IA: ${selectedMarket.name}`, description: `Análisis completado, la IA no identificó señales específicas.`, variant: "default", duration: 5000 });
+        } else {
+            const highestConfidenceSignal = parsedSignalsArray.reduce((max, s) => s.confidence > max.confidence ? s : max, parsedSignalsArray[0]);
+            if (parsedSignalsArray.every(s => s.signal === 'HOLD' || s.confidence < AI_TRADE_CONFIDENCE_THRESHOLD)) {
+                 console.log(`Ciclo Automático IA: No se simuló ninguna operación. Señal de mayor confianza: ${highestConfidenceSignal.signal} con ${highestConfidenceSignal.confidence.toFixed(2)}. (Umbral necesario: ${AI_TRADE_CONFIDENCE_THRESHOLD} para BUY/SELL)`);
+                 toast({ title: `Ciclo IA: ${selectedMarket.name}`, description: `Análisis completado, sin nuevas operaciones de alta confianza. Señal principal: ${highestConfidenceSignal.signal} (${(highestConfidenceSignal.confidence * 100).toFixed(0)}%)`, variant: "default", duration: 5000 });
+            }
         }
-      }
     }
   };
 
@@ -492,9 +500,9 @@ export default function TradingPlatformPage() {
   }
 
   const generateSignalsActionWrapper = async (input: GenerateTradingSignalsInput, isAutoCall: boolean = false) => {
-    if(!isAutoCall) setIsLoadingAiSignals(true); else if(isLoadingAiSignals && isAutoCall) return; // Evitar llamadas superpuestas en auto
+    if(!isAutoCall) setIsLoadingAiSignals(true); else if(isLoadingAiSignals && isAutoCall) return; 
     
-    if (!isAutoCall) { // Limpiar solo para llamadas manuales
+    if (!isAutoCall) { 
       setAiError(null);
       setAiSignalData(null);
     }
@@ -512,7 +520,7 @@ export default function TradingPlatformPage() {
       console.error("Error en generateSignalsActionWrapper:", errorMessage, error);
       handleGenerationError(errorMessage, isAutoCall);
     } finally {
-      if(!isAutoCall) setIsLoadingAiSignals(false);
+      setIsLoadingAiSignals(false); 
     }
   };
 
@@ -549,7 +557,7 @@ export default function TradingPlatformPage() {
         toggleBotStatus={toggleBotStatus}
       />
       <main className="flex-1">
-        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem-2rem)]">
+        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem-2rem)]"> 
           <aside className={`col-span-12 ${isLeftSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <Card>
@@ -579,10 +587,10 @@ export default function TradingPlatformPage() {
           <section className={`col-span-12 ${centralColSpan} p-1 md:p-2 flex flex-col gap-2 transition-all duration-300 ease-in-out`}>
             <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
               <MarketPriceChart
-                key={selectedMarket.id} // Key para forzar re-render al cambiar mercado
+                key={selectedMarket.id}
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
-                initialPriceHistory={currentMarketPriceHistory} // Este es el que se actualiza desde page.tsx
+                initialPriceHistory={currentMarketPriceHistory}
                 aiSignalEvents={aiSignalEvents}
               />
             </div>

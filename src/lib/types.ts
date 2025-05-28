@@ -1,6 +1,8 @@
 
 import type { ChartConfig } from "@/components/ui/chart";
 
+export const PRICE_HISTORY_POINTS_TO_KEEP = 200;
+
 export interface Trade {
   id: string;
   date: string;
@@ -59,12 +61,12 @@ const generateInitialPriceHistory = (basePrice: number, volatility: number, poin
 
 
 export const mockMarketPriceHistory: Record<string, MarketPriceDataPoint[]> = {
-  "BTCUSDT": generateInitialPriceHistory(61500, 0.0005, 200, 1), 
-  "ETHUSDT": generateInitialPriceHistory(3400, 0.0007, 200, 1),
-  "SOLUSDT": generateInitialPriceHistory(150, 0.001, 200, 1),
-  "ADAUSDT": generateInitialPriceHistory(0.42, 0.0015, 200, 1),
-  "XRPUSDT": generateInitialPriceHistory(0.52, 0.0012, 200, 1),
-  "DOGEUSDT": generateInitialPriceHistory(0.15, 0.002, 200, 1),
+  "BTCUSDT": generateInitialPriceHistory(61500, 0.0005, PRICE_HISTORY_POINTS_TO_KEEP, 1), 
+  "ETHUSDT": generateInitialPriceHistory(3400, 0.0007, PRICE_HISTORY_POINTS_TO_KEEP, 1),
+  "SOLUSDT": generateInitialPriceHistory(150, 0.001, PRICE_HISTORY_POINTS_TO_KEEP, 1),
+  "ADAUSDT": generateInitialPriceHistory(0.42, 0.0015, PRICE_HISTORY_POINTS_TO_KEEP, 1),
+  "XRPUSDT": generateInitialPriceHistory(0.52, 0.0012, PRICE_HISTORY_POINTS_TO_KEEP, 1),
+  "DOGEUSDT": generateInitialPriceHistory(0.15, 0.002, PRICE_HISTORY_POINTS_TO_KEEP, 1),
 };
 
 
