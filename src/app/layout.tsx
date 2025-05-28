@@ -26,6 +26,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className="dark"> {/* Added dark class here */}
+      {/* La etiqueta <head> se maneja implícitamente por Next.js a través de Metadata.
+          No debe haber espacios ni contenido suelto entre <html> y <body>. */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
         <Toaster />
@@ -33,4 +35,3 @@ export default function RootLayout({
     </html>
   );
 }
-
