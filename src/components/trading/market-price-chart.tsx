@@ -35,6 +35,7 @@ interface MarketPriceChartProps {
   marketName: string;
   initialPriceHistory: MarketPriceDataPoint[];
   aiSignalEvents?: SignalEvent[];
+  smaCrossoverEvents?: SmaCrossoverEvent[]; // Prop para recibir los eventos
 }
 
 const calculateSMA = (data: MarketPriceDataPoint[], period: number): (number | undefined)[] => {
@@ -50,8 +51,7 @@ const calculateSMA = (data: MarketPriceDataPoint[], period: number): (number | u
 };
 
 
-export function MarketPriceChart({ marketId, marketName, initialPriceHistory, aiSignalEvents = [] }: MarketPriceChartProps) {
-  const [smaCrossoverEvents, setSmaCrossoverEvents] = useState<SmaCrossoverEvent[]>([]);
+export function MarketPriceChart({ marketId, marketName, initialPriceHistory, aiSignalEvents = [], smaCrossoverEvents = [] }: MarketPriceChartProps) {
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -59,6 +59,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
   }, []);
 
   const chartDataWithSMAs = useMemo(() => {
+    if (!initialPriceHistory || initialPriceHistory.length === 0) return [];
     const sma10Values = calculateSMA(initialPriceHistory, SMA10_PERIOD);
     const sma20Values = calculateSMA(initialPriceHistory, SMA20_PERIOD);
     const sma50Values = calculateSMA(initialPriceHistory, SMA50_PERIOD);
@@ -71,49 +72,8 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
     }));
   }, [initialPriceHistory]);
 
-  useEffect(() => {
-    if (chartDataWithSMAs.length < 2) return;
 
-    const newSmaCrossoverEvents: SmaCrossoverEvent[] = [];
-
-    // Check only recent points for performance, assuming crossovers are relatively sparse
-    for (let i = Math.max(1, chartDataWithSMAs.length - 5); i < chartDataWithSMAs.length; i++) {
-      const lastPoint = chartDataWithSMAs[i];
-      const prevPoint = chartDataWithSMAs[i - 1];
-
-      if (lastPoint && prevPoint && typeof lastPoint.sma10 === 'number' && typeof lastPoint.sma20 === 'number' &&
-          typeof prevPoint.sma10 === 'number' && typeof prevPoint.sma20 === 'number') {
-        
-        // Golden Cross (SMA10 crosses above SMA20)
-        if (prevPoint.sma10 < prevPoint.sma20 && lastPoint.sma10 > lastPoint.sma20) {
-          newSmaCrossoverEvents.push({
-            timestamp: lastPoint.timestamp,
-            price: lastPoint.price,
-            type: 'SMA_CROSS_BUY',
-          });
-        } 
-        // Death Cross (SMA10 crosses below SMA20)
-        else if (prevPoint.sma10 > prevPoint.sma20 && lastPoint.sma10 < lastPoint.sma20) {
-          newSmaCrossoverEvents.push({
-            timestamp: lastPoint.timestamp,
-            price: lastPoint.price,
-            type: 'SMA_CROSS_SELL',
-          });
-        }
-      }
-    }
-    if (newSmaCrossoverEvents.length > 0) {
-         setSmaCrossoverEvents(prevEvents => 
-            // Add new events and keep only unique (by timestamp and type) most recent ones
-            [...prevEvents, ...newSmaCrossoverEvents].filter(
-                (event, index, self) => index === self.findIndex(e => e.timestamp === event.timestamp && e.type === event.type)
-            ).slice(-MAX_SMA_CROSSOVER_EVENTS_ON_CHART)
-        );
-    }
-  }, [chartDataWithSMAs]);
-
-
-  if (!chartDataWithSMAs || chartDataWithSMAs.length === 0) {
+  if (!initialPriceHistory || initialPriceHistory.length === 0) {
     return (
       <Card className="shadow-lg bg-card text-card-foreground h-full">
         <CardHeader>
@@ -141,7 +101,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
           {marketName}
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          {marketId === "BTCUSDT" ? "Precio de BTC/USD (actualizado de CoinGecko)" : "Historial de precios (simulado, actualizándose)"}
+          {marketId === "BTCUSDT" ? "Precio de BTC/USD (actualizado desde CoinGecko)" : "Historial de precios (simulado, actualizándose)"}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-grow pt-0 pb-2">
@@ -322,7 +282,7 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
               {lastPoint.sma50 !== undefined && <span style={{color: marketPriceChartConfigDark.sma50.color}}>SMA50: ${lastPoint.sma50.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: marketName.includes('BTC') || marketName.includes('ETH') ? 2 : 5})}</span>}
             </div>
             <div className="leading-none text-muted-foreground">
-              {marketId === "BTCUSDT" ? "Actualizado desde CoinGecko." : `Simulación: actualizando cada 1.5-3s. Mostrando últimos ${PRICE_HISTORY_POINTS_TO_KEEP} puntos.`}
+              {marketId === "BTCUSDT" ? `Actualizado desde CoinGecko. Mostrando ${PRICE_HISTORY_POINTS_TO_KEEP} puntos.` : `Simulación: actualizando cada 1.5-3s. Mostrando últimos ${PRICE_HISTORY_POINTS_TO_KEEP} puntos.`}
             </div>
           </>
         )}
@@ -330,6 +290,3 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
     </Card>
   )
 }
-
-
-    

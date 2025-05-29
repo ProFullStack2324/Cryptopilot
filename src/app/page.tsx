@@ -25,7 +25,7 @@ import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
 import type { GenerateTradingSignalsInput } from "@/ai/flows/generate-trading-signals";
 
 const MAX_AI_SIGNAL_EVENTS_ON_CHART = 5;
-const AI_TRADE_CONFIDENCE_THRESHOLD = 0.01; // Reduced for demo purposes
+const AI_TRADE_CONFIDENCE_THRESHOLD = 0.01; // Muy bajo para demostración
 const BOT_AUTO_SIGNAL_INTERVAL_MS = 30000; 
 
 const isValidSignalItem = (item: any): item is SignalItem => {
@@ -101,6 +101,7 @@ export default function TradingPlatformPage() {
   const [currentBaseAssetBalance, setCurrentBaseAssetBalance] = useState<number>(0);
   const [tradeHistory, setTradeHistory] = useState<Trade[]>(initialMockTrades);
   const [aiSignalEvents, setAiSignalEvents] = useState<SignalEvent[]>([]);
+  const [smaCrossoverEvents, setSmaCrossoverEvents] = useState<SmaCrossoverEvent[]>([]);
   
   const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>(
     mockMarketPriceHistory[mockMarkets[0].id] || []
@@ -112,9 +113,9 @@ export default function TradingPlatformPage() {
 
   const [isBotRunning, setIsBotRunning] = useState(false);
   const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const marketPriceUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const { bitcoinPrice: realBitcoinPrice, isLoadingBitcoinPrice: isLoadingRealBitcoinPrice } = useBitcoinPrice();
-  const marketPriceUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const toggleLeftSidebar = useCallback(() => setIsLeftSidebarOpen(prev => !prev), []);
   const toggleRightSidebar = useCallback(() => setIsRightSidebarOpen(prev => !prev), []);
@@ -142,30 +143,37 @@ export default function TradingPlatformPage() {
   useEffect(() => {
     const newMarket = mockMarkets.find(m => m.id === selectedMarket.id);
     if (!newMarket) return;
-
-    // Clear any existing simulation interval for non-BTC markets
+    
+    console.log(`[Effect 1] Market changed to: ${newMarket.name}. Loading initial history.`);
+    
+    // Always clear the simulation interval that might be running for a *previous* non-BTC market.
+    // The next effect (Effect 3) will decide if a *new* interval is needed for the *new* market.
     if (marketPriceUpdateIntervalRef.current) {
       clearInterval(marketPriceUpdateIntervalRef.current);
       marketPriceUpdateIntervalRef.current = null;
+      console.log(`[Effect 1] Cleared previous non-BTC market simulation interval.`);
     }
     
     let initialHistory = (mockMarketPriceHistory[newMarket.id] || []).slice(-PRICE_HISTORY_POINTS_TO_KEEP);
 
     if (newMarket.id === "BTCUSDT" && realBitcoinPrice && !isLoadingRealBitcoinPrice) {
+      console.log(`[Effect 1] Market is BTCUSDT and real price ${realBitcoinPrice} is available. Updating last point of initial history.`);
       initialHistory = [
-        ...initialHistory.slice(0, -1),
+        ...initialHistory.slice(0, -1), 
         { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice }
       ].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
     }
     setCurrentMarketPriceHistory(initialHistory);
-    setAiSignalEvents([]);
+    setAiSignalEvents([]); 
+    setSmaCrossoverEvents([]); 
     setCurrentSimulatedPosition(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.id]); // Only depends on selectedMarket.id for initial load
+  }, [selectedMarket.id, realBitcoinPrice, isLoadingRealBitcoinPrice]); // Add realBitcoinPrice & isLoading to potentially use fresh BTC price on initial load
 
   // Effect for continuous BTC price updates from the hook
   useEffect(() => {
     if (selectedMarket.id === "BTCUSDT" && realBitcoinPrice !== null && !isLoadingRealBitcoinPrice) {
+      console.log(`[Effect 2] BTC real price update: ${realBitcoinPrice}. Updating chart history.`);
       setCurrentMarketPriceHistory(prevHistory => {
         const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice };
         const historyWithoutDuplicates = prevHistory.filter(p => p.timestamp !== newPoint.timestamp);
@@ -177,46 +185,50 @@ export default function TradingPlatformPage() {
 
   // Effect for simulating price updates for non-BTC markets
   useEffect(() => {
-    // If it's BTC market, ensure the interval is cleared and do nothing else here
     if (selectedMarket.id === "BTCUSDT") {
       if (marketPriceUpdateIntervalRef.current) {
         clearInterval(marketPriceUpdateIntervalRef.current);
         marketPriceUpdateIntervalRef.current = null;
+        console.log(`[Effect 3] Cleared price simulation interval because market is now BTCUSDT.`);
       }
       return; 
     }
 
-    // If not BTC, and no interval is running for the current market, start one.
-    // The interval is already cleared when selectedMarket.id changes by the first useEffect.
-    if (!marketPriceUpdateIntervalRef.current) {
-        marketPriceUpdateIntervalRef.current = setInterval(() => {
-        setCurrentMarketPriceHistory(prevHistory => {
-          if (prevHistory.length === 0) return prevHistory;
-          const lastPricePoint = prevHistory[prevHistory.length - 1];
-          const basePrice = lastPricePoint.price;
-          let fluctuationFactor = 0.0001;
-          if (selectedMarket.baseAsset === 'ETH') fluctuationFactor = 0.0005;
-          else if (selectedMarket.baseAsset !== 'BTC') fluctuationFactor = 0.001;
-          
-          const randomFluctuation = (Math.random() - 0.5) * basePrice * fluctuationFactor * (Math.random() > 0.8 ? 5 : 1);
-          const newPrice = Math.max(0.01, basePrice + randomFluctuation);
-          
-          const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: newPrice };
-          return [...prevHistory, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
-        });
-      }, Math.random() * 1500 + 1500);
+    // If not BTC, start a new interval. Clear any old one just in case (though Effect 1 should handle it too).
+    if (marketPriceUpdateIntervalRef.current) {
+        clearInterval(marketPriceUpdateIntervalRef.current);
     }
 
-    // Cleanup: clear interval when component unmounts 
-    // or when selectedMarket.id changes (this effect will re-run, and the top condition will clear it if it's BTC)
+    console.log(`[Effect 3] Starting price simulation interval for ${selectedMarket.name}.`);
+    marketPriceUpdateIntervalRef.current = setInterval(() => {
+      setCurrentMarketPriceHistory(prevHistory => {
+        if (prevHistory.length === 0) {
+          console.warn(`[Effect 3] Price simulation: prevHistory is empty for ${selectedMarket.name}.`);
+          return prevHistory;
+        }
+        const lastPricePoint = prevHistory[prevHistory.length - 1];
+        const basePrice = lastPricePoint.price;
+        let fluctuationFactor = 0.0001;
+        if (selectedMarket.baseAsset === 'ETH') fluctuationFactor = 0.0005;
+        else if (selectedMarket.baseAsset !== 'BTC' && selectedMarket.baseAsset !== 'ETH') fluctuationFactor = 0.001;
+        
+        const randomFluctuation = (Math.random() - 0.5) * basePrice * fluctuationFactor * (Math.random() > 0.9 ? 10 : 1);
+        const newPrice = Math.max(0.00001, basePrice + randomFluctuation);
+        
+        const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: newPrice };
+        return [...prevHistory, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
+      });
+    }, Math.random() * 1500 + 1500);
+
     return () => {
       if (marketPriceUpdateIntervalRef.current) {
         clearInterval(marketPriceUpdateIntervalRef.current);
         marketPriceUpdateIntervalRef.current = null;
+        console.log(`[Effect 3] Cleaned up price simulation interval for ${selectedMarket.name}.`);
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.id, selectedMarket.baseAsset]);
+  }, [selectedMarket.id, selectedMarket.baseAsset, selectedMarket.name]);
 
 
   const runAutoSignalGeneration = useCallback(async () => {
@@ -238,10 +250,9 @@ export default function TradingPlatformPage() {
       riskLevel: "medium", 
       cryptocurrencyForAI: selectedMarket.baseAsset,
     };
-    // Pass true for isAutoCall
     await generateSignalsActionWrapper(autoSignalInput, true); 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.name, selectedMarket.baseAsset, isLoadingAiSignals, toast, /* generateSignalsActionWrapper removed */]); 
+  }, [selectedMarket.name, selectedMarket.baseAsset, isLoadingAiSignals, toast]); 
 
   useEffect(() => {
     if (isBotRunning) {
@@ -506,7 +517,10 @@ export default function TradingPlatformPage() {
   }
 
   const generateSignalsActionWrapper = async (input: GenerateTradingSignalsInput, isAutoCall: boolean = false) => {
-    if(!isAutoCall) setIsLoadingAiSignals(true); else if(isLoadingAiSignals && isAutoCall) return; 
+    if(!isAutoCall) setIsLoadingAiSignals(true); else if(isLoadingAiSignals && isAutoCall) {
+      console.log("Ciclo automático IA: Solicitud de generación de señales ya en curso. Saltando este ciclo.");
+      return;
+    }
     
     if (!isAutoCall) { 
       setAiError(null);
@@ -526,7 +540,9 @@ export default function TradingPlatformPage() {
       console.error("Error en generateSignalsActionWrapper:", errorMessage, error);
       handleGenerationError(errorMessage, isAutoCall);
     } finally {
-      setIsLoadingAiSignals(false); 
+      if (!isAutoCall || (isAutoCall && setIsLoadingAiSignals)) { // Ensure setIsLoadingAiSignals is only called if it's not an auto-call or if it's the main one.
+         setIsLoadingAiSignals(false);
+      }
     }
   };
 
@@ -598,6 +614,7 @@ export default function TradingPlatformPage() {
                 marketName={selectedMarket.name}
                 initialPriceHistory={currentMarketPriceHistory}
                 aiSignalEvents={aiSignalEvents}
+                smaCrossoverEvents={smaCrossoverEvents}
               />
             </div>
             <div className="flex-grow-[2] min-h-[280px] md:min-h-0">
@@ -632,6 +649,7 @@ export default function TradingPlatformPage() {
                     clearSignalData={clearSignalData}
                     generateSignalsAction={generateSignalsActionWrapper}
                     selectedMarketSymbol={selectedMarket.baseAsset}
+                    isLoadingAiSignals={isLoadingAiSignals}
                   />
                   <Separator className="my-4" />
                   <SignalDisplay
@@ -672,20 +690,20 @@ export default function TradingPlatformPage() {
                           <AccordionContent>
                             <p className="mb-2">Esta línea (generalmente azul o la más destacada) representa el <strong>precio de cotización más reciente</strong> del activo en el mercado seleccionado (ej. BTC/USD).</p>
                             <p className="mb-2"><strong>Para qué sirve:</strong> Es la información fundamental. Muestra el valor al que se está comprando y vendiendo el activo en un momento dado. Su movimiento refleja la oferta y la demanda.</p>
-                            <p>En esta simulación, para mercados que no son BTC/USD, el precio se actualiza cada pocos segundos para imitar el dinamismo. Para BTC/USD, intentamos usar un precio más cercano al real obtenido de CoinGecko.</p>
+                            <p>En esta simulación, para mercados que no son BTC/USD, el precio se actualiza cada pocos segundos para imitar el dinamismo. Para BTC/USD, el gráfico intenta usar el precio real obtenido de CoinGecko (actualizado cada ~60s).</p>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma10">
                           <AccordionTrigger>SMA 10 (Media Móvil Simple de 10 períodos)</AccordionTrigger>
                           <AccordionContent>
-                            <p className="mb-2">La SMA 10 calcula el <strong>precio promedio de los últimos 10 puntos de datos</strong> del gráfico. En nuestro gráfico, cada punto de dato representa un intervalo corto (segundos o minutos, según la simulación actual).</p>
+                            <p className="mb-2">La SMA 10 calcula el <strong>precio promedio de los últimos 10 puntos de datos</strong> del gráfico. En nuestro gráfico, cada punto de dato puede representar un intervalo de tiempo variable según la simulación (segundos o minutos).</p>
                             <p className="mb-2"><strong>Para qué sirve:</strong></p>
                             <ul className="list-disc pl-5 space-y-1">
                               <li><strong>Tendencia a Corto Plazo:</strong> Al ser una media de corto plazo, reacciona rápidamente a los cambios recientes en el precio, ayudando a identificar la dirección inmediata del mercado.</li>
                               <li><strong>Suavizar Ruido:</strong> Ayuda a filtrar fluctuaciones muy pequeñas y momentáneas del precio, ofreciendo una visión un poco más clara de la tendencia subyacente.</li>
-                              <li><strong>Posibles Señales:</strong> El cruce del precio por encima o por debajo de la SMA 10 puede ser usado por algunos traders como una indicación temprana de un cambio de dirección. Los cruces con otras SMAs (ej. SMA 20) pueden generar señales más robustas.</li>
+                              <li><strong>Posibles Señales (en conjunto con otras):</strong> El cruce del precio por encima o por debajo de la SMA 10 puede ser un indicio temprano, pero se suele usar en combinación con otras medias (ej. SMA 20) para generar señales más robustas (ver sección "Señales de Cruce SMA").</li>
                             </ul>
-                            <p className="mt-2"><strong>Ejemplo práctico:</strong> Si el precio cruza hacia arriba la SMA 10 después de haber estado por debajo, podría indicar una fortaleza compradora emergente. Si cruza hacia abajo, debilidad. Un cruce de la SMA10 por encima de la SMA20 se considera una señal de compra (Cruce Dorado), y viceversa para venta (Cruce de la Muerte).</p>
+                            <p className="mt-2"><strong>Ejemplo práctico:</strong> Si el precio cruza hacia arriba la SMA 10 después de haber estado por debajo, podría indicar una fortaleza compradora emergente. Si cruza hacia abajo, debilidad.</p>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma20">
@@ -708,7 +726,7 @@ export default function TradingPlatformPage() {
                             <p className="mb-2"><strong>Para qué sirve (Referencia para Bot):</strong></p>
                             <ul className="list-disc pl-5 space-y-1">
                               <li><strong>Tendencia a Largo Plazo (Relativo al Gráfico):</strong> Es una media más lenta y menos sensible a las fluctuaciones diarias. Ayuda a identificar la tendencia principal del activo, que un bot podría usar como filtro general (ej. solo operar en largo si el precio está por encima de la SMA 50).</li>
-                              <li><strong>Confirmación de Tendencia Sólida:</strong> Si el precio se mantiene consistentemente por encima de la SMA 50, se considera una señal fuerte de tendencia alcista a largo plazo. Si está por debajo, bajista. Un bot podría requerir esta condición para entrar en operaciones de mayor duración.</li>
+                              <li><strong>Confirmación de Tendencia Sólida:</strong> Si el precio se mantiene consistentemente por encima de la SMA 50, se considera una señal fuerte de tendencia alcista a más largo plazo. Si está por debajo, bajista. Un bot podría requerir esta condición para entrar en operaciones de mayor duración.</li>
                               <li><strong>Niveles Clave de Soporte/Resistencia:</strong> La SMA 50 es a menudo observada por traders e inversores como un nivel dinámico importante de soporte o resistencia. Un bot podría programarse para buscar rebotes o rupturas de este nivel.</li>
                             </ul>
                             <p className="mt-2"><strong>Ejemplo práctico para un bot:</strong> Un bot podría estar programado para solo buscar señales de compra de la SMA10/SMA20 si el precio actual está por encima de la SMA 50, filtrando así las señales de compra en una tendencia bajista a más largo plazo.</p>
@@ -723,7 +741,7 @@ export default function TradingPlatformPage() {
                               <li><strong>Identificación de Tendencia:</strong> Si el precio se mantiene consistentemente por encima de una SMA, sugiere una tendencia alcista. Si se mantiene por debajo, una tendencia bajista. La inclinación de la SMA también da pistas sobre la fortaleza de la tendencia.</li>
                               <li><strong>Cruces de Medias (Crossovers):</strong>
                                 <ul className="list-circle pl-5 mt-1 space-y-1">
-                                  <li><strong>Cruce Dorado (Golden Cross):</strong> Ocurre cuando una SMA de corto plazo (ej. SMA 10 o SMA 20) cruza por encima de una SMA de más largo plazo (ej. SMA 50). A menudo se interpreta como una señal alcista (potencial compra). Los puntos verdes claros en el gráfico indican estos cruces (SMA10 sobre SMA20).</li>
+                                  <li><strong>Cruce Dorado (Golden Cross):</strong> Ocurre cuando una SMA de corto plazo (ej. SMA 10) cruza por encima de una SMA de más largo plazo (ej. SMA 20 o SMA 50). A menudo se interpreta como una señal alcista (potencial compra). Los puntos verdes claros en el gráfico indican estos cruces (SMA10 sobre SMA20).</li>
                                   <li><strong>Cruce de la Muerte (Death Cross):</strong> Ocurre cuando una SMA de corto plazo cruza por debajo de una SMA de más largo plazo. A menudo se interpreta como una señal bajista (potencial venta). Los puntos rojos claros en el gráfico indican estos cruces (SMA10 bajo SMA20).</li>
                                 </ul>
                               </li>
@@ -735,7 +753,7 @@ export default function TradingPlatformPage() {
                         <AccordionItem value="ai-signals">
                           <AccordionTrigger>Señales de IA (Puntos Verde/Rojo Sólido)</AccordionTrigger>
                           <AccordionContent>
-                            <p className="mb-2">Los puntos <strong>verdes sólidos</strong> (COMPRA) y <strong>rojos sólidos</strong> (VENTA) en el gráfico representan las señales generadas por el análisis de la IA que han superado el umbral de confianza configurado y que, por lo tanto, **han desencadenado una operación simulada por el bot** (si el bot está "iniciado" y en ciclo automático, o si se generaron manualmente y cumplieron el criterio).</p>
+                            <p className="mb-2">Los puntos <strong>verdes sólidos</strong> (COMPRA) y <strong>rojos sólidos</strong> (VENTA) en el gráfico representan las señales generadas por el análisis de la IA que han superado el umbral de confianza configurado (actualmente {AI_TRADE_CONFIDENCE_THRESHOLD * 100}%) y que, por lo tanto, **han desencadenado una operación simulada por el bot** (si el bot está "iniciado" y en ciclo automático, o si se generaron manualmente y cumplieron el criterio).</p>
                             <p className="mb-2"><strong>Cómo se generan:</strong> Cuando solicitas un análisis ("Generar Señales con IA") o cuando el bot lo hace en su ciclo automático, el sistema envía los datos históricos (de ejemplo), la estrategia seleccionada y el nivel de riesgo a un modelo de IA. La IA procesa esta información y devuelve recomendaciones.</p>
                             <p className="mb-2"><strong>Interpretación:</strong></p>
                             <ul className="list-disc pl-5 space-y-1">
@@ -743,7 +761,6 @@ export default function TradingPlatformPage() {
                               <li>Un <strong>punto rojo sólido</strong> aparece de manera similar para una señal de VENTA.</li>
                               <li>El tooltip sobre estos puntos te dará el tipo de señal, el precio, la confianza y la hora.</li>
                             </ul>
-                            <p className="mt-2">Estas señales son el resultado del análisis de la IA. El bot simula la operación automáticamente si la confianza de la señal de IA supera el umbral establecido (`AI_TRADE_CONFIDENCE_THRESHOLD` actualmente en {AI_TRADE_CONFIDENCE_THRESHOLD * 100}% para fines demostrativos).</p>
                           </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="sma-crossover-signals">

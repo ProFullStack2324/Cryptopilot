@@ -66,10 +66,10 @@ export function AppHeader({
             ) : bitcoinPrice !== null ? (
               <>
                 <span className="hidden sm:inline">
-                  BTC/USD: ${bitcoinPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  BTC/USD: ${bitcoinPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
                 <span className="sm:hidden">
-                    BTC: ${bitcoinPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    BTC: ${bitcoinPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                 </span>
               </>
             ) : (
@@ -81,7 +81,7 @@ export function AppHeader({
             <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm font-semibold text-foreground p-1.5 md:p-2 rounded-md bg-card/50 border border-border shadow-sm">
               <Wallet className="h-4 w-4 md:h-5 md:w-5 text-accent" />
               <span className="hidden sm:inline">
-                {portfolioBalance.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {portfolioBalance.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
                <span className="sm:hidden">
                 {`$${(portfolioBalance / 1000).toFixed(1)}k`}
