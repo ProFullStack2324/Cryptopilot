@@ -170,14 +170,19 @@ export default function TradingPlatformPage() {
   }, [selectedMarket.id, realBitcoinPrice, isLoadingRealBitcoinPrice]); 
 
   useEffect(() => {
+ console.log("[page] useEffect (realBitcoinPrice) triggered. Dependencias cambiaron.");
+    console.log("[Effect on realBitcoinPrice]: realBitcoinPrice o estado de carga cambió. Valor actual:", { realBitcoinPrice, isLoadingRealBitcoinPrice, selectedMarketId: selectedMarket.id });
+
     if (selectedMarket.id === "BTCUSDT" && realBitcoinPrice !== null && !isLoadingRealBitcoinPrice) {
       console.log(`[Effect 2] BTC real price update: ${realBitcoinPrice}. Updating chart history.`);
       setCurrentMarketPriceHistory(prevHistory => {
         const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice };
         const historyWithoutDuplicates = prevHistory.filter(p => p.timestamp !== newPoint.timestamp);
+ console.log("[page] Historial de gráfico BTCUSDT actualizado. Nuevo historial length:", [...historyWithoutDuplicates, newPoint].length);
         return [...historyWithoutDuplicates, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
       });
     }
+    console.log("[Effect 2]: Historial del gráfico de BTC actualizado.");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [realBitcoinPrice, isLoadingRealBitcoinPrice, selectedMarket.id]);
 
@@ -399,14 +404,14 @@ export default function TradingPlatformPage() {
         if (!isAutoCall) {
           toast({ title: "Error de Formato de Señal IA", description: errorDetail, variant: "destructive" });
         }
-        setAiSignalData(prev => prev ? { ...prev, signals: "[]" } : { signals: "[]", explanation: prev?.explanation || "Error al procesar señales." });
+        setAiSignalData(prev => prev ? { ...prev, signals: "[]" } : { signals: "[]", explanation: "Error al procesar señales." });
         return;
       }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Formato de señales JSON inesperado.";
       console.error("Error al analizar señales JSON en handleSignalsGenerated (catch):", errorMsg, "Datos recibidos:", data.signals);
       setAiError(`Error de formato en señales de IA: ${errorMsg}. Revise la consola.`);
-      setAiSignalData(prev => prev ? { ...prev, signals: "[]" } : { signals: "[]", explanation: prev?.explanation || "Error al procesar señales." });
+      setAiSignalData(prev => ({ signals: "[]", explanation: (prev as AISignalData | null)?.explanation || "Error al procesar señales." }));
       if (!isAutoCall) {
         toast({ title: "Error de Formato de Señal IA (catch)", description: errorMsg, variant: "destructive" });
       }
@@ -570,7 +575,7 @@ export default function TradingPlatformPage() {
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
+ <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
       <AppHeader
         toggleLeftSidebar={toggleLeftSidebar}
         isLeftSidebarOpen={isLeftSidebarOpen}
@@ -615,7 +620,6 @@ export default function TradingPlatformPage() {
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
                 initialPriceHistory={currentMarketPriceHistory}
-                aiSignalEvents={aiSignalEvents}
                 smaCrossoverEvents={smaCrossoverEvents}
               />
             </div>
