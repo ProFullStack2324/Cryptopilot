@@ -60,7 +60,8 @@ export function OrderForm({ market, balanceQuoteAsset, balanceBaseAsset, onSubmi
         amount: undefined,
         price: currentPrice || market.latestPrice || undefined
     });
-  }, [market, currentPrice, form]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market, currentPrice]);
 
 
   const watchOrderType = form.watch("orderType");
@@ -202,8 +203,8 @@ export function OrderForm({ market, balanceQuoteAsset, balanceBaseAsset, onSubmi
                   </FormControl>
                   <FormDescription className="text-xs text-muted-foreground/70">
                     {tradeType === 'buy'
-                      ? `Máx. aprox.: ${maxBuyAmount > 0 ? maxBuyAmount.toFixed(6) : '0.000000'} ${market.baseAsset}`
-                      : `Disponible: ${maxSellAmount > 0 ? maxSellAmount.toFixed(6) : '0.000000'} ${market.baseAsset}`
+                      ? `Máx. aprox.: ${maxBuyAmount > 0 ? maxBuyAmount.toLocaleString('en-US', {minimumFractionDigits: 6, maximumFractionDigits: 6}) : '0.000000'} ${market.baseAsset}`
+                      : `Disponible: ${maxSellAmount > 0 ? maxSellAmount.toLocaleString('en-US', {minimumFractionDigits: 6, maximumFractionDigits: 6}) : '0.000000'} ${market.baseAsset}`
                     }
                   </FormDescription>
                   <FormMessage className="text-xs"/>
@@ -215,16 +216,16 @@ export function OrderForm({ market, balanceQuoteAsset, balanceBaseAsset, onSubmi
             <div className="text-xs space-y-1 text-muted-foreground">
               <div className="flex justify-between">
                 <span>Saldo {market.quoteAsset} (Simulado):</span>
-                <span className="font-medium text-foreground">${balanceQuoteAsset.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                <span className="font-medium text-foreground">${balanceQuoteAsset.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
               </div>
               <div className="flex justify-between">
                 <span>Saldo {market.baseAsset} (Simulado):</span>
-                <span className="font-medium text-foreground">{balanceBaseAsset.toLocaleString(undefined, {minimumFractionDigits:Math.min(8, market.baseAsset === 'BTC' ? 8 : 4), maximumFractionDigits:Math.min(8, market.baseAsset === 'BTC' ? 8 : 4)})}</span>
+                <span className="font-medium text-foreground">{balanceBaseAsset.toLocaleString('en-US', {minimumFractionDigits:Math.min(8, market.baseAsset === 'BTC' ? 8 : 4), maximumFractionDigits:Math.min(8, market.baseAsset === 'BTC' ? 8 : 4)})}</span>
               </div>
                {watchAmount > 0 && priceForEstimation > 0 && (
                 <div className="flex justify-between">
                     <span>Total Estimado ({market.quoteAsset}):</span>
-                    <span className="font-medium text-foreground">${estimatedTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                    <span className="font-medium text-foreground">${estimatedTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
                 </div>
                )}
             </div>
