@@ -100,20 +100,22 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
           {marketId === "BTCUSDT" ? "Precio de BTC/USD (actualizado desde CoinGecko)" : "Historial de precios (simulado, actualizándose)"}
         </CardDescription>
       </CardHeader>
+
       <CardContent className="flex-grow pt-0 pb-2">
-        {/* Reemplazamos ChartContainer con un div */}
-        {/* El div tomará el tamaño de su padre CardContent */}
-        <div className="h-full w-full" style={{ height: '400px' }}>
-            <LineChart
-              accessibilityLayer
-              data={chartDataWithSMAs}
-              margin={{
-                left: -10,
-                right: 20,
-                top: 5,
-                bottom: 20,
-              }}
-            >
+            {/* Reemplazamos ChartContainer con un div */}
+            {/* El div tomará el tamaño de su padre CardContent */}
+            <div className="h-full w-full" style={{ height: '400px', width: '100%' }}> {/* <-- MODIFICAR AQUI */}
+                <LineChart
+                  accessibilityLayer
+                  data={chartDataWithSMAs}
+                  margin={{
+                    left: -10,
+                    right: 20,
+                    top: 5,
+                    bottom: 20,
+                  }}
+                >
+
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.3)" />
               <XAxis
                 dataKey="date"
@@ -178,16 +180,22 @@ export function MarketPriceChart({ marketId, marketName, initialPriceHistory, ai
  <Legend verticalAlign="bottom" height={30} wrapperStyle={{ fontSize: "10px", textTransform: 'capitalize' }} />
 
               {/* Lineas de Precio y SMAs */}
+             
+             
+             
               <Line
                 yAxisId="left"
                 dataKey="price"
-                type="linear" // Cambiado a linear para asegurar dibujado continuo
-                stroke="#00FF00" // Green
-                strokeWidth={2}
+                type="linear"
+                stroke="#00FF00" // <-- MODIFICAR AQUI (Verde)
+                strokeWidth={2} // <-- Asegurar o MODIFICAR AQUI
                 dot={false}
                 activeDot={{ r: 5, fill: "hsl(var(--chart-1))", stroke: "hsl(var(--background))", strokeWidth: 2 }}
                 name={marketPriceChartConfigDark.price.label as string}
               />
+
+             
+             
               <Line
                 yAxisId="left"
                 dataKey="sma10"
