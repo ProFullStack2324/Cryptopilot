@@ -6,7 +6,6 @@ import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import type { GenerateTradingSignalsInput, GenerateTradingSignalsOutput } from "@/ai/flows/generate-trading-signals";
-import { mockMarkets } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -155,28 +154,22 @@ export function BotControls({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center text-muted-foreground"><Repeat className="h-4 w-4 mr-1" />Activo (para contexto IA)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger className="bg-input text-foreground">
-                        <SelectValue placeholder="Selecciona activo para IA" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className="bg-popover text-popover-foreground">
-                      {mockMarkets.map(market => (
-                        <SelectItem key={market.id} value={market.baseAsset}>
-                          {market.name.split('/')[0]} ({market.baseAsset})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    {/* Usamos un Input deshabilitado para mostrar el símbolo del mercado seleccionado */}
+                    <Input
+                      {...field}
+                      readOnly // Hace que el input no sea editable
+                      disabled // Deshabilita visualmente el input
+                      className="bg-input text-foreground placeholder:text-muted-foreground/70"
+                    />
+                  </FormControl>
                   <FormDescription className="text-xs text-muted-foreground/70">
-                    Esta selección provee contexto al modelo de IA. El mercado para operar se elige en "Mercados".
+                    El modelo de IA analizará el activo seleccionado actualmente: {selectedMarketSymbol}.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
-
             <FormField
               control={form.control}
               name="strategy"

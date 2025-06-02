@@ -1,4 +1,4 @@
-
+// src/components/dashboard/performance-chart.tsx
 "use client"
 
 import { TrendingUp } from "lucide-react"
@@ -17,11 +17,22 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import type { PerformanceDataPoint } from "@/lib/types";
-import { marketPriceChartConfigDark as mockPerformanceChartConfigDark } from "@/lib/types";
+
+// **ESTA ES LA LÍNEA DE IMPORTACIÓN A CAMBIAR:**
+// Antes: import { marketPriceChartConfigDark as mockPerformanceChartConfigDark } from "@/lib/types";
+// Ahora:
+import { mockPerformanceChartConfigDark } from "@/lib/types"; // Importa directamente el nombre que ya tiene 'value'
+
+
 import { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
+// ... el resto de tu código del componente PerformanceChart
+
+// Y la línea 164 (o similar) en tu <Line />
+// name={mockPerformanceChartConfigDark?.value?.label || "Valor Portafolio"}
+// Debería funcionar ahora sin el error. Si el error persiste, usa la siguiente opción para la línea.
 const MAX_PERFORMANCE_DATA_POINTS = 100;
 
 interface PerformanceChartProps {
@@ -31,15 +42,17 @@ interface PerformanceChartProps {
 export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
   const [chartData, setChartData] = useState<PerformanceDataPoint[]>([]);
 
+  // Efecto para añadir nuevos puntos al gráfico cuando cambia el valor del portafolio
   useEffect(() => {
     if (portfolioValue !== null) {
       const newPoint: PerformanceDataPoint = {
-        // Usar un formato de hora para reflejar cambios más frecuentes
+        // Usar formato de hora para reflejar cambios más frecuentes
         date: format(new Date(), 'HH:mm:ss', { locale: es }),
         value: portfolioValue,
       };
       setChartData(prevData => {
         const updatedData = [...prevData, newPoint];
+        // Limitar la cantidad de puntos de datos para mantener el rendimiento
         if (updatedData.length > MAX_PERFORMANCE_DATA_POINTS) {
           return updatedData.slice(updatedData.length - MAX_PERFORMANCE_DATA_POINTS);
         }
@@ -48,17 +61,18 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
     }
   }, [portfolioValue]);
 
-  // Establecer un punto inicial si el portafolio tiene valor al montar y el gráfico está vacío
+  // Efecto para establecer un punto inicial si el portafolio tiene valor al montar
   useEffect(() => {
     if (portfolioValue !== null && chartData.length === 0) {
-       setChartData([{
-         date: format(new Date(), 'HH:mm:ss', { locale: es }),
-         value: portfolioValue
-       }]);
+      setChartData([{
+        date: format(new Date(), 'HH:mm:ss', { locale: es }),
+        value: portfolioValue
+      }]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [portfolioValue]); // Solo al montar si portfolioValue está disponible
+  // No hay necesidad de suprimir el linting si portfolioValue es la única dependencia intencional
+  }, [portfolioValue, chartData.length]); // Añadir chartData.length a las dependencias para evitar warnings de linting
 
+  // Memoizar el valor actual a mostrar en el footer para evitar recálculos innecesarios
   const currentDisplayValue = useMemo(() => {
     if (chartData.length > 0) {
       return chartData[chartData.length - 1].value;
@@ -66,6 +80,7 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
     return portfolioValue; // Fallback al valor actual si el gráfico aún no tiene puntos
   }, [chartData, portfolioValue]);
 
+  // Renderizar estado de carga si no hay valor de portafolio ni datos en el gráfico
   if (portfolioValue === null && chartData.length === 0) {
     return (
       <Card className="shadow-lg bg-card text-card-foreground mt-4">
@@ -83,6 +98,7 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
     );
   }
 
+  // Renderizar el gráfico cuando hay datos
   return (
     <Card className="shadow-lg bg-card text-card-foreground mt-4">
       <CardHeader className="pb-2 pt-3">
@@ -94,7 +110,7 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
       </CardHeader>
       <CardContent className="pt-0 pb-2">
         {chartData.length > 0 ? (
-          <ChartContainer config={mockPerformanceChartConfigDark} className="h-[180px] w-full"> {/* Reducir altura un poco */}
+          <ChartContainer config={mockPerformanceChartConfigDark} className="h-[180px] w-full">
             <LineChart
               accessibilityLayer
               data={chartData}
@@ -111,10 +127,15 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                // Mostrar menos ticks si hay muchos puntos
+                // Lógica para mostrar menos ticks si hay muchos puntos
                 tickFormatter={(value, index) => {
-                    if (chartData.length > 10 && index % Math.floor(chartData.length / 5) !== 0 && index !== chartData.length -1 && index !== 0) return '';
-                    return value;
+                    // Muestra el primer, último y algunos ticks intermedios para claridad
+                    const totalPoints = chartData.length;
+                    if (totalPoints <= 10) return value; // Muestra todos si son pocos
+                    if (index === 0 || index === totalPoints - 1) return value; // Siempre muestra el primero y el último
+                    // Muestra ticks cada ~20% de los datos
+                    if (index % Math.floor(totalPoints / 5) === 0) return value;
+                    return ''; // Oculta otros ticks
                 }}
                 stroke="hsl(var(--muted-foreground))"
                 fontSize={10}
@@ -124,26 +145,26 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tickFormatter={(value) => `$${(value / 1000).toFixed(1)}k`} // Ajustar formato si es necesario
+                tickFormatter={(value) => `$${(value / 1000).toFixed(1)}k`} // Formato a '$X.Xk'
                 stroke="hsl(var(--muted-foreground))"
-                domain={['dataMin - dataMin*0.05', 'dataMax + dataMax*0.05']} // Margen dinámico
+                domain={['dataMin - dataMin*0.05', 'dataMax + dataMax*0.05']} // Margen dinámico para el eje Y
                 fontSize={10}
                 width={50}
               />
               <ChartTooltip
                 cursor={{stroke: "hsl(var(--accent))", strokeWidth: 1, strokeDasharray: "3 3"}}
                 content={<ChartTooltipContent
-                            indicator="line"
-                            labelClassName="text-foreground"
-                            className="bg-popover text-popover-foreground border-popover-foreground/50"
-                            formatter={(value, name, props) => {
-                                const rawValue = props.payload?.[name as keyof typeof props.payload] as number | undefined;
-                                return [
+                                indicator="line"
+                                labelClassName="text-foreground"
+                                className="bg-popover text-popover-foreground border-popover-foreground/50"
+                                formatter={(value, name, props) => {
+                                  const rawValue = props.payload?.[name as keyof typeof props.payload] as number | undefined;
+                                  return [
                                     rawValue?.toLocaleString(undefined, {style: 'currency', currency: 'USD', minimumFractionDigits:2, maximumFractionDigits:2 }),
                                     mockPerformanceChartConfigDark[name as keyof typeof mockPerformanceChartConfigDark]?.label || name
-                                ];
-                            }}
-                          />}
+                                  ];
+                                }}
+                              />}
               />
               <Line
                 dataKey="value"
@@ -152,7 +173,7 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
                 strokeWidth={2}
                 dot={{ r: 1, fill: "hsl(var(--chart-2))", strokeWidth: 0.5, stroke: "hsl(var(--background))" }}
                 activeDot={{ r: 3, fill: "hsl(var(--chart-2))", stroke: "hsl(var(--background))", strokeWidth: 1 }}
-                name={mockPerformanceChartConfigDark.value.label as string}
+                name={mockPerformanceChartConfigDark?.value?.label || "Valor Portafolio"}
               />
             </LineChart>
           </ChartContainer>
@@ -162,7 +183,7 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
           </div>
         )}
       </CardContent>
-       <CardFooter className="flex-col items-start gap-1 text-xs pt-0 pb-3">
+      <CardFooter className="flex-col items-start gap-1 text-xs pt-0 pb-3">
         <div className="flex gap-2 font-medium leading-none text-foreground">
           Valor actual del portafolio: ${currentDisplayValue?.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) || 'N/A'}.
         </div>
@@ -171,5 +192,5 @@ export function PerformanceChart({ portfolioValue }: PerformanceChartProps) {
         </div>
       </CardFooter>
     </Card>
-  )
+  );
 }

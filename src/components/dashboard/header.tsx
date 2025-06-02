@@ -3,7 +3,8 @@
 
 import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
+//import { useBitcoinPrice } from "@/hooks/useBinanceMarketData";
+import { useBinanceMarketData } from '@/hooks/useBinanceMarketData';
 
 interface AppHeaderProps {
   toggleLeftSidebar: () => void;
@@ -24,8 +25,10 @@ export function AppHeader({
   isBotRunning,
   toggleBotStatus
 }: AppHeaderProps) {
-  const { bitcoinPrice, isLoadingBitcoinPrice, bitcoinPriceError } = useBitcoinPrice();
 
+  const { marketPrice, isLoading, error: marketError } = useBinanceMarketData({ symbol: "BTCUSDT" }); // <-- ¡CORRECCIÓN!
+// Esto desestructura la propiedad 'error' del objeto devuelto por el hook
+// y la renombra a 'marketError' para usarla localmente.
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 max-w-screen-2xl items-center px-4 md:px-6">
@@ -61,19 +64,19 @@ export function AppHeader({
         <div className="ml-auto flex items-center gap-2 md:gap-3">
           <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm font-semibold text-foreground p-1.5 md:p-2 rounded-md bg-card/50 border border-border shadow-sm">
             <BitcoinIcon className="h-4 w-4 md:h-5 md:w-5 text-yellow-500" />
-            {isLoadingBitcoinPrice ? (
+            {isLoading ? (
               <span className="text-muted-foreground text-xs">Cargando BTC...</span>
-            ) : bitcoinPrice !== null ? (
+            ) : marketPrice !== null ? (
               <>
                 <span className="hidden sm:inline">
-                  BTC/USD: ${bitcoinPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  BTC/USD: ${marketPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
                 <span className="sm:hidden">
-                    BTC: ${bitcoinPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    BTC: ${marketPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                 </span>
               </>
             ) : (
-              <span className="text-red-500 text-xs" title={bitcoinPriceError || "No se pudo cargar el precio de BTC"}>Error BTC</span>
+              <span className="text-red-500 text-xs" title={marketError || "No se pudo cargar el precio de BTC"}>Error BTC</span>
             )}
           </div>
 

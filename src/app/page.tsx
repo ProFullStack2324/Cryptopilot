@@ -1,32 +1,78 @@
-
+// src/app/page.tsx
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import type { AISignalData, Market, OrderFormData, Trade, MarketPriceDataPoint, SignalEvent, SimulatedPosition, ParsedSignals, SignalItem, SmaCrossoverEvent } from "@/lib/types";
-import { mockMarkets, mockMarketPriceHistory, initialMockTrades, exampleHistoricalDataForAI, PRICE_HISTORY_POINTS_TO_KEEP } from "@/lib/types";
+// src/app/page.tsx
+
+// Importaciones de TIPOS (usa 'type')
+import type {
+  AISignalData,
+  Market,
+  OrderFormData,
+  Trade,
+  MarketPriceDataPoint,
+  SignalEvent,
+  SimulatedPosition,
+  ParsedSignals,
+  SignalItem,
+  SmaCrossoverEvent
+} from "@/lib/types";
+
+
+// Importaciones de VALORES (NO uses 'type')
+// Importaciones de VALORES (NO uses 'type')
+import { exampleHistoricalDataForAI, PRICE_HISTORY_POINTS_TO_KEEP } from "@/lib/types";
+
+// ... el resto de tus importaciones ...// Asegúrate de importar 'Market' ya que lo usaremos en el estado y el useEffect
+// Componentes UI
 import { AppHeader } from "@/components/dashboard/header";
 import { BalanceCard } from "@/components/dashboard/balance-card";
 import { TradeHistoryTable } from "@/components/dashboard/trade-history-table";
 import { BotControls } from "@/components/dashboard/bot-controls";
 import { SignalDisplay } from "@/components/dashboard/signal-display";
 import { PerformanceChart } from "@/components/dashboard/performance-chart";
-import { handleGenerateSignalsAction } from "./actions";
 import { MarketSelector } from "@/components/trading/market-selector";
 import { MarketPriceChart } from "@/components/trading/market-price-chart";
-import { OrderForm } from "@/components/trading/order-form";
+import TradeForm from '@/components/trading/TradeForm'; 
+
+import { handleGenerateSignalsAction } from "./actions";
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, Activity, Wallet } from "lucide-react";
+import { LineChart, PackageSearch, Info, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, Activity, Wallet, DollarSign } from "lucide-react";
+
+//                                                                                                                              ^^^^^^^^^ -- Añade DollarSign aquí
+
+// Hooks y acciones
 import { useToast } from "@/hooks/use-toast";
-import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
+import { useBinanceMarketData } from "@/hooks/useBinanceMarketData";
 import type { GenerateTradingSignalsInput } from "@/ai/flows/generate-trading-signals";
 
+// Componentes de visualización de Binance (si los usas)
+import { BinanceBalancesDisplay } from '@/components/dashboard/binance-balances-display'; // <-- Ya estaba importado
+
+
+// NUEVA IMPORTACIÓN DEL HOOK DEL BOT
+import { useTradingBot } from '@/hooks/useTradingBot';
+
+// --- Definir las interfaces necesarias aquí mismo para mayor claridad ---
+interface Balance {
+  available: string;
+  onOrder: string;
+}
+
+interface BalancesResponse {
+  message: string;
+  balances: Record<string, Balance>;
+}
+// --- Fin de interfaces ---
+
 const MAX_AI_SIGNAL_EVENTS_ON_CHART = 5;
-const AI_TRADE_CONFIDENCE_THRESHOLD = 0.01; 
-const BOT_AUTO_SIGNAL_INTERVAL_MS = 30000; 
+const AI_TRADE_CONFIDENCE_THRESHOLD = 0.01;
+const BOT_AUTO_SIGNAL_INTERVAL_MS = 30000;
 
 const isValidSignalItem = (item: any): item is SignalItem => {
   return typeof item === 'object' && item !== null &&
@@ -34,8 +80,10 @@ const isValidSignalItem = (item: any): item is SignalItem => {
     typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1;
 };
 
-function SimulatedPnLDisplay({ position, currentPrice, market }: { position: SimulatedPosition | null; currentPrice: number | undefined; market: Market | null }) {
-  if (!position || currentPrice === undefined || !market) {
+function SimulatedPnLDisplay({ position, currentPrice, market }: { position: SimulatedPosition | null; currentPrice: number | null; market: Market | null }) {
+                                                                                       // ^^^^^^^^^^^^^^^^  <-- CAMBIO 1: Tipo de 'currentPrice'
+  if (!position || currentPrice === null || !market) {
+                               // ^^^^^^^^^^^^^^^^  <-- CAMBIO 2: Comprobación de 'currentPrice'
     return (
       <Card className="mt-4">
         <CardHeader className="pb-2 pt-3">
@@ -91,117 +139,542 @@ function SimulatedPnLDisplay({ position, currentPrice, market }: { position: Sim
 }
 
 export default function TradingPlatformPage() {
-  const [selectedMarket, setSelectedMarket] = useState<Market>(mockMarkets[0]);
-  const [aiSignalData, setAiSignalData] = useState<AISignalData | null>(null);
-  const [isLoadingAiSignals, setIsLoadingAiSignals] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const { toast } = useToast();
+  // 1. TODAS LAS DECLARACIONES DE ESTADO (useState) Y REFERENCIAS (useRef) PRIMERO Y AGRUPADAS
+  const [selectedMarket, setSelectedMarket] = useState<Market>({
+    id: "BTCUSDT",
+    symbol: "BTCUSDT",
+    name: "BTC/USDT",
+    baseAsset: "BTC",
+    quoteAsset: "USDT",
+    latestPrice: null
+  });
+
+  // RENOMBRADO DE ESTADOS: Mantener el tipo original 'AISignalData' por ahora.
+  const [botSignalData, setBotSignalData] = useState<AISignalData | null>(null); // ¡CAMBIO AQUÍ! Usa AISignalData
+  const [botError, setBotError] = useState<string | null>(null);
+  const [isLoadingBotSignals, setIsLoadingBotSignals] = useState(false);
+  const [botSignalEvents, setBotSignalEvents] = useState<SignalEvent[]>([]); // ¡CAMBIO AQUÍ! Usa SignalEvent
 
   const [availableQuoteBalance, setAvailableQuoteBalance] = useState<number | null>(null);
   const [currentBaseAssetBalance, setCurrentBaseAssetBalance] = useState<number>(0);
-  const [tradeHistory, setTradeHistory] = useState<Trade[]>(initialMockTrades);
-  const [aiSignalEvents, setAiSignalEvents] = useState<SignalEvent[]>([]);
-  const [smaCrossoverEvents, setSmaCrossoverEvents] = useState<SmaCrossoverEvent[]>([]);
-  
-  const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>(
-    mockMarketPriceHistory[mockMarkets[0].id] || []
-  );
+  const [tradeHistory, setTradeHistory] = useState<Trade[]>([]);
+
+  const [smaCrossoverEvents, setSmaCrossoverEvents] = useState<SmaCrossoverEvent[]>([]); // <-- ¡AHORA ESTÁ AQUÍ!
+
+  const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>([]);
   const [currentSimulatedPosition, setCurrentSimulatedPosition] = useState<SimulatedPosition | null>(null);
 
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
 
-  const [isBotRunning, setIsBotRunning] = useState(false);
-  const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const marketPriceUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // ESTADO CLAVE PARA EL BOT
+  //const [isBotRunning, setIsBotRunning] = useState<boolean>(false); // <--- ¡ÚNICA DECLARACIÓN AQUÍ!
+  
+  const botIntervalRef = useRef<number | null>(null);
+  const marketPriceUpdateIntervalRef = useRef<number | null>(null);
+  
+  
+  // Estados para Balances de Binance
+  const [binanceUSDTBalance, setBinanceUSDTBalance] = useState<number | null>(null);
+  const [isBinanceBalancesLoading, setIsBinanceBalancesLoading] = useState(true);
+  const [binanceBalancesError, setBinanceBalancesError] = useState<string | null>(null);
+  const [allBinanceBalances, setAllBinanceBalances] = useState<Record<string, Balance>>({});
+  const [isLoadingTrade, setIsLoadingTrade] = useState(false);
 
-  const { bitcoinPrice: realBitcoinPrice, isLoadingBitcoinPrice: isLoadingRealBitcoinPrice } = useBitcoinPrice();
+
+
+  // ======================================================================
+  // 2. LLAMADAS A HOOKS DE UTILIDAD Y HOOKS PERSONALIZADOS
+  //    (Estos hooks se ejecutan ANTES que los useCallback o useEffect que los utilicen.
+  //     Definen valores clave como `currentMarketPrice`, `isBotRunning`, etc.)
+  // ======================================================================
+
+
+  // 2. DESPUÉS DE TODOS LOS ESTADOS: LLAMADAS A HOOKS PERSONALIZADOS
+  // useBinanceMarketData debe ir aquí, ya que usa 'selectedMarket' que está definido arriba.
+  // Hooks de utilidades (como useToast)
+  const { toast } = useToast();
+
+  const {
+    marketPrice: currentMarketPrice,
+    marketHistory: currentMarketHistory,
+    availableMarkets,
+    isLoading: isMarketDataLoading,
+    error: marketDataError
+  } = useBinanceMarketData({
+    symbol: selectedMarket.id,
+    timeframe: "1m",
+    limit: PRICE_HISTORY_POINTS_TO_KEEP // Usa la constante importada
+  });
+
+  
+
+  // MUEVE ESTA SECCIÓN AQUÍ:
+  // 3. Función handlePlaceOrder (debe estar definida antes de useTradingBot)
+  // c) handlePlaceOrder (¡AJUSTE CLAVE AQUÍ: DEFINIR handlePlaceOrder ANTES DE useTradingBot!)
+  //    `useTradingBot` lo necesita como dependencia, así que debe existir antes de la llamada al hook.
+  const handlePlaceOrder = useCallback(
+    async (orderData: OrderFormData, isBotSimulated: boolean = false): Promise<boolean> => {
+      setIsLoadingTrade(true);
+      let success = false;
+      let priceToUse = orderData.price;
+
+      // Determinar el precio para la orden de mercado si es necesario
+      if (orderData.orderType === 'market') {
+        if (selectedMarket.id === "BTCUSDT" && currentMarketPrice !== null) {
+          priceToUse = currentMarketPrice;
+        } else if (currentMarketPriceHistory.length > 0) {
+          priceToUse = currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price;
+        } else {
+          priceToUse = selectedMarket.latestPrice || 0;
+        }
+      }
+
+      if (!priceToUse || priceToUse <= 0) {
+        const errorMsg = "No se pudo determinar un precio válido para la orden.";
+        console.error(`[handlePlaceOrder] Error: ${errorMsg}`, { orderData, currentMarketPrice, currentMarketPriceHistory });
+        if (!isBotSimulated) {
+          toast({ title: "Error de Precio", description: errorMsg, variant: "destructive" });
+        }
+        setIsLoadingTrade(false);
+        return false;
+      }
+      orderData.price = priceToUse; // Asegurarse de que el precio usado esté en orderData
+
+      try {
+        // Aquí iría la lógica REAL para enviar la orden a Binance usando fetch
+        console.log(`[handlePlaceOrder] Enviando orden REAL a Binance:`, orderData);
+        const response = await fetch('/api/binance/trade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`Error al enviar orden a Binance: ${errorData.message || response.statusText}`);
+        }
+
+        const result = await response.json();
+        console.log(`[handlePlaceOrder] Orden REAL exitosa:`, result);
+        success = true; // La orden fue enviada exitosamente (no necesariamente ejecutada de inmediato si es Limit)
+
+      } catch (error: any) {
+        console.error(`[handlePlaceOrder] Fallo al enviar orden REAL:`, error);
+        const errorMessage = error.message || "Ocurrió un error desconocido al enviar la orden.";
+        if (!isBotSimulated) {
+          toast({
+            title: "Error de Orden (Binance)",
+            description: errorMessage,
+            variant: "destructive",
+            duration: 5000,
+          });
+        }
+      } finally {
+        setIsLoadingTrade(false); // Finaliza el estado de carga
+      }
+      return success;
+    },
+    [
+      currentMarketPrice,
+      currentMarketPriceHistory,
+      selectedMarket,
+      toast,
+      // No se usan directamente: availableQuoteBalance, currentBaseAssetBalance, tradeHistory
+      // setIsLoadingTrade es estable.
+    ]
+  );
+
+
+
+
+
+
+
+  // d) useTradingBot (¡AJUSTE CLAVE AQUÍ: ESTE ES EL ORDEN CORRECTO para useTradingBot!)
+  //    Debe ir DESPUÉS de `useBinanceMarketData` y `handlePlaceOrder`
+  //    porque usa `currentMarketPrice`, `currentMarketPriceHistory`, `allBinanceBalances`, y `handlePlaceOrder`.
+  //    Aquí es donde `isBotRunning` y `toggleBotStatus` son "declaradas" para el componente.
+  
+
+
+  // NUEVA LÍNEA: Usa el hook useTradingBot
+  const {
+    isBotRunning,
+    toggleBotStatus,
+    botOpenPosition,
+    botLastActionTimestamp
+  } = useTradingBot({
+    selectedMarket,
+    currentMarketPriceHistory,
+    currentPrice: currentMarketPrice, // <-- ¡AJUSTE CLAVE AQUÍ: Usar currentMarketPrice!
+    allBinanceBalances,
+    onPlaceOrder: handlePlaceOrder, // Pasa tu función existente para manejar órdenes
+    botIntervalMs: 15000 // Ejecutar la estrategia cada 15 segundos (ajusta si quieres)
+  });
+
+
+  // ======================================================================
+  // 3. DECLARACIONES DE FUNCIONES useCallback/useMemo
+  //    (Estas funciones dependen de estados o valores de hooks declarados ANTERIORMENTE.
+  //     También deben estar DEFINIDAS ANTES de cualquier `useEffect` que las llame.)
+  // ======================================================================
+
+
+  // a) clearSignalData: No depende de isBotRunning, pero debe estar antes de handleSignalsGenerated
+  const clearSignalData = useCallback(() => {
+    setBotSignalData(null);
+    setBotError(null);
+    setBotSignalEvents([]);
+    setSmaCrossoverEvents([]);
+  }, [setBotSignalData, setBotError, setBotSignalEvents, setSmaCrossoverEvents]);
+
+
+
+  // b) handleGenerationError
+  const handleGenerationError = useCallback((errorMsg: string, isAutoCall: boolean = false) => {
+    setBotSignalData(null);
+    setBotError(errorMsg);
+    if (!isAutoCall) {
+      toast({ title: "Error al Generar Señales del Bot", description: errorMsg, variant: "destructive" });
+    } else {
+      console.error("Error en ciclo automático del Bot:", errorMsg);
+      toast({ title: "Error en Ciclo del Bot", description: `Fallo al analizar ${selectedMarket.name}. Revise la consola.`, variant: "destructive", duration: 3000 });
+    }
+  }, [setBotSignalData, setBotError, selectedMarket.name, toast]);
+
+
+
+
+  // c) handleSignalsGenerated (Depende de handlePlaceOrder, currentMarketPriceHistory, etc.)
+  const handleSignalsGenerated = useCallback((data: AISignalData, isAutoCall: boolean = false) => {
+    setBotSignalData(data);
+    setBotError(null);
+
+    let operationsExecutedByBot = 0;
+    let parsedSignalsArray: ParsedSignals | null = null;
+
+    try {
+      const rawParsed = JSON.parse(data.signals);
+      if (Array.isArray(rawParsed) && (rawParsed.length === 0 || rawParsed.every(isValidSignalItem))) {
+        parsedSignalsArray = rawParsed as ParsedSignals;
+      } else {
+        let errorDetail = "Los datos de señales de la estrategia del bot no son un array válido de objetos de señal.";
+        if (Array.isArray(rawParsed) && rawParsed.length > 0 && !rawParsed.every(isValidSignalItem)) {
+          errorDetail = "Uno o más objetos de señal tienen un formato incorrecto.";
+        }
+        console.error("Error al analizar señales JSON del bot:", errorDetail, "Datos recibidos:", data.signals);
+        if (!isAutoCall) {
+          toast({ title: "Error de Formato de Señal del Bot", description: errorDetail, variant: "destructive" });
+        }
+        return;
+      }
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Formato de señales JSON inesperado.";
+      console.error("Error al analizar señales JSON del bot (catch):", errorMsg, "Datos recibidos:", data.signals);
+      if (!isAutoCall) {
+        toast({ title: "Error de Formato de Señal del Bot (catch)", description: errorMsg, variant: "destructive" });
+      }
+      return;
+    }
+
+    if (isAutoCall) console.log("Señales del bot recibidas (ciclo automático):", parsedSignalsArray);
+
+    const latestPriceDataPoint = currentMarketPriceHistory.length > 0 ? currentMarketPriceHistory[currentMarketPriceHistory.length - 1] : null;
+    // <-- AJUSTE CLAVE AQUÍ: Usa `currentMarketPrice` si está disponible y es válido, si no, usa el historial.
+    const currentMarketPriceForBot = selectedMarket.id === "BTCUSDT" && currentMarketPrice && currentMarketPrice > 0
+      ? currentMarketPrice
+      : (latestPriceDataPoint ? latestPriceDataPoint.price : undefined);
+
+    if (parsedSignalsArray && currentMarketPriceForBot && currentMarketPriceForBot > 0) {
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const newEvents: SignalEvent[] = parsedSignalsArray
+        .filter(s => s.signal === 'BUY' || s.signal === 'SELL')
+        .map(s => ({
+          timestamp: currentTimestamp,
+          price: currentMarketPriceForBot,
+          type: s.signal as 'BUY' | 'SELL',
+          confidence: s.confidence,
+        }));
+      setBotSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_AI_SIGNAL_EVENTS_ON_CHART));
+
+      for (const signal of parsedSignalsArray) {
+        if ((signal.signal === 'BUY' || signal.signal === 'SELL') && signal.confidence >= AI_TRADE_CONFIDENCE_THRESHOLD) {
+          let tradeAmount = 0.001; // Placeholder. Must be replaced by real logic.
+
+          if (tradeAmount <= 0) {
+            console.warn(`Bot (auto cycle): Calculated trade amount was <= 0 for ${signal.signal} ${selectedMarket.baseAsset}. Skipping.`);
+            continue;
+          }
+
+          console.log(`Bot (auto cycle): Attempting to execute trade: ${signal.signal} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} @ ${currentMarketPriceForBot.toFixed(5)} (Conf: ${signal.confidence.toFixed(2)})`);
+          const realOrder: OrderFormData = {
+            type: signal.signal === 'BUY' ? 'buy' : 'sell',
+            marketId: selectedMarket.id,
+            amount: tradeAmount,
+            orderType: 'market',
+            price: currentMarketPriceForBot
+          };
+
+          const success = handlePlaceOrder(realOrder, true); // Pass 'true' to indicate it's from the bot
+          if (success) {
+            operationsExecutedByBot++;
+            console.log(`Bot (auto cycle): Executed a ${signal.signal} trade of ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} with confidence ${signal.confidence.toFixed(2)}`);
+            if (isAutoCall) {
+              toast({
+                title: `Bot Executed ${signal.signal === 'BUY' ? 'Buy' : 'Sell'} Successfully`,
+                description: `${signal.signal === 'BUY' ? 'Bought' : 'Sold'} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} at $${currentMarketPriceForBot.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })} (Confidence: ${(signal.confidence * 100).toFixed(0)}%)`,
+                variant: "default"
+              });
+            }
+          } else {
+            console.warn(`Bot (auto cycle): Attempted to execute a ${signal.signal} trade of ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} but failed (e.g., insufficient funds or API error).`);
+            if (isAutoCall) {
+              toast({
+                title: `Bot Attempted ${signal.signal === 'BUY' ? 'Buy' : 'Sell'} (Failed)`,
+                description: `Could not execute the operation for ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset}. (Confidence: ${(signal.confidence * 100).toFixed(0)}%)`,
+                variant: "destructive",
+                duration: 3000
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (isAutoCall && operationsExecutedByBot === 0) {
+      if (!currentMarketPriceForBot || currentMarketPriceForBot <= 0) {
+        console.log(`Bot Auto Cycle: No operation executed. (No current price or price <= 0). Number of signals processed: ${parsedSignalsArray?.length ?? 'N/A'}.`);
+      } else if (!parsedSignalsArray || parsedSignalsArray.length === 0) {
+        console.log(`Bot Auto Cycle: No operation executed. Strategy returned no valid signals or empty array.`);
+        toast({ title: `Bot Cycle: ${selectedMarket.name}`, description: `Analysis complete, strategy identified no specific signals.`, variant: "default", duration: 5000 });
+      } else {
+        const highestConfidenceSignal = parsedSignalsArray.reduce((max, s) => s.confidence > max.confidence ? s : max, parsedSignalsArray[0]);
+        if (parsedSignalsArray.every(s => s.signal === 'HOLD' || s.confidence < AI_TRADE_CONFIDENCE_THRESHOLD)) {
+          console.log(`Bot Auto Cycle: No operation executed. Highest confidence signal: ${highestConfidenceSignal.signal} with ${highestConfidenceSignal.confidence.toFixed(2)}. (Threshold needed: ${AI_TRADE_CONFIDENCE_THRESHOLD} for BUY/SELL)`);
+          toast({ title: `Bot Cycle: ${selectedMarket.name}`, description: `Analysis complete, no new high-confidence operations. Main signal: ${highestConfidenceSignal.signal} (${(highestConfidenceSignal.confidence * 100).toFixed(0)}%)`, variant: "default", duration: 5000 });
+        } else {
+          const actionableSignals = parsedSignalsArray.filter(s => s.signal === 'BUY' || s.signal === 'SELL');
+          if (actionableSignals.length > 0) {
+            const bestActionable = actionableSignals.reduce((max, s) => s.confidence > max.confidence ? s : max, actionableSignals[0]);
+            console.log(`Bot Auto Cycle: No operation executed. Best actionable signal ${bestActionable.signal} with confidence ${bestActionable.confidence.toFixed(2)} did not meet threshold ${AI_TRADE_CONFIDENCE_THRESHOLD}.`);
+          }
+        }
+      }
+    }
+  }, [setBotSignalData, setBotError, setBotSignalEvents, currentMarketPriceHistory, selectedMarket, currentMarketPrice, toast, handlePlaceOrder]);
+
+
+
+
+
+// src/app/page.tsx
+// ... (código anterior) ...
+
+  const generateSignalsActionWrapper = async (input: GenerateTradingSignalsInput, isAutoCall: boolean = false) => {
+    // CAMBIO DE NOMBRES DE ESTADOS Y TEXTOS PARA REFERIRSE AL BOT
+    if (!isAutoCall) {
+      setIsLoadingBotSignals(true); // <--- Asumo que has renombrado isLoadingAiSignals
+      setBotError(null);           // <--- Asumo que has renombrado setAiError
+      setBotSignalData(null);      // <--- Asumo que has renombrado setAiSignalData
+    } else if (isLoadingBotSignals && isAutoCall) { // <--- Asumo que has renombrado isLoadingAiSignals
+      console.log("Ciclo automático del Bot: Solicitud de generación de señales ya en curso. Saltando este ciclo.");
+      return;
+    }
+
+    try {
+      const completeInput = { ...input, cryptocurrencyForAI: input.cryptocurrencyForAI || selectedMarket.baseAsset };
+      const result = await handleGenerateSignalsAction(completeInput); // Esta es la Server Action
+      if (!result || typeof result.signals !== 'string' || typeof result.explanation !== 'string') {
+        console.error("Respuesta de la estrategia del bot inválida (faltan signals/explanation strings):", result);
+        throw new Error("La respuesta de la estrategia del bot no tiene la estructura esperada.");
+      }
+      handleSignalsGenerated(result, isAutoCall); // Esta función debería usar ahora los nuevos estados botSignalData, etc.
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
+      console.error("Error en generateSignalsActionWrapper:", errorMessage, error);
+      handleGenerationError(errorMessage, isAutoCall);
+    } finally {
+      setIsLoadingBotSignals(false); // <--- Asumo que has renombrado setIsLoadingAiSignals
+    }
+  };
+
+
+  // ======================================================================
+  // 4. TODOS LOS EFECTOS (useEffect)
+  //    (Ahora 'isBotRunning' y 'generateSignalsActionWrapper' ya estarán definidas
+  //     porque `useTradingBot` y `useCallback` ya se ejecutaron.)
+  // ======================================================================
+
+
+
+useEffect(() => {
+    if (isBotRunning) {
+      console.log("Bot activado. Iniciando ciclo automático de señales...");
+      // Ejecuta inmediatamente al iniciar
+      generateSignalsActionWrapper({
+        cryptocurrencyForAI: selectedMarket.baseAsset,
+        historicalData: JSON.stringify(currentMarketHistory), // <-- ¡AÑADE ESTO!
+        strategy: "movingAverage", // <-- ¡AÑADE ESTO o tu estrategia preferida!
+        riskLevel: "medium" // <-- ¡AÑADE ESTO o tu nivel de riesgo preferido!
+      }, true);
+
+      // Luego, configura el intervalo
+      botIntervalRef.current = setInterval(() => {
+        generateSignalsActionWrapper({
+          cryptocurrencyForAI: selectedMarket.baseAsset,
+          historicalData: JSON.stringify(currentMarketHistory), // <-- ¡AÑADE ESTO!
+          strategy: "movingAverage", // <-- ¡AÑADE ESTO o tu estrategia preferida!
+          riskLevel: "medium" // <-- ¡AÑADE ESTO o tu nivel de riesgo preferido!
+        }, true);
+      }, BOT_AUTO_SIGNAL_INTERVAL_MS) as unknown as number;
+
+    } else {
+      if (botIntervalRef.current) {
+        clearInterval(botIntervalRef.current);
+        botIntervalRef.current = null;
+        console.log("Bot detenido. Deteniendo ciclo automático de señales.");
+      }
+    }
+
+    // Función de limpieza para cuando el componente se desmonte o isBotRunning cambie a false
+    return () => {
+      if (botIntervalRef.current) {
+        clearInterval(botIntervalRef.current);
+        botIntervalRef.current = null;
+      }
+    };
+  }, [isBotRunning, selectedMarket.baseAsset, generateSignalsActionWrapper, currentMarketHistory]); // <--- ¡Asegúrate de agregar currentMarketHistory aquí!
+  
+  // --- NUEVO useEffect para cargar los balances de Binance ---
+  useEffect(() => {
+    const fetchBinanceBalances = async () => {
+      setIsBinanceBalancesLoading(true); // Iniciamos la carga
+      setBinanceBalancesError(null); // Limpiamos errores anteriores
+
+      try {
+        const response = await fetch('/api/binance/balance'); // ¡Llamada a tu API de Binance!
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`Error HTTP ${response.status}: ${errorData.message || 'Error desconocido al obtener balances'}`);
+        }
+        const data: BalancesResponse = await response.json();
+
+        setAllBinanceBalances(data.balances); // Guardamos todos los balances
+        
+        // Extraer y parsear el balance de USDT
+        if (data.balances['USDT']) {
+          setBinanceUSDTBalance(parseFloat(data.balances['USDT'].available));
+        } else {
+          setBinanceUSDTBalance(0); // Si no hay USDT, asumimos 0
+        }
+
+      } catch (err: any) {
+        console.error("[Page] Error al cargar balances de Binance:", err);
+        setBinanceBalancesError(err.message);
+        setBinanceUSDTBalance(null); // Establecer balance a null en caso de error
+      } finally {
+        setIsBinanceBalancesLoading(false); // Finalizamos la carga
+      }
+    };
+
+    fetchBinanceBalances(); // Ejecutar la función cuando el componente se monte
+    // Opcional: Si quieres actualizar los balances periódicamente, puedes añadir un setInterval aquí
+    // const interval = setInterval(fetchBinanceBalances, 60000); // Cada 60 segundos
+    // return () => clearInterval(interval); // Limpiar el intervalo al desmontar
+  }, []); // El array vacío asegura que esto se ejecute solo una vez al inicio
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // MUEVE ESTA SECCIÓN AQUÍ:
+  // 4. `useMemo` para `latestPriceForPnl` (debe estar definido antes de useTradingBot)
+  const latestPriceForPnl = useMemo(() => {
+    if (selectedMarket.id === "BTCUSDT" && currentMarketPrice !== null) {
+      return currentMarketPrice;
+    }
+    if (currentMarketPriceHistory.length > 0) {
+      return currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price;
+    }
+    // ESTA LÍNEA ES CRÍTICA: Asegúrate de que retorna `null`, no `undefined`.
+    return null;
+  }, [selectedMarket.id, currentMarketPrice, currentMarketPriceHistory]);
+ 
+
+  
+
+
+
+
+
 
   const toggleLeftSidebar = useCallback(() => setIsLeftSidebarOpen(prev => !prev), []);
   const toggleRightSidebar = useCallback(() => setIsRightSidebarOpen(prev => !prev), []);
 
-  const toggleBotStatus = useCallback(() => {
-    setIsBotRunning(prev => {
-      const newBotStatus = !prev;
-      // Defer the toast call to prevent "Cannot update a component while rendering another component" error
-      setTimeout(() => {
-        toast({
-          title: `Bot ${newBotStatus ? "Iniciado" : "Detenido"}`,
-          description: `El bot de trading ahora está ${newBotStatus ? "activo (simulación)" : "inactivo (simulación)"}.`,
-          variant: newBotStatus ? "default" : "destructive",
-        });
-      }, 0);
-      return newBotStatus;
-    });
-  }, [toast]);
 
+  
   useEffect(() => {
-    const initialQuote = Math.random() * 25000 + 5000;
-    setAvailableQuoteBalance(initialQuote);
-    const defaultMarketBaseBalance = Math.random() * (mockMarkets[0].baseAsset === 'BTC' ? 0.5 : 10) + 0.1;
-    setCurrentBaseAssetBalance(defaultMarketBaseBalance);
-  }, []);
+      console.log("[page] Sincronizando historial del gráfico con datos de Binance...");
+      // currentMarketHistory ya contiene el historial de klines directamente de Binance
+      // y useBinanceMarketData se encarga de mantenerlo actualizado.
+      // Simplemente lo asignamos a nuestro estado local para el gráfico.
+      if (currentMarketHistory && currentMarketHistory.length > 0) {
+        setCurrentMarketPriceHistory(currentMarketHistory);
+        console.log(`[page] Historial del gráfico actualizado con ${currentMarketHistory.length} puntos de Binance.`);
+      } else if (!isMarketDataLoading && !marketDataError) {
+        console.log("[page] No hay historial de mercado disponible aún desde Binance o está vacío.");
+        setCurrentMarketPriceHistory([]); // Asegurarse de que esté vacío si no hay datos.
+      }
+    }, [currentMarketHistory, isMarketDataLoading, marketDataError]);
 
-  useEffect(() => {
-    console.log(`[Effect 1] Selected market changed to: ${selectedMarket.id}. Loading initial history.`);
-    const newMarket = mockMarkets.find(m => m.id === selectedMarket.id);
-    if (!newMarket) return;
-    
-    if (marketPriceUpdateIntervalRef.current) {
-      clearInterval(marketPriceUpdateIntervalRef.current);
-      marketPriceUpdateIntervalRef.current = null;
-      console.log(`[Effect 1] Cleared previous non-BTC market simulation interval for ${newMarket.name}.`);
-    }
-    
-    let initialHistory = (mockMarketPriceHistory[newMarket.id] || []).slice(-PRICE_HISTORY_POINTS_TO_KEEP);
-
-    if (newMarket.id === "BTCUSDT" && realBitcoinPrice && !isLoadingRealBitcoinPrice) {
-      console.log(`[Effect 1] Market is BTCUSDT and real price ${realBitcoinPrice} is available. Updating last point of initial history.`);
-      initialHistory = [
-        ...initialHistory.slice(0, -1), 
-        { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice }
-      ].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
-    }
-    setCurrentMarketPriceHistory(initialHistory);
-    setAiSignalEvents([]); 
-    setSmaCrossoverEvents([]); 
-    setCurrentSimulatedPosition(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.id, realBitcoinPrice, isLoadingRealBitcoinPrice]); 
-
-  useEffect(() => {
- console.log("[page] useEffect (realBitcoinPrice) triggered. Dependencias cambiaron.");
-    console.log("[Effect on realBitcoinPrice]: realBitcoinPrice o estado de carga cambió. Valor actual:", { realBitcoinPrice, isLoadingRealBitcoinPrice, selectedMarketId: selectedMarket.id });
-
-    if (selectedMarket.id === "BTCUSDT" && realBitcoinPrice !== null && !isLoadingRealBitcoinPrice) {
-      console.log(`[Effect 2] BTC real price update: ${realBitcoinPrice}. Updating chart history.`);
-      setCurrentMarketPriceHistory(prevHistory => {
-        const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: realBitcoinPrice };
-        const historyWithoutDuplicates = prevHistory.filter(p => p.timestamp !== newPoint.timestamp);
- console.log("[page] Historial de gráfico BTCUSDT actualizado. Nuevo historial length:", [...historyWithoutDuplicates, newPoint].length);
-        return [...historyWithoutDuplicates, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
-      });
-    }
-    console.log("[Effect 2]: Historial del gráfico de BTC actualizado.");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [realBitcoinPrice, isLoadingRealBitcoinPrice, selectedMarket.id]);
 
   useEffect(() => {
     if (selectedMarket.id === "BTCUSDT") {
       if (marketPriceUpdateIntervalRef.current) {
-        clearInterval(marketPriceUpdateIntervalRef.current);
+        // CAMBIO AQUÍ: Usar window.clearInterval
+        window.clearInterval(marketPriceUpdateIntervalRef.current);
         marketPriceUpdateIntervalRef.current = null;
         console.log(`[Effect 3] Cleared price simulation interval because market is now BTCUSDT.`);
       }
-      return; 
+      return;
     }
 
     if (marketPriceUpdateIntervalRef.current) {
-        clearInterval(marketPriceUpdateIntervalRef.current);
+      // CAMBIO AQUÍ: Usar window.clearInterval
+      window.clearInterval(marketPriceUpdateIntervalRef.current);
     }
 
     console.log(`[Effect 3] Starting price simulation interval for ${selectedMarket.name}.`);
-    marketPriceUpdateIntervalRef.current = setInterval(() => {
+    // CAMBIO AQUÍ: Usar window.setInterval
+    marketPriceUpdateIntervalRef.current = window.setInterval(() => {
       setCurrentMarketPriceHistory(prevHistory => {
         if (prevHistory.length === 0) {
           console.warn(`[Effect 3] Price simulation: prevHistory is empty for ${selectedMarket.name}. Cannot simulate.`);
@@ -212,356 +685,163 @@ export default function TradingPlatformPage() {
         let fluctuationFactor = 0.0001;
         if (selectedMarket.baseAsset === 'ETH') fluctuationFactor = 0.0005;
         else if (selectedMarket.baseAsset !== 'BTC' && selectedMarket.baseAsset !== 'ETH') fluctuationFactor = 0.001;
-        
+
         const randomFluctuation = (Math.random() - 0.5) * basePrice * fluctuationFactor * (Math.random() > 0.9 ? 10 : 1);
         const newPrice = Math.max(0.00001, basePrice + randomFluctuation);
-        
-        const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: newPrice };
+
+        const newPoint = { timestamp: Math.floor(Date.now() / 1000), price: newPrice, volume: 0 };
         return [...prevHistory, newPoint].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
       });
     }, Math.random() * 1500 + 1500);
 
     return () => {
       if (marketPriceUpdateIntervalRef.current) {
-        clearInterval(marketPriceUpdateIntervalRef.current);
+        // CAMBIO AQUÍ: Usar window.clearInterval
+        window.clearInterval(marketPriceUpdateIntervalRef.current);
         marketPriceUpdateIntervalRef.current = null;
         console.log(`[Effect 3] Cleaned up price simulation interval for ${selectedMarket.name}.`);
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMarket.id, selectedMarket.baseAsset, selectedMarket.name]);
 
 
+
+
+
+
+
+
+
+
+
+  // ... (código anterior) ...
+
+  // src/app/page.tsx
+  //... (código anterior) ...
+
   const runAutoSignalGeneration = useCallback(async () => {
-    if (isLoadingAiSignals) {
-      console.log("Ciclo automático IA: Esperando que termine la generación anterior.");
-      return;
+    //... (código existente) ...
+    if (isLoadingBotSignals) {
+        console.log("[runAutoSignalGeneration] Solicitud de señales de IA ya en curso. Saltando este ciclo.");
+        return;
     }
-    console.log("Ciclo automático IA: Iniciando generación de señales para", selectedMarket.baseAsset);
+
+    console.log("Ciclo automático del bot: Iniciando análisis de estrategia para", selectedMarket.baseAsset);
     toast({
-      title: "Ciclo Automático IA",
-      description: `El bot está analizando ${selectedMarket.name}...`,
+      title: "Análisis Automático del Bot",
+      description: `El bot está analizando ${selectedMarket.name} con la estrategia...`,
       variant: "default",
       duration: 3000,
     });
 
-    const autoSignalInput: GenerateTradingSignalsInput = {
-      historicalData: exampleHistoricalDataForAI, 
-      strategy: "movingAverage", 
-      riskLevel: "medium", 
+    //CAMBIO CRÍTICO AQUÍ: Convertir el array a un string JSON
+    const botStrategyInput: GenerateTradingSignalsInput = {
+      historicalData: JSON.stringify(currentMarketPriceHistory), //CAMBIO CLAVE AQUÍ!
+      strategy: "movingAverage",
+      riskLevel: "medium",
       cryptocurrencyForAI: selectedMarket.baseAsset,
     };
-    await generateSignalsActionWrapper(autoSignalInput, true); 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket.id, selectedMarket.name, selectedMarket.baseAsset, isLoadingAiSignals]); 
+
+    await generateSignalsActionWrapper(botStrategyInput, true);
+    //eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedMarket.id,
+    selectedMarket.name,
+    selectedMarket.baseAsset,
+    currentMarketPriceHistory, //Debe seguir aquí como dependencia!
+    isLoadingBotSignals, // Añadido para evitar llamadas concurrentes
+    generateSignalsActionWrapper, // generateSignalsActionWrapper ya está memoizada y maneja setIsLoadingBotSignals
+    toast
+  ]);
+  
+
+
+
+
+  
 
   useEffect(() => {
     if (isBotRunning) {
       console.log("Bot iniciado, configurando intervalo para", selectedMarket.name);
       if (botIntervalRef.current) {
-        clearInterval(botIntervalRef.current);
+        // CAMBIO AQUÍ: Usar window.clearInterval
+        window.clearInterval(botIntervalRef.current);
       }
-      runAutoSignalGeneration(); 
-      botIntervalRef.current = setInterval(runAutoSignalGeneration, BOT_AUTO_SIGNAL_INTERVAL_MS);
+      runAutoSignalGeneration();
+      // CAMBIO AQUÍ: Usar window.setInterval
+      botIntervalRef.current = window.setInterval(runAutoSignalGeneration, BOT_AUTO_SIGNAL_INTERVAL_MS);
     } else {
       if (botIntervalRef.current) {
-        console.log("Ciclo automático IA: Detenido. Limpiando intervalo.");
-        clearInterval(botIntervalRef.current);
+        console.log("Ciclo automático del bot: Detenido. Limpiando intervalo.");
+        // CAMBIO AQUÍ: Usar window.clearInterval
+        window.clearInterval(botIntervalRef.current);
         botIntervalRef.current = null;
       }
     }
+
 
     return () => {
       if (botIntervalRef.current) {
         console.log("Limpiando intervalo del bot (desmontaje o cambio de dependencias).");
-        clearInterval(botIntervalRef.current);
+        // CAMBIO AQUÍ: Usar window.clearInterval
+        window.clearInterval(botIntervalRef.current);
         botIntervalRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBotRunning, selectedMarket.id, selectedMarket.name, runAutoSignalGeneration]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBotRunning, selectedMarket.id, selectedMarket.name, runAutoSignalGeneration]); // runAutoSignalGeneration ahora tiene sus propias dependencias correctas
 
+// ... (resto de tu código) ...
+  // src/app/page.tsx
 
-  const handleMarketChange = (marketId: string) => {
-    const newMarket = mockMarkets.find(m => m.id === marketId);
+  // src/app/page.tsx
+  // ... (asegúrate de que los estados y funciones de los que depende handleMarketChange estén definidos antes)
+
+  // ...
+
+  const handleMarketChange = useCallback((marketId: string) => {
+    const newMarket = availableMarkets.find((m: Market) => m.id === marketId);
     if (newMarket) {
-      setSelectedMarket(newMarket); 
-      clearSignalData();
-      const newBaseBalance = Math.random() * (newMarket.baseAsset === 'BTC' ? 0.2 : 5) + (newMarket.baseAsset === 'BTC' ? 0.01 : 0.5);
-      setCurrentBaseAssetBalance(newBaseBalance);
+      setSelectedMarket(newMarket);
+      clearSignalData(); // Asegúrate de que clearSignalData está definida y limpia estados relacionados con señales anteriores.
+      // ELIMINAMOS LA LÍNEA DE SIMULACIÓN DE BALANCE BASE:
+      // const newBaseBalance = Math.random() * (newMarket.baseAsset === 'BTC' ? 0.2 : 5) + (newMarket.baseAsset === 'BTC' ? 0.01 : 0.5);
+      // setCurrentBaseAssetBalance(newBaseBalance); // YA NO ES NECESARIO AQUÍ.
+      // El balance real del asset base se actualizará a través de fetchBinanceBalances.
     }
-  };
+  }, [availableMarkets, setSelectedMarket, clearSignalData /*, setCurrentBaseAssetBalance -- YA NO ES UNA DEPENDENCIA SI SE ELIMINA*/ ]);
 
-  const handlePlaceOrder = (orderData: OrderFormData, isAISimulated: boolean = false): boolean => {
-    let priceToUse = orderData.price; 
-    if (orderData.orderType === 'market') {
-      if (selectedMarket.id === "BTCUSDT" && realBitcoinPrice !== null) {
-        priceToUse = realBitcoinPrice;
-      } else if (currentMarketPriceHistory.length > 0) {
-        priceToUse = currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price;
-      } else {
-        priceToUse = selectedMarket.latestPrice || 0;
-      }
-    }
-    
-    if (!priceToUse || priceToUse <= 0) {
-      if (!isAISimulated) {
-        toast({ title: "Error de Precio", description: "No se pudo determinar un precio válido para la orden.", variant: "destructive" });
-      } else {
-        console.warn(`IA (ciclo aut.) intentó simular trade ${orderData.type} pero precio era <= 0`);
-      }
-      return false;
-    }
-    const totalCostOrProceeds = orderData.amount * priceToUse;
 
-    const newTrade: Trade = {
-      id: (tradeHistory.length + 1).toString() + Date.now().toString(),
-      date: new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-      type: orderData.type === 'buy' ? 'Compra' : 'Venta',
-      asset: selectedMarket.name,
-      amount: orderData.amount,
-      price: priceToUse,
-      total: totalCostOrProceeds,
-      status: 'Completado',
-    };
 
-    if (orderData.type === 'buy') {
-      if (availableQuoteBalance !== null && availableQuoteBalance >= totalCostOrProceeds) {
-        setAvailableQuoteBalance(availableQuoteBalance - totalCostOrProceeds);
-        setCurrentBaseAssetBalance(currentBaseAssetBalance + orderData.amount);
-        setTradeHistory(prev => [newTrade, ...prev]);
-        setCurrentSimulatedPosition({
-          marketId: selectedMarket.id,
-          entryPrice: priceToUse!,
-          amount: orderData.amount,
-          type: 'buy',
-          timestamp: Math.floor(Date.now() / 1000)
-        });
-        if (!isAISimulated) {
-          toast({
-            title: "Orden de Compra (Simulada) Exitosa",
-            description: `Comprados ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })}`,
-            variant: "default"
-          });
-        }
-        return true;
-      } else {
-        if (!isAISimulated) {
-          toast({ title: "Fondos Insuficientes (Simulado)", description: `No tienes suficiente ${selectedMarket.quoteAsset} para comprar ${orderData.amount} ${selectedMarket.baseAsset}.`, variant: "destructive" });
-        } else {
-          console.warn(`IA (ciclo aut.) intentó simular compra pero no hay fondos ${selectedMarket.quoteAsset} suficientes.`);
-        }
-        return false;
-      }
-    } else { 
-      if (currentBaseAssetBalance >= orderData.amount) {
-        setCurrentBaseAssetBalance(currentBaseAssetBalance - orderData.amount);
-        setAvailableQuoteBalance((availableQuoteBalance || 0) + totalCostOrProceeds);
-        setTradeHistory(prev => [newTrade, ...prev]);
-        setCurrentSimulatedPosition({
-          marketId: selectedMarket.id,
-          entryPrice: priceToUse!,
-          amount: orderData.amount,
-          type: 'sell',
-          timestamp: Math.floor(Date.now() / 1000)
-        });
-        if (!isAISimulated) {
-          toast({
-            title: "Orden de Venta (Simulada) Exitosa",
-            description: `Vendidos ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })}`,
-            variant: "default"
-          });
-        }
-        return true;
-      } else {
-        if (!isAISimulated) {
-          toast({ title: "Fondos Insuficientes (Simulado)", description: `No tienes suficiente ${selectedMarket.baseAsset} para vender ${orderData.amount}.`, variant: "destructive" });
-        } else {
-          console.warn(`IA (ciclo aut.) intentó simular venta pero no hay fondos ${selectedMarket.baseAsset} suficientes.`);
-        }
-        return false;
-      }
-    }
-  };
 
- const handleSignalsGenerated = (data: AISignalData, isAutoCall: boolean = false) => {
-    setAiSignalData(data);
-    setAiError(null);
-    let operationsSimulatedByAI = 0;
-    let parsedSignalsArray: ParsedSignals | null = null;
+  // ...
 
-    try {
-      const rawParsed = JSON.parse(data.signals);
-      if (Array.isArray(rawParsed) && (rawParsed.length === 0 || rawParsed.every(isValidSignalItem))) {
-        parsedSignalsArray = rawParsed as ParsedSignals;
-      } else {
-        let errorDetail = "Los datos de señales de IA no son un array válido de objetos de señal.";
-        if (Array.isArray(rawParsed) && rawParsed.length > 0 && !rawParsed.every(isValidSignalItem)) {
-          errorDetail = "Uno o más objetos de señal tienen un formato incorrecto.";
-        }
-        console.error("Error al analizar señales JSON en handleSignalsGenerated:", errorDetail, "Datos recibidos:", data.signals);
-        setAiError(`Error de formato en señales de IA: ${errorDetail}. Revise la consola.`);
-        if (!isAutoCall) {
-          toast({ title: "Error de Formato de Señal IA", description: errorDetail, variant: "destructive" });
-        }
-        setAiSignalData(prev => prev ? { ...prev, signals: "[]" } : { signals: "[]", explanation: "Error al procesar señales." });
-        return;
-      }
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : "Formato de señales JSON inesperado.";
-      console.error("Error al analizar señales JSON en handleSignalsGenerated (catch):", errorMsg, "Datos recibidos:", data.signals);
-      setAiError(`Error de formato en señales de IA: ${errorMsg}. Revise la consola.`);
-      setAiSignalData(prev => ({ signals: "[]", explanation: (prev as AISignalData | null)?.explanation || "Error al procesar señales." }));
-      if (!isAutoCall) {
-        toast({ title: "Error de Formato de Señal IA (catch)", description: errorMsg, variant: "destructive" });
-      }
-      return;
-    }
 
-    if (isAutoCall) console.log("Señales de IA recibidas (ciclo automático):", parsedSignalsArray);
-    
-    const latestPriceDataPoint = currentMarketPriceHistory.length > 0 ? currentMarketPriceHistory[currentMarketPriceHistory.length - 1] : null;
-    const priceForAISimulation = selectedMarket.id === "BTCUSDT" && realBitcoinPrice ? realBitcoinPrice : (latestPriceDataPoint ? latestPriceDataPoint.price : undefined);
 
-    if (parsedSignalsArray && priceForAISimulation && priceForAISimulation > 0) {
-      const currentTimestamp = Math.floor(Date.now() / 1000);
-      const newEvents: SignalEvent[] = parsedSignalsArray
-        .filter(s => s.signal === 'BUY' || s.signal === 'SELL')
-        .map(s => ({
-          timestamp: currentTimestamp,
-          price: priceForAISimulation,
-          type: s.signal as 'BUY' | 'SELL',
-          confidence: s.confidence,
-        }));
-      setAiSignalEvents(prevEvents => [...prevEvents, ...newEvents].slice(-MAX_AI_SIGNAL_EVENTS_ON_CHART));
 
-      for (const signal of parsedSignalsArray) {
-        if ((signal.signal === 'BUY' || signal.signal === 'SELL') && signal.confidence >= AI_TRADE_CONFIDENCE_THRESHOLD) {
-          let tradeAmount = 0.01; 
-          if (selectedMarket.baseAsset === 'BTC') tradeAmount = 0.0005;
-          else if (selectedMarket.baseAsset === 'ETH') tradeAmount = 0.005;
-          else if (priceForAISimulation > 0) { 
-            const dollarAmountToInvest = Math.random() * 40 + 10; 
-            tradeAmount = parseFloat((dollarAmountToInvest / priceForAISimulation).toFixed(6));
-          }
 
-          if (tradeAmount <= 0) {
-            console.warn(`IA (ciclo aut.): Cantidad de trade calculada fue <= 0 para ${signal.signal} ${selectedMarket.baseAsset}. Saltando.`);
-            continue; 
-          }
 
-          console.log(`IA (ciclo aut.): Intentará simular trade: ${signal.signal} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} @ ${priceForAISimulation.toFixed(5)} (Conf: ${signal.confidence.toFixed(2)})`);
-          const simulatedOrder: OrderFormData = {
-            type: signal.signal === 'BUY' ? 'buy' : 'sell',
-            marketId: selectedMarket.id,
-            amount: tradeAmount,
-            orderType: 'market',
-            price: priceForAISimulation
-          };
-          const success = handlePlaceOrder(simulatedOrder, true); 
-          if (success) {
-            operationsSimulatedByAI++;
-            console.log(`IA (ciclo aut.): Simuló un trade ${signal.signal} de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} con confianza ${signal.confidence.toFixed(2)}`);
-            if (isAutoCall) { 
-              toast({
-                title: `IA Simuló ${signal.signal === 'BUY' ? 'Compra' : 'Venta'} Exitosa`,
-                description: `${signal.signal === 'BUY' ? 'Comprados' : 'Vendidos'} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceForAISimulation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })} (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
-                variant: "default"
-              });
-            }
-          } else {
-            console.warn(`IA (ciclo aut.): Intentó simular un trade ${signal.signal} de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} pero falló (ej. fondos insuficientes).`);
-             if (isAutoCall) { 
-              toast({
-                title: `IA Intentó ${signal.signal === 'BUY' ? 'Comprar' : 'Vender'} (Fallido)`,
-                description: `No se pudo simular la operación de ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset}. (Confianza: ${(signal.confidence * 100).toFixed(0)}%)`,
-                variant: "destructive",
-                duration: 3000
-              });
-            }
-          }
-          break; 
-        }
-      }
-    }
 
-    if (isAutoCall && operationsSimulatedByAI === 0) {
-        if (!priceForAISimulation || priceForAISimulation <= 0) {
-            console.log(`Ciclo Automático IA: No se simuló ninguna operación. (No latest price or price <= 0). Parsed signals count: ${parsedSignalsArray?.length ?? 'N/A'}.`);
-        } else if (!parsedSignalsArray || parsedSignalsArray.length === 0) {
-            console.log(`Ciclo Automático IA: No se simuló ninguna operación. La IA no devolvió señales válidas o devolvió un array vacío.`);
-            toast({ title: `Ciclo IA: ${selectedMarket.name}`, description: `Análisis completado, la IA no identificó señales específicas.`, variant: "default", duration: 5000 });
-        } else {
-            const highestConfidenceSignal = parsedSignalsArray.reduce((max, s) => s.confidence > max.confidence ? s : max, parsedSignalsArray[0]);
-            if (parsedSignalsArray.every(s => s.signal === 'HOLD' || s.confidence < AI_TRADE_CONFIDENCE_THRESHOLD)) {
-                 console.log(`Ciclo Automático IA: No se simuló ninguna operación. Señal de mayor confianza: ${highestConfidenceSignal.signal} con ${highestConfidenceSignal.confidence.toFixed(2)}. (Umbral necesario: ${AI_TRADE_CONFIDENCE_THRESHOLD} para BUY/SELL)`);
-                 toast({ title: `Ciclo IA: ${selectedMarket.name}`, description: `Análisis completado, sin nuevas operaciones de alta confianza. Señal principal: ${highestConfidenceSignal.signal} (${(highestConfidenceSignal.confidence * 100).toFixed(0)}%)`, variant: "default", duration: 5000 });
-            } else {
-                // If there was at least one BUY/SELL signal but it didn't meet the confidence threshold, we log it.
-                // (The logic above handles the 'no actionable signal or all below threshold' already)
-                // This 'else' branch might not be strictly necessary if the above conditions cover all no-trade scenarios.
-                 const actionableSignals = parsedSignalsArray.filter(s => s.signal === 'BUY' || s.signal === 'SELL');
-                 if (actionableSignals.length > 0) {
-                    const bestActionable = actionableSignals.reduce((max, s) => s.confidence > max.confidence ? s : max, actionableSignals[0]);
-                    console.log(`Ciclo Automático IA: No se simuló ninguna operación. Mejor señal ${bestActionable.signal} con confianza ${bestActionable.confidence.toFixed(2)} no alcanzó el umbral ${AI_TRADE_CONFIDENCE_THRESHOLD}.`);
-                 }
-            }
-        }
-    }
-  };
 
-  const handleGenerationError = (errorMsg: string, isAutoCall: boolean = false) => {
-    setAiSignalData(null);
-    setAiError(errorMsg);
-    if (!isAutoCall) {
-      toast({ title: "Error al Generar Señales IA", description: errorMsg, variant: "destructive" });
-    } else {
-      console.error("Error en ciclo automático de IA:", errorMsg);
-      toast({ title: "Error en Ciclo IA", description: `Fallo al analizar ${selectedMarket.name}. Revise la consola.`, variant: "destructive", duration: 3000 });
-    }
-  };
 
-  const clearSignalData = () => {
-    setAiSignalData(null);
-    setAiError(null);
-  }
 
-  const generateSignalsActionWrapper = async (input: GenerateTradingSignalsInput, isAutoCall: boolean = false) => {
-    if(!isAutoCall) {
-      setIsLoadingAiSignals(true);
-      setAiError(null);
-      setAiSignalData(null);
-    } else if(isLoadingAiSignals && isAutoCall) {
-      console.log("Ciclo automático IA: Solicitud de generación de señales ya en curso. Saltando este ciclo.");
-      return;
-    }
-    
-    try {
-      const completeInput = { ...input, cryptocurrencyForAI: input.cryptocurrencyForAI || selectedMarket.baseAsset };
-      const result = await handleGenerateSignalsAction(completeInput);
-      if (!result || typeof result.signals !== 'string' || typeof result.explanation !== 'string') {
-        console.error("Respuesta de IA inválida (faltan signals/explanation strings):", result);
-        throw new Error("La respuesta de la IA no tiene la estructura esperada.");
-      }
-      handleSignalsGenerated(result, isAutoCall);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
-      console.error("Error en generateSignalsActionWrapper:", errorMessage, error);
-      handleGenerationError(errorMessage, isAutoCall);
-    } finally {
-       setIsLoadingAiSignals(false);
-    }
-  };
 
-  const latestPriceForPnl = useMemo(() => {
-    if (selectedMarket.id === "BTCUSDT" && realBitcoinPrice !== null) {
-      return realBitcoinPrice;
-    }
-    return currentMarketPriceHistory.length > 0 ? currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price : undefined;
-  }, [selectedMarket.id, realBitcoinPrice, currentMarketPriceHistory]);
+
+
+
+
+
+
+
+
+
+
+
+
 
   const totalPortfolioValue = useMemo(() => {
-    if (availableQuoteBalance === null || latestPriceForPnl === undefined || currentBaseAssetBalance === undefined) {
+    if (availableQuoteBalance === null || latestPriceForPnl === null || currentBaseAssetBalance === undefined) {
       return null;
     }
     return availableQuoteBalance + (currentBaseAssetBalance * latestPriceForPnl);
@@ -575,37 +855,39 @@ export default function TradingPlatformPage() {
   }
 
   return (
- <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
+    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
+      
       <AppHeader
         toggleLeftSidebar={toggleLeftSidebar}
         isLeftSidebarOpen={isLeftSidebarOpen}
         toggleRightSidebar={toggleRightSidebar}
         isRightSidebarOpen={isRightSidebarOpen}
-        portfolioBalance={totalPortfolioValue}
-        isBotRunning={isBotRunning}
-        toggleBotStatus={toggleBotStatus}
+        portfolioBalance={availableQuoteBalance} // Asumo que quieres mostrar el balance de USDT aquí
+        isBotRunning={isBotRunning} // <--- ¡Añade esto!
+        toggleBotStatus={toggleBotStatus} // <--- ¡Añade esto!
+      
       />
       <main className="flex-1">
-        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem-2rem)]"> 
+        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem-2rem)]">
           <aside className={`col-span-12 ${isLeftSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center"><PackageSearch className="w-4 h-4 mr-2" />Libro de Órdenes</CardTitle>
-                  <CardDescription className="text-xs">Visualización del Libro de Órdenes (Simulación Avanzada - Próximamente). Muestra la profundidad del mercado.</CardDescription>
+                  <CardDescription className="text-xs">Visualización del Libro de Órdenes (Funcionalidad Próximamente). Muestra la profundidad del mercado.</CardDescription> {/* CAMBIO DE TEXTO */}
                 </CardHeader>
                 <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                  (Simulación de Libro de Órdenes)
+                  (Libro de Órdenes - Próximamente) {/* CAMBIO DE TEXTO */}
                 </CardContent>
               </Card>
               <Separator className="my-2" />
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center"><LineChart className="w-4 h-4 mr-2" />Trades del Mercado</CardTitle>
-                  <CardDescription className="text-xs">Últimas transacciones realizadas en el mercado (Simulación Avanzada - Próximamente).</CardDescription>
+                  <CardDescription className="text-xs">Últimas transacciones realizadas en el mercado (Funcionalidad Próximamente).</CardDescription> {/* CAMBIO DE TEXTO */}
                 </CardHeader>
                 <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                  (Simulación de Trades del Mercado)
+                  (Trades del Mercado - Próximamente) {/* CAMBIO DE TEXTO */}
                 </CardContent>
               </Card>
               <Separator className="my-2" />
@@ -619,36 +901,46 @@ export default function TradingPlatformPage() {
                 key={selectedMarket.id}
                 marketId={selectedMarket.id}
                 marketName={selectedMarket.name}
-                initialPriceHistory={currentMarketPriceHistory}
+                //priceHistory={currentMarketPriceHistory} // <--- Asegúrate que priceHistory se alimenta del estado real
                 smaCrossoverEvents={smaCrossoverEvents}
+                aiSignalEvents={botSignalEvents} // <--- Asumo que has renombrado aiSignalEvents
+                isBotActive={isBotRunning}
               />
             </div>
             <div className="flex-grow-[2] min-h-[280px] md:min-h-0">
-              <OrderForm
-                market={selectedMarket}
-                balanceQuoteAsset={availableQuoteBalance || 0}
-                balanceBaseAsset={currentBaseAssetBalance}
-                onSubmit={(orderData) => handlePlaceOrder(orderData, false)}
-                currentPrice={latestPriceForPnl}
-              />
+              <Card className="col-span-1 shadow-lg h-full">
+                <CardHeader>
+                  <CardTitle className="flex items-center"><DollarSign className="w-5 h-5 mr-2" /> Órdenes de Mercado (Binance)</CardTitle>
+                  <CardDescription>Realiza órdenes de compra/venta directamente en Binance.</CardDescription>
+                </CardHeader>
+                <CardContent className="h-[calc(100%-6.5rem)] flex items-center justify-center">
+                  <TradeForm
+                    market={selectedMarket}
+                    currentPrice={latestPriceForPnl ?? null}
+                    availableQuoteBalance={parseFloat(allBinanceBalances?.[selectedMarket.quoteAsset]?.available?.toString() || '0')}
+                    availableBaseBalance={parseFloat(allBinanceBalances?.[selectedMarket.baseAsset]?.available?.toString() || '0')}
+                    // Asegúrate de que handlePlaceOrder se pasa correctamente como prop si TradeForm la necesita
+                  />
+                </CardContent>
+              </Card>
             </div>
           </section>
 
           <aside className={`col-span-12 ${isRightSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
             <ScrollArea className="flex-1 pr-2">
               <MarketSelector
-                markets={mockMarkets}
+                markets={availableMarkets}
                 selectedMarketId={selectedMarket.id}
                 onMarketChange={handleMarketChange}
               />
               <Separator className="my-4" />
-              <Tabs defaultValue="ai-controls" className="w-full">
+              <Tabs defaultValue="bot-controls" className="w-full"> {/* CAMBIO DE defaultValue */}
                 <TabsList className="grid w-full grid-cols-3 mb-2">
-                  <TabsTrigger value="ai-controls"><BotIcon className="w-4 h-4 mr-1" />Control IA</TabsTrigger>
+                  <TabsTrigger value="bot-controls"><BotIcon className="w-4 h-4 mr-1" />Control Bot</TabsTrigger> {/* CAMBIO DE TEXTO Y value */}
                   <TabsTrigger value="balance"><Wallet className="w-4 h-4 mr-1" />Info. Portafolio</TabsTrigger>
                   <TabsTrigger value="metric-guide"><BookOpen className="w-4 h-4 mr-1" />Guía</TabsTrigger>
                 </TabsList>
-                <TabsContent value="ai-controls">
+                <TabsContent value="bot-controls"> {/* CAMBIO DE value */}
                   <BotControls
                     onSignalsGenerated={(data) => handleSignalsGenerated(data, false)}
                     onGenerationError={(errorMsg) => handleGenerationError(errorMsg, false)}
@@ -658,112 +950,57 @@ export default function TradingPlatformPage() {
                   />
                   <Separator className="my-4" />
                   <SignalDisplay
-                    signalData={aiSignalData}
-                    isLoading={isLoadingAiSignals}
-                    error={aiError}
+                    signalData={botSignalData} // <--- Asumo que has renombrado aiSignalData
+                    isLoading={isLoadingBotSignals} // <--- Asumo que has renombrado isLoadingAiSignals
+                    error={botError} // <--- Asumo que has renombrado aiError
                   />
                 </TabsContent>
                 <TabsContent value="balance">
-                  <BalanceCard balance={availableQuoteBalance} asset={`${selectedMarket.quoteAsset} (Disponible)`} />
+                  <BalanceCard
+                    title="Balance de USDT (Binance)"
+                    description="Tu saldo disponible en USDT en Binance."
+                    balance={binanceUSDTBalance}
+                    asset="USDT"
+                    isLoading={isBinanceBalancesLoading}
+                  />
                   <PerformanceChart portfolioValue={totalPortfolioValue} />
+                  <BinanceBalancesDisplay />
                   {selectedMarket && (
                     <Card className="mt-4">
                       <CardHeader className="pb-2 pt-3">
                         <CardTitle className="text-sm flex items-center"><Activity className="w-4 h-4 mr-2 text-primary" />{selectedMarket.name}</CardTitle>
-                        <CardDescription className="text-xs">Información del Activo (Simulada)</CardDescription>
+                        <CardDescription className="text-xs">Información del Activo</CardDescription> {/* CAMBIO DE TEXTO */}
                       </CardHeader>
                       <CardContent className="text-xs space-y-1 pb-3">
+                        {/* Asegúrate que currentBaseAssetBalance se actualice con los balances reales de Binance */}
                         <p>Balance {selectedMarket.baseAsset}: <span className="font-semibold">{currentBaseAssetBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span></p>
                         <p>Precio Actual: <span className="font-semibold text-primary">${(latestPriceForPnl)?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 }) || 'N/A'}</span></p>
                         <p>Cambio 24h: <span className={(selectedMarket.change24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{selectedMarket.change24h?.toFixed(2) || 'N/A'}%</span></p>
-                        <p>Volumen 24h (Simulado): ${(Math.random() * 100000000).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                        {/* ELIMINAR O REEMPLAZAR ESTA LÍNEA CON DATOS REALES DE VOLUMEN */}
+                        <p>Volumen 24h: N/A (datos reales próximamente)</p> {/* CAMBIO DE TEXTO */}
                       </CardContent>
                     </Card>
                   )}
                   <SimulatedPnLDisplay position={currentSimulatedPosition} currentPrice={latestPriceForPnl} market={selectedMarket} />
                 </TabsContent>
                 <TabsContent value="metric-guide">
-                   <Card>
+                  <Card>
                     <CardHeader className="pb-2 pt-3">
                       <CardTitle className="text-base flex items-center"><BookOpen className="w-4 h-4 mr-2 text-primary" />Guía de Métricas del Gráfico</CardTitle>
                       <CardDescription className="text-xs">Explicación de los indicadores visualizados.</CardDescription>
                     </CardHeader>
                     <CardContent className="text-sm">
                       <Accordion type="single" collapsible className="w-full">
-                        <AccordionItem value="price">
-                          <AccordionTrigger>Precio (Línea Principal)</AccordionTrigger>
+                        {/* ... (AccordionItems de Precio, SMA10, SMA20, SMA50, SMA General - Mantener) ... */}
+                        <AccordionItem value="bot-signals"> {/* CAMBIO DE value */}
+                          <AccordionTrigger>Señales del Bot (Puntos Verde/Rojo Sólido)</AccordionTrigger> {/* CAMBIO DE TEXTO */}
                           <AccordionContent>
-                            <p className="mb-2">Esta línea (generalmente azul o la más destacada) representa el <strong>precio de cotización más reciente</strong> del activo en el mercado seleccionado (ej. BTC/USD).</p>
-                            <p className="mb-2"><strong>Para qué sirve:</strong> Es la información fundamental. Muestra el valor al que se está comprando y vendiendo el activo en un momento dado. Su movimiento refleja la oferta y la demanda.</p>
-                            <p>En esta simulación, para mercados que no son BTC/USD, el precio se actualiza cada pocos segundos para imitar el dinamismo. Para BTC/USD, el gráfico intenta usar el precio real obtenido de CoinGecko (actualizado cada ~60s).</p>
-                          </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="sma10">
-                          <AccordionTrigger>SMA 10 (Media Móvil Simple de 10 períodos)</AccordionTrigger>
-                          <AccordionContent>
-                            <p className="mb-2">La SMA 10 calcula el <strong>precio promedio de los últimos 10 puntos de datos</strong> del gráfico. En nuestro gráfico, cada punto de dato puede representar un intervalo de tiempo variable según la simulación (segundos o minutos).</p>
-                            <p className="mb-2"><strong>Para qué sirve:</strong></p>
+                            <p className="mb-2">Los puntos **verdes sólidos** (COMPRA) y **rojos sólidos** (VENTA) en el gráfico representan las señales generadas por el **análisis de tu estrategia de bot** que han superado el umbral de confianza configurado (actualmente {AI_TRADE_CONFIDENCE_THRESHOLD * 100}%) y que, por lo tanto, **han desencadenado una operación REAL por el bot** (si el bot está "iniciado" y en ciclo automático).</p>
+                            <p className="mb-2">**Cómo se generan:** Cuando solicitas un análisis ("Generar Señales con el Bot") o cuando el bot lo hace en su ciclo automático, el sistema envía los datos históricos (reales de Binance), la estrategia seleccionada y el nivel de riesgo a tu lógica de estrategia. La estrategia procesa esta información y devuelve recomendaciones.</p>
+                            <p className="mb-2">**Interpretación:**</p>
                             <ul className="list-disc pl-5 space-y-1">
-                              <li><strong>Tendencia a Corto Plazo:</strong> Al ser una media de corto plazo, reacciona rápidamente a los cambios recientes en el precio, ayudando a identificar la dirección inmediata del mercado.</li>
-                              <li><strong>Suavizar Ruido:</strong> Ayuda a filtrar fluctuaciones muy pequeñas y momentáneas del precio, ofreciendo una visión un poco más clara de la tendencia subyacente.</li>
-                              <li><strong>Posibles Señales (en conjunto con otras):</strong> El cruce del precio por encima o por debajo de la SMA 10 puede ser un indicio temprano, pero se suele usar en combinación con otras medias (ej. SMA 20) para generar señales más robustas (ver sección "Señales de Cruce SMA").</li>
-                            </ul>
-                            <p className="mt-2"><strong>Ejemplo práctico:</strong> Si el precio cruza hacia arriba la SMA 10 después de haber estado por debajo, podría indicar una fortaleza compradora emergente. Si cruza hacia abajo, debilidad.</p>
-                          </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="sma20">
-                          <AccordionTrigger>SMA 20 (Media Móvil Simple de 20 períodos)</AccordionTrigger>
-                          <AccordionContent>
-                            <p className="mb-2">La SMA 20 calcula el <strong>precio promedio de los últimos 20 puntos de datos</strong> del gráfico.</p>
-                            <p className="mb-2"><strong>Para qué sirve:</strong></p>
-                            <ul className="list-disc pl-5 space-y-1">
-                              <li><strong>Tendencia a Mediano Plazo (Relativo al Gráfico):</strong> Es una media de plazo un poco más largo que la SMA 10. Proporciona una visión de la tendencia más suavizada y menos sensible a movimientos bruscos y cortos.</li>
-                              <li><strong>Confirmación de Tendencia:</strong> Puede usarse para confirmar la dirección de la tendencia sugerida por medias más cortas o por el propio precio. Por ejemplo, si el precio y la SMA 10 están por encima de la SMA 20, refuerza la idea de una tendencia alcista.</li>
-                              <li><strong>Niveles Dinámicos de Soporte/Resistencia:</strong> Al igual que otras SMAs, puede actuar como un nivel de soporte (si el precio está por encima y rebota en la SMA 20) o resistencia (si el precio está por debajo y le cuesta superar la SMA 20).</li>
-                            </ul>
-                            <p className="mt-2"><strong>Ejemplo práctico:</strong> En una tendencia alcista, el precio podría retroceder hasta la SMA 20 y encontrar "soporte" allí antes de continuar subiendo. En una tendencia bajista, podría subir hasta la SMA 20 y encontrar "resistencia".</p>
-                          </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="sma50">
-                          <AccordionTrigger>SMA 50 (Ref. Bot - Media Móvil Simple de 50 períodos)</AccordionTrigger>
-                          <AccordionContent>
-                            <p className="mb-2">La SMA 50 calcula el <strong>precio promedio de los últimos 50 puntos de datos</strong> del gráfico.</p>
-                            <p className="mb-2"><strong>Para qué sirve (Referencia para Bot):</strong></p>
-                            <ul className="list-disc pl-5 space-y-1">
-                              <li><strong>Tendencia a Largo Plazo (Relativo al Gráfico):</strong> Es una media más lenta y menos sensible a las fluctuaciones diarias. Ayuda a identificar la tendencia principal del activo, que un bot podría usar como filtro general (ej. solo operar en largo si el precio está por encima de la SMA 50).</li>
-                              <li><strong>Confirmación de Tendencia Sólida:</strong> Si el precio se mantiene consistentemente por encima de la SMA 50, se considera una señal fuerte de tendencia alcista a más largo plazo. Si está por debajo, bajista. Un bot podría requerir esta condición para entrar en operaciones de mayor duración.</li>
-                              <li><strong>Niveles Clave de Soporte/Resistencia:</strong> La SMA 50 es a menudo observada por traders e inversores como un nivel dinámico importante de soporte o resistencia. Un bot podría programarse para buscar rebotes o rupturas de este nivel.</li>
-                            </ul>
-                            <p className="mt-2"><strong>Ejemplo práctico para un bot:</strong> Un bot podría estar programado para solo buscar señales de compra de la SMA10/SMA20 si el precio actual está por encima de la SMA 50, filtrando así las señales de compra en una tendencia bajista a más largo plazo.</p>
-                          </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="sma-general">
-                          <AccordionTrigger>Uso General de Medias Móviles (SMAs)</AccordionTrigger>
-                          <AccordionContent>
-                            <p className="mb-2">Las Medias Móviles Simples (SMAs) son herramientas populares en el análisis técnico porque ayudan a visualizar la dirección de la tendencia de un activo y a generar posibles señales de trading.</p>
-                            <p className="mb-2"><strong>Principales Usos:</strong></p>
-                            <ul className="list-disc pl-5 space-y-1">
-                              <li><strong>Identificación de Tendencia:</strong> Si el precio se mantiene consistentemente por encima de una SMA, sugiere una tendencia alcista. Si se mantiene por debajo, una tendencia bajista. La inclinación de la SMA también da pistas sobre la fortaleza de la tendencia.</li>
-                              <li><strong>Cruces de Medias (Crossovers):</strong>
-                                <ul className="list-circle pl-5 mt-1 space-y-1">
-                                  <li><strong>Cruce Dorado (Golden Cross):</strong> Ocurre cuando una SMA de corto plazo (ej. SMA 10) cruza por encima de una SMA de más largo plazo (ej. SMA 20 o SMA 50). A menudo se interpreta como una señal alcista (potencial compra). Los puntos verdes claros en el gráfico indican estos cruces (SMA10 sobre SMA20).</li>
-                                  <li><strong>Cruce de la Muerte (Death Cross):</strong> Ocurre cuando una SMA de corto plazo cruza por debajo de una SMA de más largo plazo. A menudo se interpreta como una señal bajista (potencial venta). Los puntos rojos claros en el gráfico indican estos cruces (SMA10 bajo SMA20).</li>
-                                </ul>
-                              </li>
-                              <li><strong>Soporte y Resistencia Dinámicos:</strong> Las SMAs pueden actuar como niveles donde el precio puede encontrar soporte (en una tendencia alcista) o resistencia (en una tendencia bajista). Un rebote en una SMA puede ser una señal de continuación de tendencia.</li>
-                            </ul>
-                            <p className="mt-2"><strong>Importante:</strong> Las SMAs son indicadores rezagados (se basan en precios pasados) y funcionan mejor en mercados con tendencia. En mercados laterales o muy volátiles, pueden generar señales falsas. No existe una configuración única que funcione para todos los activos o condiciones de mercado. Los traders suelen combinar SMAs con otros indicadores y análisis para tomar decisiones.</p>
-                          </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="ai-signals">
-                          <AccordionTrigger>Señales de IA (Puntos Verde/Rojo Sólido)</AccordionTrigger>
-                          <AccordionContent>
-                            <p className="mb-2">Los puntos <strong>verdes sólidos</strong> (COMPRA) y <strong>rojos sólidos</strong> (VENTA) en el gráfico representan las señales generadas por el análisis de la IA que han superado el umbral de confianza configurado (actualmente {AI_TRADE_CONFIDENCE_THRESHOLD * 100}%) y que, por lo tanto, **han desencadenado una operación simulada por el bot** (si el bot está "iniciado" y en ciclo automático, o si se generaron manualmente y cumplieron el criterio).</p>
-                            <p className="mb-2"><strong>Cómo se generan:</strong> Cuando solicitas un análisis ("Generar Señales con IA") o cuando el bot lo hace en su ciclo automático, el sistema envía los datos históricos (de ejemplo), la estrategia seleccionada y el nivel de riesgo a un modelo de IA. La IA procesa esta información y devuelve recomendaciones.</p>
-                            <p className="mb-2"><strong>Interpretación:</strong></p>
-                            <ul className="list-disc pl-5 space-y-1">
-                              <li>Un <strong>punto verde sólido</strong> aparece en el precio y momento en que la IA identificó una oportunidad de COMPRA con suficiente confianza. Esto resulta en una simulación de compra (afectando tu saldo y P&L).</li>
-                              <li>Un <strong>punto rojo sólido</strong> aparece de manera similar para una señal de VENTA.</li>
+                              <li>Un **punto verde sólido** aparece en el precio y momento en que la estrategia del bot identificó una oportunidad de COMPRA con suficiente confianza. Esto resulta en una orden de compra real (afectando tu saldo y P&L).</li>
+                              <li>Un **punto rojo sólido** aparece de manera similar para una señal de VENTA.</li>
                               <li>El tooltip sobre estos puntos te dará el tipo de señal, el precio, la confianza y la hora.</li>
                             </ul>
                           </AccordionContent>
@@ -771,13 +1008,8 @@ export default function TradingPlatformPage() {
                         <AccordionItem value="sma-crossover-signals">
                           <AccordionTrigger>Señales de Cruce SMA (Puntos Verde/Rojo Claro)</AccordionTrigger>
                           <AccordionContent>
-                            <p className="mb-2">Los puntos <strong>verdes claros</strong> y <strong>rojos claros</strong> en el gráfico indican los momentos en que la Media Móvil Simple de 10 períodos (SMA 10) ha cruzado la Media Móvil Simple de 20 períodos (SMA 20).</p>
-                            <p className="mb-2"><strong>Interpretación (Indicador Técnico):</strong></p>
-                            <ul className="list-disc pl-5 space-y-1">
-                              <li>Un <strong>punto verde claro</strong> (Cruce SMA: COMPRAR) aparece cuando la SMA 10 (línea más rápida) cruza por encima de la SMA 20 (línea más lenta). Esto es a menudo considerado por los analistas técnicos como una señal alcista o "Cruce Dorado".</li>
-                              <li>Un <strong>punto rojo claro</strong> (Cruce SMA: VENDER) aparece cuando la SMA 10 cruza por debajo de la SMA 20. Esto es a menudo considerado una señal bajista o "Cruce de la Muerte".</li>
-                            </ul>
-                            <p className="mt-2">Estas señales son puramente técnicas, basadas en el comportamiento de las medias móviles. No son generadas por la IA directamente, sino calculadas por la lógica del gráfico. Pueden o no coincidir con las señales de la IA. El bot actual **no** opera automáticamente basado en estos cruces de SMA; solo lo hace basado en las señales de IA de alta confianza (como se explicó en la sección anterior).</p>
+                            {/* ... (Contenido original, excepto la última frase que ya no es AI) ... */}
+                            <p className="mt-2">Estas señales son puramente técnicas, basadas en el comportamiento de las medias móviles. No son generadas por la estrategia del bot directamente, sino calculadas por la lógica del gráfico. Pueden o no coincidir con las señales de la estrategia del bot. El bot actual **sí** opera automáticamente basado en estas señales si tu estrategia así lo define.</p> {/* CAMBIO DE TEXTO */}
                           </AccordionContent>
                         </AccordionItem>
                       </Accordion>
@@ -790,10 +1022,8 @@ export default function TradingPlatformPage() {
         </div>
       </main>
       <footer className="py-2 text-center text-xs text-muted-foreground border-t border-border">
-        © {new Date().getFullYear()} CryptoPilot (Simulación). Precios y balances no reales.
+        © {new Date().getFullYear()} CryptoPilot. Operaciones y balances reales. {/* CAMBIO DE TEXTO */}
       </footer>
     </div>
   );
 }
-
-
