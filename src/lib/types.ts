@@ -92,25 +92,22 @@ export const marketPriceChartConfigDark = {
 // ... (todo tu código anterior, como Trade, MarketPriceDataPoint, etc.) ...
 
 export interface Market {
-  id: string; // Ej. "BTCUSDT"
-  symbol: string; // El símbolo del par de trading, ej. "BTCUSDT" (igual que id, pero útil para claridad)
-  baseAsset: string; // El activo base, ej. "BTC"
-  quoteAsset: string; // El activo de cotización, ej. "USDT"
-  name: string; // Nombre amigable, ej. "BTC/USD"
-  icon?: React.ComponentType<{ className?: string }>;
-  latestPrice?: number | null; // <-- Ya corregimos esto a 'number | null'
-  change24h?: number;
+  id: string; // El símbolo completo del exchange (ej. BTCUSDT)
+  symbol: string; // El símbolo estandarizado (ej. BTC/USDT)
+  name: string; // Nombre amigable (ej. BTC/USDT)
+  baseAsset: string; // Moneda base (ej. BTC)
+  quoteAsset: string; // Moneda cotizada (ej. USDT)
+  latestPrice: number | null; // Precio actual (puede actualizarse aparte)
+  change24h: number | null; 
+  // --- Añadir estas propiedades para las reglas de trading ---
+  minNotional?: number;
+  minQty?: number;
+  amountPrecision?: number;
+  pricePrecision?: number;
+  quotePrecision?: number;
+  // --- Fin propiedades añadidas ---
+  // ... otras propiedades si las tienes
 
-  // --- ¡ASEGÚRATE DE QUE ESTAS PROPIEDADES ESTÉN AQUÍ! ---
-  // Estas propiedades vienen de la respuesta de exchangeInfo de Binance
-  pricePrecision?: number; // Número de decimales para el precio
-  amountPrecision?: number; // Número de decimales para la cantidad del activo base
-  quotePrecision?: number; // Número de decimales para el activo de cotización
-  basePrecision?: number; // Número de decimales para el activo base
-  minQty?: number; // Cantidad mínima para una orden
-  maxQty?: number; // Cantidad máxima para una orden
-  minNotional?: number; // Valor nocional mínimo para una orden
-  // --- FIN DE LAS PROPIEDADES DE PRECISIÓN ---
 }
 
 export interface SignalItem {
@@ -187,3 +184,4 @@ export interface BalanceCardProps {
   // Puedes añadir más propiedades aquí si tu BalanceCard las necesita, por ejemplo:
   // icon?: React.ComponentType<{ className?: string }>;
 }
+

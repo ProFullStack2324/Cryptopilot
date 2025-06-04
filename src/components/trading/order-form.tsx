@@ -73,7 +73,8 @@ export function OrderForm({ market, balanceQuoteAsset, balanceBaseAsset, onSubmi
       type: tradeType,
       marketId: market.id,
       amount: data.amount,
-      price: data.orderType === "limit" ? data.price : (currentPrice || market.latestPrice),
+      price: data.orderType === "limit" ? (data.price ?? undefined) : (currentPrice ?? market.latestPrice ?? undefined),
+
       orderType: data.orderType,
     });
     form.reset({ ...form.getValues(), amount: undefined });

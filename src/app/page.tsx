@@ -35,7 +35,7 @@ import { MarketSelector } from "@/components/trading/market-selector";
 import { MarketPriceChart } from "@/components/trading/market-price-chart";
 import TradeForm from '@/components/trading/TradeForm'; 
 
-import { handleGenerateSignalsAction } from "./actions";
+
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -60,13 +60,14 @@ import { useTradingBot } from '@/hooks/useTradingBot';
 
 // --- Definir las interfaces necesarias aquí mismo para mayor claridad ---
 interface Balance {
-  available: string;
-  onOrder: string;
+  available: number; // Cambiado de string a number
+  onOrder: number;   // Cambiado de string a number
+  total: number;     // Añadida la propiedad total
 }
 
 interface BalancesResponse {
   message: string;
-  balances: Record<string, Balance>;
+  balances: Record<string, { available: number; onOrder: number; total: number }>;
 }
 // --- Fin de interfaces ---
 
@@ -146,7 +147,8 @@ export default function TradingPlatformPage() {
     name: "BTC/USDT",
     baseAsset: "BTC",
     quoteAsset: "USDT",
-    latestPrice: null
+    latestPrice: null,
+    change24h: null
   });
 
   // RENOMBRADO DE ESTADOS: Mantener el tipo original 'AISignalData' por ahora.
@@ -179,8 +181,8 @@ export default function TradingPlatformPage() {
   const [isBinanceBalancesLoading, setIsBinanceBalancesLoading] = useState(true);
   const [binanceBalancesError, setBinanceBalancesError] = useState<string | null>(null);
   const [allBinanceBalances, setAllBinanceBalances] = useState<Record<string, Balance>>({});
-  const [isLoadingTrade, setIsLoadingTrade] = useState(false);
 
+  const [isLoadingTrade, setIsLoadingTrade] = useState(false); // <--- AÑADE ESTA LÍNEA AQUÍ
 
 
   // ======================================================================
@@ -213,77 +215,209 @@ export default function TradingPlatformPage() {
   // 3. Función handlePlaceOrder (debe estar definida antes de useTradingBot)
   // c) handlePlaceOrder (¡AJUSTE CLAVE AQUÍ: DEFINIR handlePlaceOrder ANTES DE useTradingBot!)
   //    `useTradingBot` lo necesita como dependencia, así que debe existir antes de la llamada al hook.
-  const handlePlaceOrder = useCallback(
-    async (orderData: OrderFormData, isBotSimulated: boolean = false): Promise<boolean> => {
-      setIsLoadingTrade(true);
-      let success = false;
-      let priceToUse = orderData.price;
-
-      // Determinar el precio para la orden de mercado si es necesario
-      if (orderData.orderType === 'market') {
-        if (selectedMarket.id === "BTCUSDT" && currentMarketPrice !== null) {
-          priceToUse = currentMarketPrice;
-        } else if (currentMarketPriceHistory.length > 0) {
-          priceToUse = currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price;
-        } else {
-          priceToUse = selectedMarket.latestPrice || 0;
+const handlePlaceOrder = useCallback(async (orderData: OrderFormData, isBotSimulated: boolean = false): Promise<boolean> => {
+    // Si isBotSimulated es true, mantenemos la lógica de simulación actual.
+    // Esto permite probar el bot en modo simulado incluso con la API real configurada.
+    if (isBotSimulated && !process.env.NEXT_PUBLIC_ENABLE_REAL_TRADING_FOR_BOT) {
+       // --- Lógica de simulación actual (mantener) ---
+        let priceToUse = orderData.price;
+        if (orderData.orderType === 'market') {
+            if (selectedMarket.id === "BTCUSDT" && currentMarketPrice !== null) {
+                priceToUse = currentMarketPrice;
+            } else if (currentMarketPriceHistory.length > 0) {
+                priceToUse = currentMarketPriceHistory[currentMarketPriceHistory.length - 1].price;
+            } else {
+                priceToUse = selectedMarket.latestPrice || 0;
+            }
         }
-      }
 
-      if (!priceToUse || priceToUse <= 0) {
-        const errorMsg = "No se pudo determinar un precio válido para la orden.";
-        console.error(`[handlePlaceOrder] Error: ${errorMsg}`, { orderData, currentMarketPrice, currentMarketPriceHistory });
-        if (!isBotSimulated) {
-          toast({ title: "Error de Precio", description: errorMsg, variant: "destructive" });
+        if (!priceToUse || priceToUse <= 0) {
+            if (!isBotSimulated) {
+                toast({ title: "Error de Precio (Simulado)", description: "No se pudo determinar un precio válido para la orden simulada.", variant: "destructive" });
+            } else {
+                console.warn(`Bot intentó simular trade ${orderData.type} pero precio era <= 0`);
+            }
+            return false;
         }
-        setIsLoadingTrade(false);
-        return false;
-      }
-      orderData.price = priceToUse; // Asegurarse de que el precio usado esté en orderData
+        const totalCostOrProceeds = orderData.amount * priceToUse;
 
-      try {
-        // Aquí iría la lógica REAL para enviar la orden a Binance usando fetch
-        console.log(`[handlePlaceOrder] Enviando orden REAL a Binance:`, orderData);
+        const newTrade: Trade = {
+            id: (tradeHistory.length + 1).toString() + Date.now().toString(),
+            date: new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            type: orderData.type === 'buy' ? 'Compra' : 'Venta',
+            asset: selectedMarket.name,
+            amount: orderData.amount,
+            price: priceToUse,
+            total: totalCostOrProceeds,
+            status: 'Completado', // En simulación, siempre 'Completado' inmediatamente
+        };
+
+        if (orderData.type === 'buy') {
+            if (availableQuoteBalance !== null && availableQuoteBalance >= totalCostOrProceeds) {
+                setAvailableQuoteBalance(availableQuoteBalance - totalCostOrProceeds);
+                setCurrentBaseAssetBalance(currentBaseAssetBalance + orderData.amount);
+                setTradeHistory(prev => [newTrade, ...prev]);
+                if (!isBotSimulated) {
+                    toast({
+                        title: "Orden de Compra (Simulada) Exitosa",
+                        description: `Comprados ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })}`,
+                        variant: "default"
+                    });
+                }
+                return true;
+            } else {
+                if (!isBotSimulated) {
+                    toast({ title: "Fondos Insuficientes (Simulado)", description: `No tienes suficiente ${selectedMarket.quoteAsset} para comprar ${orderData.amount} ${selectedMarket.baseAsset}.`, variant: "destructive" });
+                } else {
+                    console.warn(`Bot intentó simular compra pero no hay fondos ${selectedMarket.quoteAsset} suficientes.`);
+                }
+                return false;
+            }
+        } else { // Venta (Simulada)
+            if (currentBaseAssetBalance >= orderData.amount) {
+                setCurrentBaseAssetBalance(currentBaseAssetBalance - orderData.amount);
+                setAvailableQuoteBalance((availableQuoteBalance || 0) + totalCostOrProceeds);
+                setTradeHistory(prev => [newTrade, ...prev]);
+                if (!isBotSimulated) {
+                    toast({
+                        title: "Orden de Venta (Simulada) Exitosa",
+                        description: `Vendidos ${orderData.amount.toFixed(6)} ${selectedMarket.baseAsset} a $${priceToUse!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })}`,
+                        variant: "default"
+                    });
+                }
+                return true;
+            } else {
+                if (!isBotSimulated) {
+                    toast({ title: "Fondos Insuficientes (Simulado)", description: `No tienes suficiente ${selectedMarket.baseAsset} para vender ${orderData.amount}.`, variant: "destructive" });
+                } else {
+                    console.warn(`Bot intentó simular venta pero no hay fondos ${selectedMarket.baseAsset} suficientes.`);
+                }
+                return false;
+            }
+        }
+       // --- Fin de la lógica de simulación ---
+
+    }
+
+
+    // --- Inicio de la lógica para Operaciones REALES ---
+
+    console.log(`[handlePlaceOrder] Intentando ejecutar orden REAL: ${orderData.type} ${orderData.amount} de ${orderData.marketId}`);
+    setIsLoadingTrade(true); //  <-- Asumiendo que tienes un estado de carga para trades
+    let success = false; // Bandera para indicar si la operación fue exitosa
+
+    try {
+        // 1. Preparar los datos para enviar al backend
+        // El endpoint /api/binance/trade espera: symbol, type, side, amount, price (opcional)
+        const tradePayload = {
+            symbol: orderData.marketId, // Ejemplo: "BTCUSDT"
+            type: orderData.orderType,   // Ejemplo: "market" o "limit"
+            side: orderData.type,      // Ejemplo: "buy" o "sell"
+            amount: orderData.amount,    // Cantidad del activo base (ej. 0.001 BTC)
+            price: orderData.price,      // Precio límite (solo si type es "limit")
+        };
+
+        // Log para depuración
+        console.log("[handlePlaceOrder] Enviando payload al backend:", tradePayload);
+
+        // 2. Llamar al endpoint del backend que interactúa con la API real de Binance
         const response = await fetch('/api/binance/trade', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderData),
+            method: 'POST', // Usamos POST, el método correcto para crear recursos (la orden)
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(tradePayload),
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(`Error al enviar orden a Binance: ${errorData.message || response.statusText}`);
-        }
-
+        // 3. Procesar la respuesta del backend
         const result = await response.json();
-        console.log(`[handlePlaceOrder] Orden REAL exitosa:`, result);
-        success = true; // La orden fue enviada exitosamente (no necesariamente ejecutada de inmediato si es Limit)
 
-      } catch (error: any) {
-        console.error(`[handlePlaceOrder] Fallo al enviar orden REAL:`, error);
-        const errorMessage = error.message || "Ocurrió un error desconocido al enviar la orden.";
-        if (!isBotSimulated) {
-          toast({
-            title: "Error de Orden (Binance)",
-            description: errorMessage,
-            variant: "destructive",
-            duration: 5000,
-          });
+        if (response.ok) { // Si la respuesta HTTP es 2xx
+            console.log("[handlePlaceOrder] Respuesta exitosa del backend:", result);
+            if (result.success) {
+                // La orden fue creada/ejecutada con éxito en Binance
+                toast({
+                    title: `Orden de ${orderData.type === 'buy' ? 'Compra' : 'Venta'} Exitosa (Binance)`,
+                    description: `Orden ${result.orderId} creada/ejecutada en Binance. Estado: ${result.status}.`,
+                    variant: "default",
+                });
+                success = true;
+
+                // 4. Opcional: Actualizar Balances y Historial después de una operación real
+                // Idealmente, deberías tener endpoints para obtener:
+                // - Tus balances actuales de Binance (para actualizar availableQuoteBalance, currentBaseAssetBalance)
+                // - Tu historial de trades/órdenes ejecutadas (para actualizar tradeHistory)
+                // Puedes llamar a estas funciones aquí o tener un mecanismo de polling periódico.
+                // Ejemplo (asumiendo una función fetchBinanceBalances existe y actualiza los estados):
+                // fetchBinanceBalances();
+                // fetchTradeHistoryFromBinance(); // <--- Necesitarías implementar esto
+                 // Por ahora, actualizamos los balances locales asumiendo éxito,
+                 // pero la forma CORRECTA es consultar la API de Binance.
+                 // Esta es una simplificación que NO refleja el estado real inmediatamente.
+                 if (orderData.type === 'buy') {
+                     // Esto es solo una estimación, el balance real debe venir de Binance
+                     setAvailableQuoteBalance(prev => (prev ?? 0) - (orderData.amount * (orderData.price || currentMarketPrice || 0)));
+                     setCurrentBaseAssetBalance(prev => prev + orderData.amount); // Esto es solo una estimación
+                 } else { // Venta
+                     // Esto es solo una estimación, el balance real debe venir de Binance
+                     setCurrentBaseAssetBalance(prev => prev - orderData.amount); // Esto es solo una estimación
+                     setAvailableQuoteBalance(prev => (prev ?? 0) + (orderData.amount * (orderData.price || currentMarketPrice || 0)));
+                 }
+                 // Para el historial, necesitarías obtener los detalles reales de la orden de Binance
+                 // y agregarlos a tradeHistory. La respuesta del backend ya devuelve orderId y status.
+
+            } else {
+                // El backend respondió 2xx pero reportó un error lógico (ej. fondos insuficientes reportado por Binance)
+                console.error("[handlePlaceOrder] Error lógico del backend:", result.message);
+                toast({
+                    title: `Error al Ejecutar Orden ${orderData.type === 'buy' ? 'Compra' : 'Venta'} (Binance)`,
+                    description: result.message || 'Error reportado por el backend.',
+                    variant: "destructive",
+                });
+            }
+        } else { // Si la respuesta HTTP indica un error (4xx, 5xx)
+            console.error("[handlePlaceOrder] Error HTTP del backend:", response.status, result);
+            toast({
+                title: `Error de Conexión con Binance (${response.status})`,
+                description: result.message || 'Ocurrió un error al intentar comunicarme con el servidor de Binance.',
+                variant: "destructive",
+            });
         }
-      } finally {
-        setIsLoadingTrade(false); // Finaliza el estado de carga
-      }
-      return success;
-    },
-    [
-      currentMarketPrice,
-      currentMarketPriceHistory,
-      selectedMarket,
-      toast,
-      // No se usan directamente: availableQuoteBalance, currentBaseAssetBalance, tradeHistory
-      // setIsLoadingTrade es estable.
-    ]
-  );
+
+    } catch (error: any) {
+        // Error durante la llamada fetch (problema de red, backend caído, etc.)
+        console.error("[handlePlaceOrder] Error en la llamada fetch:", error);
+        toast({
+            title: "Error de Conexión",
+            description: `No se pudo completar la solicitud: ${error.message || 'Error desconocido.'}`,
+            variant: "destructive",
+        });
+    } finally {
+        setIsLoadingTrade(false); // <--- Asumiendo que tienes un estado de carga para trades
+    }
+
+    return success; // Devuelve si la operación fue considerada exitosa
+  }, [
+    selectedMarket, // Dependencias relevantes para obtener info del mercado
+    currentMarketPrice, // Para órdenes a mercado si es necesario
+    currentMarketPriceHistory, // Como fallback para precio si es necesario
+    toast, // Para mostrar notificaciones
+    // Dependencias para la simulación (mantener si la simulación coexiste)
+    availableQuoteBalance,
+    currentBaseAssetBalance,
+    tradeHistory,
+    // Asumiendo setIsLoadingTrade existe:
+    // setIsLoadingTrade
+    // Asumiendo setAvailableQuoteBalance y setCurrentBaseAssetBalance existen:
+    setAvailableQuoteBalance,
+    setCurrentBaseAssetBalance,
+     // Asumiendo setTradeHistory existe:
+    setTradeHistory,
+     // Si necesitas actualizar balances y trades reales después, agrega las funciones aquí:
+     // fetchBinanceBalances, // Si es necesario llamar aquí
+     // fetchTradeHistoryFromBinance // Si es necesario llamar aquí
+  ]);
+
 
 
 
@@ -309,7 +443,7 @@ export default function TradingPlatformPage() {
     currentMarketPriceHistory,
     currentPrice: currentMarketPrice, // <-- ¡AJUSTE CLAVE AQUÍ: Usar currentMarketPrice!
     allBinanceBalances,
-    onPlaceOrder: handlePlaceOrder, // Pasa tu función existente para manejar órdenes
+    //onPlaceOrder: handlePlaceOrder, // Pasa tu función existente para manejar órdenes
     botIntervalMs: 15000 // Ejecutar la estrategia cada 15 segundos (ajusta si quieres)
   });
 
@@ -347,7 +481,7 @@ export default function TradingPlatformPage() {
 
 
   // c) handleSignalsGenerated (Depende de handlePlaceOrder, currentMarketPriceHistory, etc.)
-  const handleSignalsGenerated = useCallback((data: AISignalData, isAutoCall: boolean = false) => {
+  const handleSignalsGenerated = useCallback(async (data: AISignalData, isAutoCall: boolean = false) => {
     setBotSignalData(data);
     setBotError(null);
 
@@ -416,8 +550,8 @@ export default function TradingPlatformPage() {
             price: currentMarketPriceForBot
           };
 
-          const success = handlePlaceOrder(realOrder, true); // Pass 'true' to indicate it's from the bot
-          if (success) {
+          const success = await handlePlaceOrder(realOrder, true); // <--- AÑADE await aquí
+          if (success) { // Ahora esta condición es precisa
             operationsExecutedByBot++;
             console.log(`Bot (auto cycle): Executed a ${signal.signal} trade of ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} with confidence ${signal.confidence.toFixed(2)}`);
             if (isAutoCall) {
@@ -426,8 +560,15 @@ export default function TradingPlatformPage() {
                 description: `${signal.signal === 'BUY' ? 'Bought' : 'Sold'} ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} at $${currentMarketPriceForBot.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' || selectedMarket.baseAsset === 'ETH' ? 2 : 5 })} (Confidence: ${(signal.confidence * 100).toFixed(0)}%)`,
                 variant: "default"
               });
-            }
+            }      
+      
+            // ... (código de toast) ...
           } else {
+
+
+
+
+
             console.warn(`Bot (auto cycle): Attempted to execute a ${signal.signal} trade of ${tradeAmount.toFixed(6)} ${selectedMarket.baseAsset} but failed (e.g., insufficient funds or API error).`);
             if (isAutoCall) {
               toast({
@@ -468,37 +609,6 @@ export default function TradingPlatformPage() {
 
 
 
-// src/app/page.tsx
-// ... (código anterior) ...
-
-  const generateSignalsActionWrapper = async (input: GenerateTradingSignalsInput, isAutoCall: boolean = false) => {
-    // CAMBIO DE NOMBRES DE ESTADOS Y TEXTOS PARA REFERIRSE AL BOT
-    if (!isAutoCall) {
-      setIsLoadingBotSignals(true); // <--- Asumo que has renombrado isLoadingAiSignals
-      setBotError(null);           // <--- Asumo que has renombrado setAiError
-      setBotSignalData(null);      // <--- Asumo que has renombrado setAiSignalData
-    } else if (isLoadingBotSignals && isAutoCall) { // <--- Asumo que has renombrado isLoadingAiSignals
-      console.log("Ciclo automático del Bot: Solicitud de generación de señales ya en curso. Saltando este ciclo.");
-      return;
-    }
-
-    try {
-      const completeInput = { ...input, cryptocurrencyForAI: input.cryptocurrencyForAI || selectedMarket.baseAsset };
-      const result = await handleGenerateSignalsAction(completeInput); // Esta es la Server Action
-      if (!result || typeof result.signals !== 'string' || typeof result.explanation !== 'string') {
-        console.error("Respuesta de la estrategia del bot inválida (faltan signals/explanation strings):", result);
-        throw new Error("La respuesta de la estrategia del bot no tiene la estructura esperada.");
-      }
-      handleSignalsGenerated(result, isAutoCall); // Esta función debería usar ahora los nuevos estados botSignalData, etc.
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido al generar señales.";
-      console.error("Error en generateSignalsActionWrapper:", errorMessage, error);
-      handleGenerationError(errorMessage, isAutoCall);
-    } finally {
-      setIsLoadingBotSignals(false); // <--- Asumo que has renombrado setIsLoadingAiSignals
-    }
-  };
-
 
   // ======================================================================
   // 4. TODOS LOS EFECTOS (useEffect)
@@ -507,45 +617,6 @@ export default function TradingPlatformPage() {
   // ======================================================================
 
 
-
-useEffect(() => {
-    if (isBotRunning) {
-      console.log("Bot activado. Iniciando ciclo automático de señales...");
-      // Ejecuta inmediatamente al iniciar
-      generateSignalsActionWrapper({
-        cryptocurrencyForAI: selectedMarket.baseAsset,
-        historicalData: JSON.stringify(currentMarketHistory), // <-- ¡AÑADE ESTO!
-        strategy: "movingAverage", // <-- ¡AÑADE ESTO o tu estrategia preferida!
-        riskLevel: "medium" // <-- ¡AÑADE ESTO o tu nivel de riesgo preferido!
-      }, true);
-
-      // Luego, configura el intervalo
-      botIntervalRef.current = setInterval(() => {
-        generateSignalsActionWrapper({
-          cryptocurrencyForAI: selectedMarket.baseAsset,
-          historicalData: JSON.stringify(currentMarketHistory), // <-- ¡AÑADE ESTO!
-          strategy: "movingAverage", // <-- ¡AÑADE ESTO o tu estrategia preferida!
-          riskLevel: "medium" // <-- ¡AÑADE ESTO o tu nivel de riesgo preferido!
-        }, true);
-      }, BOT_AUTO_SIGNAL_INTERVAL_MS) as unknown as number;
-
-    } else {
-      if (botIntervalRef.current) {
-        clearInterval(botIntervalRef.current);
-        botIntervalRef.current = null;
-        console.log("Bot detenido. Deteniendo ciclo automático de señales.");
-      }
-    }
-
-    // Función de limpieza para cuando el componente se desmonte o isBotRunning cambie a false
-    return () => {
-      if (botIntervalRef.current) {
-        clearInterval(botIntervalRef.current);
-        botIntervalRef.current = null;
-      }
-    };
-  }, [isBotRunning, selectedMarket.baseAsset, generateSignalsActionWrapper, currentMarketHistory]); // <--- ¡Asegúrate de agregar currentMarketHistory aquí!
-  
   // --- NUEVO useEffect para cargar los balances de Binance ---
   useEffect(() => {
     const fetchBinanceBalances = async () => {
@@ -564,7 +635,8 @@ useEffect(() => {
         
         // Extraer y parsear el balance de USDT
         if (data.balances['USDT']) {
-          setBinanceUSDTBalance(parseFloat(data.balances['USDT'].available));
+          setBinanceUSDTBalance(parseFloat(String(data.balances['USDT'].available)));
+
         } else {
           setBinanceUSDTBalance(0); // Si no hay USDT, asumimos 0
         }
@@ -715,82 +787,26 @@ useEffect(() => {
 
 
 
-  // ... (código anterior) ...
-
-  // src/app/page.tsx
-  //... (código anterior) ...
-
-  const runAutoSignalGeneration = useCallback(async () => {
-    //... (código existente) ...
-    if (isLoadingBotSignals) {
-        console.log("[runAutoSignalGeneration] Solicitud de señales de IA ya en curso. Saltando este ciclo.");
-        return;
-    }
-
-    console.log("Ciclo automático del bot: Iniciando análisis de estrategia para", selectedMarket.baseAsset);
-    toast({
-      title: "Análisis Automático del Bot",
-      description: `El bot está analizando ${selectedMarket.name} con la estrategia...`,
-      variant: "default",
-      duration: 3000,
-    });
-
-    //CAMBIO CRÍTICO AQUÍ: Convertir el array a un string JSON
-    const botStrategyInput: GenerateTradingSignalsInput = {
-      historicalData: JSON.stringify(currentMarketPriceHistory), //CAMBIO CLAVE AQUÍ!
-      strategy: "movingAverage",
-      riskLevel: "medium",
-      cryptocurrencyForAI: selectedMarket.baseAsset,
-    };
-
-    await generateSignalsActionWrapper(botStrategyInput, true);
-    //eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    selectedMarket.id,
-    selectedMarket.name,
-    selectedMarket.baseAsset,
-    currentMarketPriceHistory, //Debe seguir aquí como dependencia!
-    isLoadingBotSignals, // Añadido para evitar llamadas concurrentes
-    generateSignalsActionWrapper, // generateSignalsActionWrapper ya está memoizada y maneja setIsLoadingBotSignals
-    toast
-  ]);
-  
+ 
 
 
 
 
   
 
+  // Este useEffect ahora solo reacciona al estado de ejecución del bot (gestionado por useTradingBot)
   useEffect(() => {
     if (isBotRunning) {
-      console.log("Bot iniciado, configurando intervalo para", selectedMarket.name);
-      if (botIntervalRef.current) {
-        // CAMBIO AQUÍ: Usar window.clearInterval
-        window.clearInterval(botIntervalRef.current);
-      }
-      runAutoSignalGeneration();
-      // CAMBIO AQUÍ: Usar window.setInterval
-      botIntervalRef.current = window.setInterval(runAutoSignalGeneration, BOT_AUTO_SIGNAL_INTERVAL_MS);
+      console.log("[page] Bot iniciado UI feedback.", selectedMarket.name);
+      // Aquí puedes añadir lógica para mostrar un mensaje de "Bot Iniciado" en la UI si es necesario
     } else {
-      if (botIntervalRef.current) {
-        console.log("Ciclo automático del bot: Detenido. Limpiando intervalo.");
-        // CAMBIO AQUÍ: Usar window.clearInterval
-        window.clearInterval(botIntervalRef.current);
-        botIntervalRef.current = null;
-      }
+      console.log("[page] Bot detenido UI feedback.");
+      // Aquí puedes añadir lógica para mostrar un mensaje de "Bot Detenido" en la UI si es necesario
     }
 
+    // La limpieza del intervalo y la lógica principal se manejan en useTradingBot
+  }, [isBotRunning, selectedMarket.name]); // Dependencias actualizadas
 
-    return () => {
-      if (botIntervalRef.current) {
-        console.log("Limpiando intervalo del bot (desmontaje o cambio de dependencias).");
-        // CAMBIO AQUÍ: Usar window.clearInterval
-        window.clearInterval(botIntervalRef.current);
-        botIntervalRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBotRunning, selectedMarket.id, selectedMarket.name, runAutoSignalGeneration]); // runAutoSignalGeneration ahora tiene sus propias dependencias correctas
 
 // ... (resto de tu código) ...
   // src/app/page.tsx
@@ -942,12 +958,15 @@ useEffect(() => {
                 </TabsList>
                 <TabsContent value="bot-controls"> {/* CAMBIO DE value */}
                   <BotControls
-                    onSignalsGenerated={(data) => handleSignalsGenerated(data, false)}
-                    onGenerationError={(errorMsg) => handleGenerationError(errorMsg, false)}
-                    clearSignalData={clearSignalData}
-                    generateSignalsAction={generateSignalsActionWrapper}
-                    selectedMarketSymbol={selectedMarket.baseAsset}
+                    // onSignalsGenerated y onGenerationError eliminadas (relacionadas con IA)
+                    //clearSignalData={clearSignalData} // Mantener si es útil para limpiar la visualización de gráficos/señales
+                    // generateSignalsAction eliminada (ya no se llama a la generación de señales de IA desde aquí)
+                    //selectedMarketSymbol={selectedMarket.baseAsset} // Mantener si es útil en BotControls
+                    // Props para controlar el estado del bot
+                    isBotRunning={isBotRunning} // Pasar el estado actual del bot
+                    onToggleBot={toggleBotStatus} // Pasar la función para iniciar/detener el bot
                   />
+
                   <Separator className="my-4" />
                   <SignalDisplay
                     signalData={botSignalData} // <--- Asumo que has renombrado aiSignalData

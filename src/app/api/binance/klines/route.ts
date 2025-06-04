@@ -1,65 +1,136 @@
 // src/app/api/binance/klines/route.ts
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
-import { MarketPriceDataPoint } from '@/lib/types';
+import { MarketPriceDataPoint } from '@/lib/types'; // Asegúrate de que esta interfaz sea correcta
 
+
+// --- Configuración Dual de CCXT para Klines ---
+// Asegúrate de que tus claves API estén en variables de entorno (ej. .env.local)
 const BINANCE_API_KEY = process.env.BINANCE_API_KEY;
 const BINANCE_SECRET_KEY = process.env.BINANCE_SECRET_KEY;
+const BINANCE_TESTNET_API_KEY = process.env.BINANCE_TESTNET_API_KEY; // Necesario para testnet
+const BINANCE_TESTNET_SECRET_KEY = process.env.BINANCE_TESTNET_SECRET_KEY; // Necesario para testnet
 
-// Configura la instancia de Binance (considerando el entorno de futuros USD-M como antes)
-const exchange = new ccxt.binance({
+
+// Configura la instancia de Binance para la red principal
+const exchangeMainnet = new ccxt.binance({
   apiKey: BINANCE_API_KEY,
   secret: BINANCE_SECRET_KEY,
-  options: {
-    'defaultType': 'future', // Para operar en futuros USD-M
-  },
-  // Habilita el modo de prueba si es necesario (para testnet de Binance Futures)
-  // Descomenta y configura si usas testnet
-  // 'urls': {
-  //   'api': {
-  //     'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
-  //     'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
-  //   },
-  // },
-  timeout: 10000, // Aumentar el timeout a 10 segundos para evitar errores de red
+   options: {
+     // Configura el tipo por defecto (spot o future) si es necesario para obtener los klines correctos de Mainnet
+     'defaultType': 'future', // Ejemplo: Para operar en futuros USD-M en Mainnet
+     // 'defaultType': 'spot', // Ejemplo: Para operar en Spot en Mainnet
+   },
+  timeout: 10000, // Aumentar el timeout a 10 segundos
   enableRateLimit: true, // Habilita la limitación de tasa interna de ccxt
 });
 
+// Configura la instancia de Binance para la red de prueba (Testnet)
+const exchangeTestnet = new ccxt.binance({
+    apiKey: BINANCE_TESTNET_API_KEY,
+    secret: BINANCE_TESTNET_SECRET_KEY,
+    options: {
+         // Configura el tipo por defecto (spot o future) para Testnet
+        'defaultType': 'future', // Ejemplo: Para operar en futuros USD-M en Testnet
+        // 'defaultType': 'spot', // Ejemplo: Para operar en Spot en Testnet
+    },
+    urls: {
+        // --- URLs de la API de Testnet ---
+        // Es CRUCIAL que configures las URLs correctas para la Testnet de Binance que estés utilizando (Spot o Futures).
+        // Consulta la documentación de Binance para las URLs exactas.
+        // Estas URLs son ejemplos.
+
+        // Ejemplo para Futuros USD-M Testnet (APIs públicas y privadas si fetchOHLCV las requiere):
+         'api': {
+           'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
+           'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1', // Algunos métodos públicos pueden usar el endpoint privado
+         },
+        // Ejemplo para Spot Testnet (APIs públicas y privadas):
+        // 'api': {
+        //    'public': 'https://testnet.binance.vision/api/',
+        //    'private': 'https://testnet.binance.vision/api/',
+        // },
+    },
+    timeout: 10000, // Aumentar el timeout
+    enableRateLimit: true, // Habilita la limitación de tasa
+});
+// --- Fin Configuración Dual de CCXT para Klines ---
+
+
 export async function GET(request: Request) {
-  console.log('[API Klines] Solicitud entrante.');
+  console.log('[API Klines] Solicitud GET entrante.');
+
+  // --- INICIO SECCIÓN MODIFICADA: Declaración de variables al inicio ---
+  let symbol: string | null = null; // Declarar symbol aquí
+  let timeframe: string | null = null; // Declarar timeframe aquí
+  let limitParam: string | null = null; // Declarar limitParam aquí
+  let isTestnet: boolean = false; // Declarar isTestnet aquí con valor por defecto
+  let networkType: string = 'Mainnet'; // Declarar networkType aquí con valor por defecto
+  let limit: number | undefined; // Declarar limit aquí
+  // --- FIN SECCIÓN MODIFICADA: Declaración de variables al inicio ---
+
+
   try {
     const { searchParams } = new URL(request.url);
-    const symbol = searchParams.get('symbol'); // Ej: BTCUSDT
-    const timeframe = searchParams.get('timeframe'); // Ej: 1m, 5m, 1h, 1d
-    const limitParam = searchParams.get('limit'); // Cantidad de velas a obtener
+    // --- INICIO SECCIÓN MODIFICADA: Asignar valores a variables ya declaradas ---
+    symbol = searchParams.get('symbol'); // Ej: BTCUSDT
+    timeframe = searchParams.get('timeframe'); // Ej: 1m, 5m, 1h, 1d
+    limitParam = searchParams.get('limit'); // Cantidad de velas a obtener
+    isTestnet = searchParams.get('isTestnet')?.toLowerCase() === 'true'; // Leer el parámetro isTestnet=true/false
+    // --- FIN SECCIÓN MODIFICADA: Asignar valores a variables ya declaradas ---
+
+
+    // --- INICIO SECCIÓN MODIFICADA: Seleccionar Exchange y definir networkType ---
+    const exchangeToUse = isTestnet ? exchangeTestnet : exchangeMainnet;
+    networkType = isTestnet ? 'Testnet' : 'Mainnet'; // Asignar valor a networkType ya declarada
+    console.log(`[API Klines] Usando configuración para la red: ${networkType}`);
+    // --- FIN SECCIÓN MODIFICADA: Seleccionar Exchange y definir networkType ---
+
 
     if (!symbol || !timeframe) {
-      console.warn('[API Klines] Error 400: Parámetros "symbol" y "timeframe" son requeridos.');
+      console.warn(`[API Klines] Error 400 en ${networkType}: Parámetros \"symbol\" y \"timeframe\" son requeridos.`);
       return NextResponse.json(
-        { error: 'Parámetros "symbol" y "timeframe" son requeridos.' },
+        { success: false, message: `Parámetros \"symbol\" y \"timeframe\" son requeridos para obtener klines en ${networkType}.` },
         { status: 400 }
       );
     }
 
-    let limit: number | undefined;
+     // --- INICIO SECCIÓN MODIFICADA: Validación de Credenciales (si fetchOHLCV requiere autenticación) ---
+     // Aunque fetchOHLCV a menudo es público, si tu configuración requiere API keys, valida:
+     if (exchangeToUse.apiKey === undefined || exchangeToUse.secret === undefined) {
+       console.error(`[API Klines] Error: Las credenciales de ${networkType} no están configuradas.`);
+       return NextResponse.json({
+         success: false,
+         message: `Las credenciales de Binance ${networkType} no están configuradas en las variables de entorno (.env.local).`
+       }, { status: 500 });
+     }
+      console.log(`[API Klines] Credenciales de ${networkType} cargadas correctamente.`);
+     // --- FIN SECCIÓN MODIFICADA: Validación de Credenciales ---
+
+
+    // --- INICIO SECCIÓN MODIFICADA: Parsear limitParam ---
     if (limitParam) {
       const parsedLimit = parseInt(limitParam);
       if (isNaN(parsedLimit) || parsedLimit <= 0) {
-        console.warn(`[API Klines] Advertencia: Límite inválido "${limitParam}". Usando predeterminado.`);
+        console.warn(`[API Klines] Advertencia en ${networkType}: Límite inválido \"${limitParam}\". Usando predeterminado.`);
         limit = undefined; // Dejar que ccxt use su límite predeterminado
       } else {
         limit = parsedLimit;
       }
     }
+    // --- FIN SECCIÓN MODIFICADA: Parsear limitParam ---
+
 
     // Normalizar el símbolo para ccxt (ej: BTCUSDT -> BTC/USDT)
-    // Esto es robusto, ya que ccxt espera "BTC/USDT" para pares futuros.
+    // Esto es robusto, ya que ccxt espera \"BTC/USDT\" para pares futuros.
+    // --- INICIO SECCIÓN MODIFICADA: Normalizar Símbolo ---
     const ccxtSymbol = symbol.includes('/') ? symbol.toUpperCase() : `${symbol.toUpperCase().replace('USDT', '')}/USDT`;
+    // --- FIN SECCIÓN MODIFICADA: Normalizar Símbolo ---
 
-    console.log(`[API Klines] Procesando solicitud para: ${ccxtSymbol}, timeframe: ${timeframe}, limit: ${limit || 'ccxt default'}.`);
+    console.log(`[API Klines] Procesando solicitud para: ${ccxtSymbol} en ${networkType}, timeframe: ${timeframe}, limit: ${limit || 'ccxt default'}.`);
 
-    // Fetch the OHLCV (candlestick) data
-    const klines = await exchange.fetchOHLCV(
+    // Fetch the OHLCV (candlestick) data using the selected exchange instance
+    const klines = await exchangeToUse.fetchOHLCV(
       ccxtSymbol,
       timeframe,
       undefined, // since: No lo especificamos para obtener los más recientes
@@ -67,18 +138,20 @@ export async function GET(request: Request) {
     );
 
     if (!klines || klines.length === 0) {
-      console.warn(`[API Klines] No se recibieron klines para ${ccxtSymbol} (${timeframe}).`);
+      console.warn(`[API Klines] No se recibieron klines para ${ccxtSymbol} (${timeframe}) en ${networkType}.`);
       return NextResponse.json(
-        { message: 'No se encontraron datos de klines para los parámetros especificados.', klines: [] },
-        { status: 200 } // Podría ser 404 si la ausencia de datos es un error, pero 200 es aceptable si es una condición válida
+        { success: true, message: `No se encontraron datos de klines para ${ccxtSymbol} (${timeframe}) en ${networkType}.`, klines: [] }, // Indicar success: true si es solo falta de datos
+        { status: 200 }
       );
     }
 
-    console.log(`[API Klines] Klines recibidos de Binance: ${klines.length} puntos.`);
+    console.log(`[API Klines] Klines recibidos de Binance ${networkType}: ${klines.length} puntos.`);
 
-    const transformedKlines: MarketPriceDataPoint[] = klines.map(kline => {
+    // Transformación y Tipado
+    // Asertar el array de klines a any[] para facilitar el acceso a los elementos
+    const transformedKlines: MarketPriceDataPoint[] = (klines as any[]).map(kline => {
       if (!Array.isArray(kline) || kline.length < 6) {
-        console.warn("[API Klines] Dato kline incompleto o malformado, saltando:", kline);
+        console.warn(`[API Klines] Dato kline incompleto o malformado en ${networkType}, saltando:`, kline);
         return null; // Retornar null para filtrar más tarde
       }
 
@@ -92,8 +165,11 @@ export async function GET(request: Request) {
       const tradeVolume = kline[5];
 
       // Verificación de tipos y valores válidos
-      if (typeof timestampMs !== 'number' || typeof closePrice !== 'number' || typeof tradeVolume !== 'number') {
-        console.warn(`[API Klines] Datos numéricos faltantes o inválidos en kline: ${kline}`);
+      // Usamos typeof y verificamos que no sean null
+      if (typeof timestampMs !== 'number' || timestampMs === null ||
+          typeof closePrice !== 'number' || closePrice === null ||
+          typeof tradeVolume !== 'number' || tradeVolume === null) { // Añadir verificación para null
+        console.warn(`[API Klines] Datos numéricos faltantes, nulos o inválidos en kline en ${networkType}: ${kline}`);
         return null;
       }
 
@@ -102,24 +178,26 @@ export async function GET(request: Request) {
         price: closePrice, // Usar el precio de cierre
         volume: tradeVolume,
         // Puedes añadir open, high, low aquí si tu MarketPriceDataPoint lo soporta y lo necesitas en el frontend
-        // open: openPrice,
-        // high: highPrice,
-        // low: lowPrice,
+        // open: typeof openPrice === 'number' && openPrice !== null ? openPrice : undefined, // Ejemplo de manejo seguro
+        // high: typeof highPrice === 'number' && highPrice !== null ? highPrice : undefined,
+        // low: typeof lowPrice === 'number' && lowPrice !== null ? lowPrice : undefined,
       };
     }).filter((kline): kline is MarketPriceDataPoint => kline !== null); // Filtrar nulos y asegurar el tipo
 
+
     if (transformedKlines.length === 0) {
-      console.warn('[API Klines] Todos los klines filtrados después de la transformación.');
+      console.warn(`[API Klines] Todos los klines filtrados después de la transformación en ${networkType}.`);
       return NextResponse.json(
-        { message: 'Los datos de klines recibidos no pudieron ser procesados.', klines: [] },
+        { success: false, message: `Los datos de klines recibidos para ${ccxtSymbol} (${timeframe}) en ${networkType} no pudieron ser procesados.`, klines: [] }, // Indicar success: false si no hay datos válidos después de filtrar
         { status: 500 } // Error interno si no se puede procesar nada
       );
     }
 
-    console.log(`[API Klines] Klines transformados y listos para enviar: ${transformedKlines.length} puntos.`);
+    console.log(`[API Klines] Klines transformados y listos para enviar desde ${networkType}: ${transformedKlines.length} puntos.`);
 
     return NextResponse.json({
-      message: `Klines para ${symbol} (${timeframe}) obtenidos con éxito.`,
+      success: true, // Indicar éxito si se devuelven datos transformados
+      message: `Klines para ${symbol} (${timeframe}) obtenidos con éxito de ${networkType}.`,
       klines: transformedKlines,
     }, {
       status: 200,
@@ -130,25 +208,55 @@ export async function GET(request: Request) {
     });
 
   } catch (error: any) {
-    let errorMessage = 'Error desconocido al obtener Klines de Binance.';
-    let statusCode = 500;
+      // --- INICIO SECCIÓN MODIFICADA: Declarar 'details' al inicio del catch ---
+      let details: string | undefined = undefined; // Declarar details aquí
+      // --- FIN SECCIÓN MODIFICADA: Declarar 'details' al inicio del catch ---
 
-    if (error instanceof ccxt.NetworkError) {
-      errorMessage = `Error de red o conexión con Binance: ${error.message}`;
-      statusCode = 503; // Service Unavailable
-    } else if (error instanceof ccxt.ExchangeError) {
-      errorMessage = `Error de la API de Binance: ${error.message}`;
-      statusCode = 502; // Bad Gateway (error del upstream, Binance)
-    } else if (error instanceof Error) {
-      errorMessage = `Error interno del servidor: ${error.message}`;
-      statusCode = 500;
+      let errorMessage = `Error desconocido al obtener Klines de Binance ${networkType}.`;
+      let statusCode = 500;
+      let binanceErrorCode = undefined;
+
+      if (error instanceof ccxt.NetworkError) {
+        errorMessage = `Error de red o conexión con Binance ${networkType}: ${error.message}`;
+        details = error.message; // Asignar valor en cada rama específica de error
+        statusCode = 503; // Service Unavailable
+      } else if (error instanceof ccxt.ExchangeError) {
+        errorMessage = `Error de la API de Binance ${networkType}: ${error.message}`;
+        details = error.message; // Asignar valor
+        statusCode = 502; // Bad Gateway (error del upstream, Binance)
+        // Intentar extraer código de error si está en el mensaje
+        if (error.message.includes('code=')) {
+            const codeMatch = error.message.match(/code=(-?\d+)/);
+            if (codeMatch && codeMatch[1]) {
+                binanceErrorCode = parseInt(codeMatch[1], 10);
+                console.warn(`[API Klines] Código de error de Binance extraído: ${binanceErrorCode}`);
+            }
+        }
+      } else if (error instanceof Error) {
+        errorMessage = `Error interno del servidor al procesar klines para ${symbol || 'símbolo desconocido'} en ${networkType}: ${error.message}`;
+        details = error.message; // Asignar valor
+        statusCode = 500;
+      } else {
+          // Manejar otros tipos de error no capturados específicamente
+          console.error(`[API Klines] Error inesperado en ${networkType} para ${symbol || 'símbolo desconocido'}:`, error);
+          errorMessage = `Ocurrió un error inesperado al obtener klines para ${symbol || 'símbolo desconocido'} en ${networkType}.`;
+          statusCode = 500;
+          // Asegurar que details se asigna aquí también
+          details = error.message || JSON.stringify(error);
+      }
+
+      console.error(`[API Klines] Error al procesar solicitud: ${errorMessage}`, error);
+
+      // La variable 'details' ahora está declarada en el ámbito del catch
+      return NextResponse.json(
+        {
+          success: false,
+          message: errorMessage,
+          details: details, // Usar la variable declarada
+          binanceErrorCode: binanceErrorCode,
+        },
+        { status: statusCode }
+      );
     }
-
-    console.error(`[API Klines] Error al procesar solicitud: ${errorMessage}`, error);
-
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: statusCode }
-    );
-  }
+      
 }
