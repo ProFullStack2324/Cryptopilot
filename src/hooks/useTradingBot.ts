@@ -1,32 +1,39 @@
 
 // src/hooks/useTradingBot.ts
 import { useState, useEffect, useRef, useCallback } from 'react';
+// Asegúrate de que estos tipos estén bien definidos y exportados
 import type { Market, MarketPriceDataPoint, OrderFormData, SimulatedPosition } from '@/lib/types';
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/hooks/use-toast"; // Si el hook usará toasts
 
+// Asegúrate de que esta interfaz FormattedBalance esté definida o importada
 interface FormattedBalance {
     available: number;
     onOrder: number;
     total: number;
 }
-
+// --- INICIO SECCIÓN MODIFICADA: Añadir prop para usar Testnet ---
 interface UseTradingBotProps {
   selectedMarket: Market | null;
   currentMarketPriceHistory: MarketPriceDataPoint[];
-  currentPrice: number | null;
+  currentPrice: number | null; // El precio actual más reciente
   allBinanceBalances: Record<string, FormattedBalance> | null;
-  botIntervalMs?: number;
-  useTestnet?: boolean; // Prop para indicar si el bot debe operar en Testnet
-  onBotAction?: (result: { type: 'orderPlaced', success: boolean, details?: any }) => void;
+  // Eliminamos o ajustamos onPlaceOrder si el bot manejará la colocación
+  // onPlaceOrder: (orderData: OrderFormData, isBotOrder: boolean) => Promise<boolean>;
+  botIntervalMs?: number; // Intervalo de ejecución del bot en ms
+  useTestnet?: boolean; // Nuevo: Indica si el bot debe operar en la red de prueba
+  onBotAction?: (result: { type: 'orderPlaced', success: boolean, details?: any }) => void; // Opcional: Callback para notificar al UI
 }
+// --- FIN SECCIÓN MODIFICADA: Añadir prop para usar Testnet ---
+
 
 interface UseTradingBotReturn {
   isBotRunning: boolean;
   toggleBotStatus: () => void;
   botOpenPosition: SimulatedPosition | null;
   botLastActionTimestamp: number;
+  // Puedes añadir estado de carga o error para la colocación de órdenes del bot si es necesario
   isPlacingOrder: boolean;
-  placeOrderError: any;
+  placeOrderError: any; // Estado para errores al colocar orden
 }
 
 export const useTradingBot = ({
@@ -34,9 +41,11 @@ export const useTradingBot = ({
   currentMarketPriceHistory,
   currentPrice,
   allBinanceBalances,
-  botIntervalMs = 15000,
-  useTestnet = false, // Valor por defecto: Mainnet
-  onBotAction,
+  // Eliminamos onPlaceOrder de las props desestructuradas
+  // onPlaceOrder,
+  botIntervalMs = 15000, // Valor por defecto: cada 15 segundos
+  useTestnet = false, // Valor por defecto para la nueva prop
+  onBotAction, // Destructurar el nuevo callback opcional
 }: UseTradingBotProps): UseTradingBotReturn => {
   const [isBotRunning, setIsBotRunning] = useState(false);
   const [botOpenPosition, setBotOpenPosition] = useState<SimulatedPosition | null>(null);
@@ -44,241 +53,263 @@ export const useTradingBot = ({
   const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
+  // --- NUEVOS ESTADOS para la colocación de órdenes dentro del bot ---
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [placeOrderError, setPlaceOrderError] = useState<any>(null);
+  // --- FIN NUEVOS ESTADOS ---
 
+
+  // Mínimo 5 segundos entre acciones reales del bot para evitar spam de órdenes
   const BOT_MIN_ACTION_INTERVAL_MS = 5000;
 
-  // Log inicial para ver las props recibidas por el hook
-  useEffect(() => {
-    console.log('[useTradingBot] Hook inicializado/actualizado. Props:', { selectedMarket: selectedMarket?.symbol, currentPrice, useTestnet, botIntervalMs });
-  }, [selectedMarket, currentPrice, useTestnet, botIntervalMs]);
-
-  const executeBotStrategy = useCallback(async () => {
-    // ==========================================================================================
-    // INICIO: Lógica de Estrategia del Bot y Colocación de Órdenes
-    // ==========================================================================================
-    const currentTimestamp = Date.now();
+// --- Lógica principal de la estrategia del bot ---
+const executeBotStrategy = useCallback(async () => {
+    // --- CORRECCIÓN 1: Definir networkType ---
     const networkType = useTestnet ? 'Testnet' : 'Mainnet';
-    console.log(`[Bot Strategy - ${networkType}] Ejecutando a las ${new Date(currentTimestamp).toLocaleTimeString()}.`);
+    // --- FIN CORRECCIÓN 1 ---
 
-    if (!isBotRunning) {
-      console.log(`[Bot Strategy - ${networkType}] Bot no está corriendo. Saliendo.`);
-      return;
+
+    if (!isBotRunning) { // Añadir verificación por si el estado cambia rápidamente
+         console.log("[Bot Strategy] Bot no está corriendo. Saliendo de executeBotStrategy.");
+         return;
     }
     if (!selectedMarket || !currentPrice || currentPrice <= 0 || currentMarketPriceHistory.length < 20) {
-      console.warn(`[Bot Strategy - ${networkType}] Datos insuficientes para ${selectedMarket?.symbol || 'N/A'}. Precio: ${currentPrice}, Historial: ${currentMarketPriceHistory.length} puntos. Saltando estrategia.`);
-      return;
-    }
-    if (currentTimestamp - botLastActionTimestamp < BOT_MIN_ACTION_INTERVAL_MS) {
-      console.log(`[Bot Strategy - ${networkType}] Esperando ${((BOT_MIN_ACTION_INTERVAL_MS - (currentTimestamp - botLastActionTimestamp))/1000).toFixed(1)}s más para intervalo mínimo entre acciones.`);
+      console.warn("[Bot Strategy] Datos insuficientes para ejecutar la estrategia.");
       return;
     }
 
-    console.log(`[Bot Strategy - ${networkType}] Analizando ${selectedMarket.name} (Símbolo: ${selectedMarket.symbol}). Precio actual: ${currentPrice}.`);
-    // console.log(`[Bot Strategy - ${networkType}] Historial de precios (últimos 5):`, currentMarketPriceHistory.slice(-5).map(p => ({price: p.price, sma10: p.sma10, sma20: p.sma20})) );
+    // Evitar acciones muy rápidas si el bot ya operó recientemente
+    if (Date.now() - botLastActionTimestamp < BOT_MIN_ACTION_INTERVAL_MS) {
+      console.log("[Bot Strategy] Esperando intervalo mínimo entre acciones.");
+      return;
+    }
+
+    console.log(`[Bot Strategy] Analizando ${selectedMarket.name} a precio: ${currentPrice} en ${networkType}`); // networkType ahora definida
+    console.log(`[Bot Strategy] Historial de precios actual:`, currentMarketPriceHistory.map(p => p.price));
+
 
     const latestPriceDataPoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
-    const previousPriceDataPoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 2];
+    const previousPriceDataPoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 2]; // Para cruces de SMA/MACD
 
     let action: 'buy' | 'sell' | 'hold' = 'hold';
     let triggerReason = "Ninguna";
 
     // --- Estrategia de Cruce de SMA (ejemplo) ---
-    if (latestPriceDataPoint?.sma10 !== undefined && latestPriceDataPoint?.sma20 !== undefined &&
-        previousPriceDataPoint?.sma10 !== undefined && previousPriceDataPoint?.sma20 !== undefined) {
-      if (latestPriceDataPoint.sma10 > latestPriceDataPoint.sma20 && previousPriceDataPoint.sma10 <= previousPriceDataPoint.sma20) {
-        action = 'buy';
-        triggerReason = "Cruce SMA Alcista (10 > 20)";
-      } else if (latestPriceDataPoint.sma10 < latestPriceDataPoint.sma20 && previousPriceDataPoint.sma10 >= previousPriceDataPoint.sma20) {
-        action = 'sell';
-        triggerReason = "Cruce SMA Bajista (10 < 20)";
-      }
-      console.log(`[Bot Strategy - SMA - ${networkType}] SMA10: ${latestPriceDataPoint.sma10.toFixed(2)} (prev: ${previousPriceDataPoint.sma10.toFixed(2)}), SMA20: ${latestPriceDataPoint.sma20.toFixed(2)} (prev: ${previousPriceDataPoint.sma20.toFixed(2)}).`);
+    // Requiere al menos 2 puntos para detectar un cruce
+    if (latestPriceDataPoint.sma10 !== undefined && latestPriceDataPoint.sma20 !== undefined &&
+        previousPriceDataPoint.sma10 !== undefined && previousPriceDataPoint.sma20 !== undefined) {
+
+        // Cruce alcista: SMA10 cruza por encima de SMA20
+        if (latestPriceDataPoint.sma10 > latestPriceDataPoint.sma20 &&
+            previousPriceDataPoint.sma10 <= previousPriceDataPoint.sma20) {
+            action = 'buy';
+            triggerReason = "Cruce SMA Alcista";
+        }
+        // Cruce bajista: SMA10 cruza por debajo de SMA20
+        else if (latestPriceDataPoint.sma10 < latestPriceDataPoint.sma20 &&
+                 previousPriceDataPoint.sma10 >= previousPriceDataPoint.sma20) {
+            action = 'sell';
+            triggerReason = "Cruce SMA Bajista";
+        }
+        console.log(`[Bot Strategy - SMA] Última SMA10: ${latestPriceDataPoint.sma10}, Última SMA20: ${latestPriceDataPoint.sma20}. Previa SMA10: ${previousPriceDataPoint.sma10}, Previa SMA20: ${previousPriceDataPoint.sma20}.`);
     } else {
-      console.log(`[Bot Strategy - SMA - ${networkType}] Datos de SMA no disponibles o insuficientes.`);
+        console.log(`[Bot Strategy - SMA] Datos de SMA insuficientes. Saltando estrategia SMA.`);
     }
 
     // --- Estrategia de MACD (ejemplo) ---
-    if (action === 'hold' && latestPriceDataPoint?.macdHistogram !== undefined && previousPriceDataPoint?.macdHistogram !== undefined) {
+    // Puedes añadir más lógica de decisión o combinar indicadores aquí
+    if (action === 'hold' && latestPriceDataPoint.macdHistogram !== undefined &&
+        previousPriceDataPoint.macdHistogram !== undefined) {
+        console.log(`[Bot Strategy - MACD] Último Histograma: ${latestPriceDataPoint.macdHistogram}, Previo Histograma: ${previousPriceDataPoint.macdHistogram}.`);
+      // Cambio de histograma de negativo a positivo (señal de compra)
       if (latestPriceDataPoint.macdHistogram > 0 && previousPriceDataPoint.macdHistogram <= 0) {
         action = 'buy';
-        triggerReason = "Cruce MACD Histograma a Positivo";
-      } else if (latestPriceDataPoint.macdHistogram < 0 && previousPriceDataPoint.macdHistogram >= 0) {
-        action = 'sell';
-        triggerReason = "Cruce MACD Histograma a Negativo";
+        triggerReason = "MACD Histograma Positivo";
       }
-      console.log(`[Bot Strategy - MACD - ${networkType}] Histograma MACD: ${latestPriceDataPoint.macdHistogram.toFixed(4)} (prev: ${previousPriceDataPoint.macdHistogram.toFixed(4)}).`);
+      // Cambio de histograma de positivo a negativo (señal de venta)
+      else if (latestPriceDataPoint.macdHistogram < 0 && previousPriceDataPoint.macdHistogram >= 0) {
+        action = 'sell';
+        triggerReason = "MACD Histograma Negativo";
+      }
     } else {
-      if (action !== 'hold') console.log(`[Bot Strategy - MACD - ${networkType}] Estrategia SMA ya decidió una acción. Saltando MACD.`);
-      else console.log(`[Bot Strategy - MACD - ${networkType}] Datos de MACD no disponibles o insuficientes.`);
+         console.log(`[Bot Strategy - MACD] Datos de MACD Histograma insuficientes o SMA ya triggereó. Saltando estrategia MACD.`);
     }
 
-    console.log(`[Bot Decision - ${networkType}] Mercado: ${selectedMarket.symbol}. Acción decidida: ${action.toUpperCase()}. Razón: ${triggerReason}`);
 
-    // --- Lógica de Colocación de Orden ---
+    console.log(`[Bot Decision] ${selectedMarket.symbol} (${networkType}): Acción decidida: ${action.toUpperCase()} por: ${triggerReason}`); // networkType ahora definida
+
+    // --- Ejecutar la orden si se decide una acción ---
     if (action !== 'hold') {
       let tradeAmount = 0;
-      const baseAsset = selectedMarket.baseAsset;
-      const quoteAsset = selectedMarket.quoteAsset;
-      const amountPrecision = selectedMarket.amountPrecision || 6; // Precisión para la cantidad del activo base
-      const quotePrecision = selectedMarket.quotePrecision || 2; // Precisión para la cantidad del activo cotizado (USDT)
+      // Determinar la cantidad a operar. Puedes usar un porcentaje de tu balance.
+      // Aquí usamos el balance de quoteAsset (ej. USDT) para compras y baseAsset (ej. BTC) para ventas.
 
-      if (action === 'buy') {
-        if (allBinanceBalances && allBinanceBalances[quoteAsset]) {
-          const availableQuote = allBinanceBalances[quoteAsset].available;
-          const investmentPercentage = 0.05; // Invertir 5% del balance de quoteAsset
-          let desiredQuoteAmount = availableQuote * investmentPercentage;
-          console.log(`[Bot Action - Buy - ${networkType}] Balance ${quoteAsset}: ${availableQuote.toFixed(quotePrecision)}. Intento de inversión: ${desiredQuoteAmount.toFixed(quotePrecision)} ${quoteAsset}.`);
+      // --- COMIENZO CORRECCIÓN PARA BUY ---
+      if (action === 'buy' && allBinanceBalances && selectedMarket && allBinanceBalances[selectedMarket.quoteAsset]) {
+        // ELIMINAR la siguiente línea ya que availableBase no se usa aquí:
+        // const availableBase = allBinanceBalances[selectedMarket.baseAsset].available;
 
-          // Validación contra minNotional
-          if (selectedMarket.minNotional && desiredQuoteAmount < selectedMarket.minNotional) {
-            console.warn(`[Bot Action - Buy - ${networkType}] Monto deseado ${desiredQuoteAmount.toFixed(quotePrecision)} ${quoteAsset} es MENOR que minNotional ${selectedMarket.minNotional}. NO SE OPERA.`);
-            toast({ title: `Bot: Monto Bajo (Compra ${networkType})`, description: `Intento de compra por ${desiredQuoteAmount.toFixed(quotePrecision)} ${quoteAsset} no cumple el mínimo de ${selectedMarket.minNotional}.`, variant: "destructive", duration: 7000 });
-            return;
-          }
-          
-          tradeAmount = parseFloat((desiredQuoteAmount / currentPrice).toFixed(amountPrecision));
+        // AGREGAR la declaración de availableQuote:
+        const availableQuote = allBinanceBalances[selectedMarket.quoteAsset].available; // available ya es un number
 
-          // Validación contra minQty
-          if (selectedMarket.minQty && tradeAmount < selectedMarket.minQty) {
-            console.warn(`[Bot Action - Buy - ${networkType}] Cantidad calculada ${tradeAmount.toFixed(amountPrecision)} ${baseAsset} es MENOR que minQty ${selectedMarket.minQty}. NO SE OPERA.`);
-            toast({ title: `Bot: Cantidad Baja (Compra ${networkType})`, description: `Intento de compra por ${tradeAmount.toFixed(amountPrecision)} ${baseAsset} no cumple la cantidad mínima de ${selectedMarket.minQty}.`, variant: "destructive", duration: 7000 });
-            return;
-          }
-          console.log(`[Bot Action - Buy - ${networkType}] Cantidad ${baseAsset} calculada: ${tradeAmount}. Valor estimado: ${(tradeAmount * currentPrice).toFixed(quotePrecision)} ${quoteAsset}.`);
+        const investmentPercentage = 0.05; // Ejemplo: Invertir 5% del balance disponible
+        const desiredQuoteAmount = availableQuote * investmentPercentage;
+         console.log(`[Bot Action - Buy] Balance disponible de ${selectedMarket.quoteAsset}: ${availableQuote}. Deseo invertir ${investmentPercentage*100}%, equivalente a ${desiredQuoteAmount} ${selectedMarket.quoteAsset}.`);
+
+        // Asegurarse de no operar por debajo del mínimo nominal o de cantidad de Binance
+        // Esto requeriría obtener las reglas de intercambio (minNotional, minQty, etc.)
+        // Por ahora, solo calculamos la cantidad base en función del precio actual
+        // IMPORTANTE: Necesitas obtener y aplicar las reglas de trading de Binance aquí!
+        // Puedes obtenerlas del endpoint /api/binance/symbols o /api/binance/exchangeInfo
+         // --- CORRECCIÓN 2: Usar quotePrecision (esta ya la tenías) ---
+        tradeAmount = parseFloat((desiredQuoteAmount / currentPrice).toFixed(selectedMarket.amountPrecision || selectedMarket.quotePrecision || 6)); // Usar quotePrecision si amountPrecision no existe
+         // --- FIN CORRECCIÓN 2 ---
+         console.log(`[Bot Action - Buy] Precio actual: ${currentPrice}. Cantidad base calculada: ${tradeAmount} ${selectedMarket.baseAsset}.`);
+
+      // --- FIN COMIENZO CORRECCIÓN PARA BUY ---
+
+
+      // --- COMIENZO CORRECCIÓN PARA SELL ---
+      // NOTA: El else if para 'sell' parece estar bien en cuanto a la declaración de availableBase
+      } else if (action === 'sell' && botOpenPosition && allBinanceBalances && selectedMarket && allBinanceBalances[selectedMarket.baseAsset]) {
+        // Si hay una posición abierta del bot para este mercado, intenta cerrarla completamente
+        // También verificar si realmente tenemos la cantidad del activo base en balance
+
+        // Mantener la declaración de availableBase aquí (esta línea parece correcta en tu original):
+        const availableBase = allBinanceBalances[selectedMarket.baseAsset].available;
+
+        if (availableBase >= botOpenPosition.amount) {
+            tradeAmount = botOpenPosition.amount;
+            console.log(`[Bot Action - Sell] Posición abierta: ${botOpenPosition.amount}. Balance disponible ${selectedMarket.baseAsset}: ${availableBase}. Intentando vender la posición completa: ${tradeAmount} ${selectedMarket.baseAsset}.`);
         } else {
-          console.warn(`[Bot Action - Buy - ${networkType}] No hay balance de ${quoteAsset} o información de balances no disponible.`);
-          return;
+            console.warn(`[Bot Action - Sell] Balance insuficiente de ${selectedMarket.baseAsset} (${availableBase}) para cerrar la posición abierta (${botOpenPosition.amount}). Saltando acción de venta.`);
+            // No tenemos suficiente balance, no podemos cerrar la posición abierta simulada de forma real.
+            return; // Salir de la función si no podemos vender
         }
-      } else if (action === 'sell') { // Vender
-        if (botOpenPosition && botOpenPosition.marketId === selectedMarket.id && botOpenPosition.type === 'buy') {
-          // Si hay una posición de compra abierta por el bot para este mercado, intentar cerrarla.
-          const availableBase = allBinanceBalances?.[baseAsset]?.available ?? 0;
-          tradeAmount = botOpenPosition.amount; // Vender la cantidad de la posición abierta
-          console.log(`[Bot Action - Sell - ${networkType}] Intentando cerrar posición abierta de ${tradeAmount.toFixed(amountPrecision)} ${baseAsset}. Balance disponible: ${availableBase.toFixed(amountPrecision)} ${baseAsset}.`);
-
-          if (availableBase < tradeAmount) {
-             console.warn(`[Bot Action - Sell - ${networkType}] Balance disponible ${availableBase.toFixed(amountPrecision)} ${baseAsset} es INSUFICIENTE para vender la posición de ${tradeAmount.toFixed(amountPrecision)}. Saltando.`);
-             // Podríamos optar por vender lo disponible, o no hacer nada. Por ahora, no hacemos nada.
-             return;
-          }
-        } else if (allBinanceBalances && allBinanceBalances[baseAsset]) {
-            // Lógica alternativa si no hay posición abierta del bot, pero queremos vender basado en señal (ej. vender un % del baseAsset)
-            // const availableBase = allBinanceBalances[baseAsset].available;
-            // const sellPercentage = 0.10; // Vender 10% del baseAsset disponible
-            // tradeAmount = parseFloat((availableBase * sellPercentage).toFixed(amountPrecision));
-            console.log(`[Bot Action - Sell - ${networkType}] No hay posición de compra abierta por el bot para ${selectedMarket.symbol} o señal de venta sin posición previa. No se ejecutará venta por defecto. Implementar lógica si es necesario.`);
-            return; // Por ahora, solo vendemos para cerrar posiciones abiertas por el bot
-        } else {
-          console.warn(`[Bot Action - Sell - ${networkType}] No hay posición abierta para cerrar o no hay balance de ${baseAsset}.`);
-          return;
-        }
-
-        // Validación contra minQty para la venta
-        if (selectedMarket.minQty && tradeAmount < selectedMarket.minQty) {
-            console.warn(`[Bot Action - Sell - ${networkType}] Cantidad a vender ${tradeAmount.toFixed(amountPrecision)} ${baseAsset} es MENOR que minQty ${selectedMarket.minQty}. NO SE OPERA.`);
-            toast({ title: `Bot: Cantidad Baja (Venta ${networkType})`, description: `Intento de venta por ${tradeAmount.toFixed(amountPrecision)} ${baseAsset} no cumple la cantidad mínima de ${selectedMarket.minQty}.`, variant: "destructive", duration: 7000 });
-            return;
-        }
-        // Validación contra minNotional para la venta
-        const estimatedSellValue = tradeAmount * currentPrice;
-        if (selectedMarket.minNotional && estimatedSellValue < selectedMarket.minNotional) {
-            console.warn(`[Bot Action - Sell - ${networkType}] Valor estimado de venta ${estimatedSellValue.toFixed(quotePrecision)} ${quoteAsset} es MENOR que minNotional ${selectedMarket.minNotional}. NO SE OPERA.`);
-            toast({ title: `Bot: Monto Bajo (Venta ${networkType})`, description: `Intento de venta por valor de ${estimatedSellValue.toFixed(quotePrecision)} ${quoteAsset} no cumple el mínimo de ${selectedMarket.minNotional}.`, variant: "destructive", duration: 7000 });
-            return;
-        }
-        console.log(`[Bot Action - Sell - ${networkType}] Cantidad ${baseAsset} a vender: ${tradeAmount}. Valor estimado: ${estimatedSellValue.toFixed(quotePrecision)} ${quoteAsset}.`);
+      } else {
+          console.warn(`[Bot Action] Condiciones no cumplidas para ejecutar ${action}.`);
+          return; // Salir si no se cumplen las condiciones para comprar o vender (ej. falta balance, no hay posición para vender)
       }
+       // --- FIN COMIENZO CORRECCIÓN PARA SELL ---
+
 
       if (tradeAmount <= 0) {
-        console.warn(`[Bot Action - ${networkType}] Cantidad de trade calculada es <= 0 para ${action} ${selectedMarket.symbol}. Saltando orden.`);
+        console.warn(`[Bot Action] Cantidad de trade calculada fue <= 0 para ${action} ${selectedMarket.symbol}. Saltando colocación de orden.`);
         return;
       }
 
-      setIsPlacingOrder(true);
-      setPlaceOrderError(null);
+      // --- INICIO SECCIÓN MODIFICADA: Colocación de Orden a través de Endpoint de API ---
+      setIsPlacingOrder(true); // Indicar que estamos colocando una orden
+      setPlaceOrderError(null); // Limpiar error anterior
 
-      const orderData: OrderFormData = {
-        marketId: selectedMarket.symbol, // Los endpoints esperan el symbol, ej. BTCUSDT
-        orderType: 'market',
-        type: action, // 'buy' o 'sell'
+      const orderData = {
+        symbol: selectedMarket.symbol, // Usar el símbolo directo (ej. BTCUSDT) que esperan los endpoints
+        type: 'market', // Por ahora, solo órdenes de mercado para simplificar
+        side: action,
         amount: tradeAmount,
-        price: currentPrice, // Precio de referencia para órdenes de mercado
+        // price no es estrictamente necesario para órdenes de mercado, pero se puede incluir como referencia
+        price: currentPrice, // Precio de referencia
       };
 
-      // ==========================================================================================
-      // PUNTO CLAVE: Selección del Endpoint (Mainnet o Testnet)
-      // ==========================================================================================
-      // La variable `useTestnet` (prop del hook) determina qué endpoint se usará.
+      // Determinar el endpoint correcto (mainnet o testnet)
       const endpoint = useTestnet ? '/api/binance/trade-testnet' : '/api/binance/trade';
-      // ==========================================================================================
+      console.log(`[useTradingBot] Bot llamando al endpoint de trade: ${endpoint} con datos:`, orderData);
 
-      console.log(`[useTradingBot - ${networkType}] Bot llamando al endpoint de trade: ${endpoint}`);
-      console.log(`[useTradingBot - ${networkType}] Datos de la orden:`, JSON.stringify(orderData));
-
-      let tradeResult: any = null;
+      let tradeResult: any = null; // Usamos any por ahora, podrías usar la interfaz TradeResult si la exportas
 
       try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderData), // Enviar el objeto compatible con TradeRequest del backend
-        });
+           const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(orderData),
+           });
 
-        console.log(`[useTradingBot - ${networkType}] Respuesta del endpoint ${endpoint} recibida. Estado: ${response.status}`);
-        tradeResult = await response.json();
-        console.log(`[useTradingBot - ${networkType}] Resultado parseado de la orden del bot:`, tradeResult);
+           console.log(`[useTradingBot] Respuesta del endpoint ${endpoint} recibida. Estado: ${response.status}`);
+           tradeResult = await response.json();
+           console.log(`[useTradingBot] Resultado de la orden del bot:`, tradeResult);
 
-        if (!response.ok || !tradeResult.success) {
-          const errorMsg = tradeResult?.message || tradeResult?.details || `Error HTTP ${response.status} al colocar orden.`;
-          console.error(`[useTradingBot - ${networkType}] Endpoint ${endpoint} reportó error: ${errorMsg}. Respuesta completa:`, tradeResult);
-          setPlaceOrderError(tradeResult || { message: `Error HTTP: ${response.status}` });
-          if (onBotAction) onBotAction({ type: 'orderPlaced', success: false, details: tradeResult });
-          toast({ title: `Bot: Error Orden (${networkType})`, description: `Error al colocar orden en ${selectedMarket?.symbol}: ${errorMsg}`, variant: "destructive", duration: 10000 });
-        } else {
-          console.log(`[useTradingBot - ${networkType}] Orden del bot procesada con éxito por el backend. Order ID: ${tradeResult.orderId}, Estado: ${tradeResult.status}`);
-          setBotLastActionTimestamp(Date.now());
-          if (onBotAction) onBotAction({ type: 'orderPlaced', success: true, details: tradeResult });
+           if (!response.ok || !tradeResult.success) {
+               console.error(`[useTradingBot] El endpoint ${endpoint} reportó un error o fallo en la operación.`);
+               setPlaceOrderError(tradeResult || { message: `Error HTTP: ${response.status}` });
+               // Notificar al UI si hay un callback
+               if(onBotAction) onBotAction({ type: 'orderPlaced', success: false, details: tradeResult });
 
-          const executedQty = parseFloat(tradeResult.filled || tradeResult.amount || '0'); // CCXT `filled` o `amount`
-          const executedPrice = parseFloat(tradeResult.price || currentPrice.toString()); // CCXT `price` o precio actual
+               // Mostrar toast de error
+             toast({
+               title: "Bot: Error al Colocar Orden",
+               description: `Hubo un problema al intentar colocar la orden en ${selectedMarket?.symbol} en ${networkType}. Detalles: ${tradeResult?.message || tradeResult?.details || `Error HTTP: ${response.status}`}`, // Incluir más detalles del error si están disponibles
+               variant: "destructive",
+             });
 
-          if (action === 'buy') {
-            console.log(`[useTradingBot - ${networkType}] Actualizando posición simulada: COMPRA.`);
-            setBotOpenPosition({
-              marketId: selectedMarket.id,
-              entryPrice: executedPrice,
-              amount: executedQty,
-              type: 'buy',
-              timestamp: Math.floor((tradeResult.timestamp || Date.now()) / 1000), // CCXT `timestamp`
-            });
-            toast({ title: `Bot: Compra Ejecutada (${networkType})`, description: `Orden de ${executedQty.toFixed(amountPrecision)} ${baseAsset} en ${selectedMarket.symbol} a ~$${executedPrice.toFixed(quotePrecision)}.`, variant: "default" });
-          } else if (action === 'sell') {
-            console.log(`[useTradingBot - ${networkType}] Actualizando posición simulada: VENTA.`);
-            if (botOpenPosition?.type === 'buy' && botOpenPosition.marketId === selectedMarket.id) {
-              const pnl = (executedPrice - botOpenPosition.entryPrice) * botOpenPosition.amount;
-              console.log(`[useTradingBot - ${networkType}] PnL simulado (cierre de posición): ${pnl.toFixed(quotePrecision)} ${quoteAsset}.`);
-              toast({ title: `Bot: Posición Cerrada (${networkType})`, description: `P&L: ${pnl.toFixed(quotePrecision)} ${quoteAsset}`, variant: "default" });
-            }
-            setBotOpenPosition(null);
-            toast({ title: `Bot: Venta Ejecutada (${networkType})`, description: `Orden de ${executedQty.toFixed(amountPrecision)} ${baseAsset} en ${selectedMarket.symbol} a ~$${executedPrice.toFixed(quotePrecision)}.`, variant: "default" });
-          }
-        }
+
+           } else {
+               console.log(`[useTradingBot] Orden del bot colocada con éxito en ${networkType}. Order ID: ${tradeResult.orderId}`);
+               setBotLastActionTimestamp(Date.now()); // Actualizar timestamp solo si la orden fue exitosa
+
+               // Notificar al UI si hay un callback
+               if(onBotAction) onBotAction({ type: 'orderPlaced', success: true, details: tradeResult });
+
+               // --- Actualización de Posición Simulada del Bot basada en el RESULTADO REAL ---
+               if (action === 'buy') {
+                   // Si la compra fue exitosa, establecer la nueva posición abierta
+                    console.log("[useTradingBot] Actualizando posición simulada: Compra exitosa.");
+                   setBotOpenPosition({
+                       marketId: selectedMarket.id,
+                       entryPrice: tradeResult.price || currentPrice, // Usar precio de ejecución si está disponible, fallback al precio actual
+                       amount: tradeResult.executedQty || tradeResult.amount, // Usar cantidad ejecutada si está disponible, fallback a la cantidad solicitada
+                       type: 'buy',
+                       timestamp: Math.floor(tradeResult.transactTime / 1000) || Math.floor(Date.now() / 1000) // Usar timestamp de la transacción si está disponible
+                   });
+                    // Mostrar toast de éxito de compra
+                    toast({
+                      title: "Bot: Compra Ejecutada",
+                      description: `Orden de ${tradeResult.executedQty || tradeResult.amount} ${selectedMarket.baseAsset} colocada en ${selectedMarket.symbol} en ${networkType}.`, // Usar cantidad ejecutada en el mensaje si está disponible
+                      variant: "default",
+                    });
+
+               } else if (action === 'sell') {
+                   // Si la venta fue exitosa, cerrar la posición abierta simulada
+                   console.log("[useTradingBot] Actualizando posición simulada: Venta exitosa.");
+                   // Calcular PnL simulado si había una posición de compra abierta para este mercado
+                    if(botOpenPosition?.type === 'buy' && botOpenPosition.marketId === selectedMarket.id) {
+                        const exitPrice = tradeResult.price || currentPrice; // Usar precio de ejecución o actual
+                        const pnl = (exitPrice - botOpenPosition.entryPrice) * botOpenPosition.amount;
+                         console.log(`[useTradingBot] PnL simulado de la operación: ${pnl.toFixed(selectedMarket.quotePrecision || 2)} ${selectedMarket.quoteAsset}`); // Usar quotePrecision
+                         // Aquí podrías guardar este PnL en un estado o historial si lo necesitas
+                    }
+                   setBotOpenPosition(null); // Cerrar la posición simulada
+
+                    // Mostrar toast de éxito de venta
+                    toast({
+                      title: "Bot: Venta Ejecutada",
+                      description: `Orden de ${tradeResult.executedQty || tradeResult.amount} ${selectedMarket.baseAsset} colocada en ${selectedMarket.symbol} en ${networkType}.`, // Usar cantidad ejecutada en el mensaje
+                       variant: "default", // O una variante de éxito específica
+                    });
+               }
+           }
+
       } catch (fetchError: any) {
-        const errorDetails = { message: `Error de red o cliente al colocar orden en ${networkType}.`, details: fetchError.message };
-        console.error(`[useTradingBot - ${networkType}] Error en fetch a ${endpoint}:`, fetchError);
-        setPlaceOrderError(errorDetails);
-        if (onBotAction) onBotAction({ type: 'orderPlaced', success: false, details: errorDetails });
-        toast({ title: `Bot: Error Conexión (${networkType})`, description: `No se pudo comunicar para orden en ${selectedMarket?.symbol}. Detalles: ${errorDetails.details}`, variant: "destructive", duration: 10000 });
+           console.error(`[useTradingBot] Error en la llamada fetch al endpoint ${endpoint}:`, fetchError);
+           const errorDetails = {
+               message: `Error de red o inesperado al colocar orden en ${networkType}.`,
+               details: fetchError.message,
+           };
+           setPlaceOrderError(errorDetails);
+            // Notificar al UI si hay un callback
+           if(onBotAction) onBotAction({ type: 'orderPlaced', success: false, details: errorDetails });
+
+            // Mostrar toast de error
+             toast({
+               title: "Bot: Error Crítico de Conexión",
+               description: `No se pudo comunicar con el servidor para colocar la orden en ${selectedMarket?.symbol}. Detalles: ${errorDetails.details}`,
+               variant: "destructive",
+             });
+
       } finally {
-        setIsPlacingOrder(false);
-        console.log(`[useTradingBot - ${networkType}] Finalizada la lógica de colocación de orden.`);
+          setIsPlacingOrder(false); // Finalizar estado de carga de colocación de orden
       }
+      // --- FIN SECCIÓN MODIFICADA: Colocación de Orden a través de Endpoint de API ---
     }
-    // ==========================================================================================
-    // FIN: Lógica de Estrategia del Bot y Colocación de Órdenes
-    // ==========================================================================================
   }, [
     isBotRunning,
     selectedMarket,
@@ -288,64 +319,72 @@ export const useTradingBot = ({
     botLastActionTimestamp,
     botOpenPosition,
     toast,
-    useTestnet, // Importante: useTestnet es una dependencia
+    useTestnet,
     onBotAction
   ]);
 
+  // --- Efecto para controlar el ciclo de vida del bot ---
   useEffect(() => {
-    const networkTypeLog = useTestnet ? 'Testnet' : 'Mainnet';
-    console.log(`[useTradingBot - LifecycleEffect - ${networkTypeLog}] Estado: ${isBotRunning ? 'CORRIENDO' : 'DETENIDO'}. Mercado: ${selectedMarket?.symbol || 'NINGUNO'}.`);
-    
+    console.log(`[useTradingBot] Efecto de ciclo de vida del bot activado. isBotRunning: ${isBotRunning}, selectedMarket: ${selectedMarket?.symbol}, useTestnet: ${useTestnet}`); // Añadido log de useTestnet
     let intervalId: NodeJS.Timeout | null = null;
 
-    if (isBotRunning && selectedMarket) {
-      console.log(`[useTradingBot - LifecycleEffect - ${networkTypeLog}] Iniciando bot para ${selectedMarket.symbol}. Intervalo: ${botIntervalMs / 1000}s.`);
+    if (isBotRunning && selectedMarket) { // Asegurarse de que hay un mercado seleccionado
+      console.log(`[useTradingBot] Bot iniciado para ${selectedMarket.symbol} en ${useTestnet ? 'Testnet' : 'Mainnet'}. Intervalo: ${botIntervalMs / 1000}s`); // networkType ahora definida
+      // Limpiar cualquier intervalo anterior
       if (botIntervalRef.current) {
         clearInterval(botIntervalRef.current);
+        console.log("[useTradingBot] Intervalo previo del bot limpiado.");
       }
-      executeBotStrategy(); // Ejecución inmediata al iniciar/cambiar mercado con bot activo
+      executeBotStrategy(); // Ejecución inicial al iniciar
       intervalId = setInterval(executeBotStrategy, botIntervalMs);
-      botIntervalRef.current = intervalId;
+      botIntervalRef.current = intervalId; // Guardar el nuevo ID del intervalo
     } else {
+      // Si el bot no está corriendo o no hay mercado seleccionado, limpiar el intervalo
       if (botIntervalRef.current) {
-        console.log(`[useTradingBot - LifecycleEffect - ${networkTypeLog}] Bot detenido o sin mercado. Limpiando intervalo.`);
+        console.log("[useTradingBot] Bot detenido o sin mercado seleccionado. Limpiando intervalo.");
         clearInterval(botIntervalRef.current);
         botIntervalRef.current = null;
+      } else {
+         console.log("[useTradingBot] Bot detenido o sin mercado seleccionado. No había intervalo activo.");
       }
     }
-    return () => { // Función de limpieza
-      console.log(`[useTradingBot - LifecycleEffect - ${networkTypeLog}] Limpiando efecto (desmontaje o cambio de dependencias).`);
-      if (intervalId) {
-        clearInterval(intervalId);
+
+    // Función de limpieza al desmontar o cuando las dependencias cambian y el bot no debe correr
+    return () => {
+      console.log("[useTradingBot] Función de limpieza del efecto del bot activada.");
+      if (intervalId) { // Limpiar el intervalo si fue creado en este ciclo del efecto
+         clearInterval(intervalId);
+         console.log("[useTradingBot] Intervalo del bot limpiado por función de limpieza.");
       }
-      if (botIntervalRef.current) { // Asegurar limpieza si el intervalo se asignó fuera del ciclo de este efecto
-          clearInterval(botIntervalRef.current)
-          botIntervalRef.current = null;
-      }
+       botIntervalRef.current = null; // Asegurarse de que la referencia esté limpia
+       console.log("[useTradingBot] Función de limpieza del efecto del bot finalizada.");
     };
-  }, [isBotRunning, selectedMarket, botIntervalMs, executeBotStrategy, useTestnet]); // useTestnet aquí asegura que si cambia, el bot se reinicie con la nueva config.
+  }, [isBotRunning, selectedMarket, botIntervalMs, executeBotStrategy, useTestnet]); // Añadir useTestnet a las dependencias
+
 
   const toggleBotStatus = useCallback(() => {
     setIsBotRunning(prev => {
       const newStatus = !prev;
-      const networkTypeToast = useTestnet ? 'Testnet' : 'Mainnet';
-      console.log(`[useTradingBot - toggleBotStatus] Cambiando estado del bot a: ${newStatus} para operaciones en ${networkTypeToast}.`);
+      console.log(`[useTradingBot] Cambiando estado del bot a: ${newStatus}`);
+      // Defer toast to avoid state update warning when state is updated immediately
       setTimeout(() => {
         toast({
           title: `Bot ${newStatus ? "Iniciado" : "Detenido"}`,
-          description: `Bot de trading ahora ${newStatus ? "activo" : "inactivo"} para ${selectedMarket?.symbol || 'mercado actual'} en ${networkTypeToast}.`,
+          description: `El bot de trading ahora está ${newStatus ? "activo" : "inactivo"} para ${selectedMarket?.symbol || 'el mercado seleccionado'} en ${useTestnet ? 'Testnet' : 'Mainnet'}.`, // Usar networkType en el mensaje
           variant: newStatus ? "default" : "destructive",
         });
-      }, 0);
+      }, 0); // Usar un timeout de 0 para ejecutar el toast después de que el estado se actualice
       return newStatus;
     });
-  }, [toast, selectedMarket, useTestnet]); // useTestnet para el mensaje del toast
+  }, [toast, selectedMarket, useTestnet]); // Añadir dependencias para el mensaje del toast
+
 
   return {
     isBotRunning,
     toggleBotStatus,
     botOpenPosition,
     botLastActionTimestamp,
+    // Devolver los nuevos estados
     isPlacingOrder,
     placeOrderError,
   };
