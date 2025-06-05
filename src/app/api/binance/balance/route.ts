@@ -1,11 +1,12 @@
-
 // src/app/api/binance/balance/route.ts
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
 
 // Definir una interfaz para la estructura de la solicitud (request body)
 interface BalanceRequest {
-  isTestnet?: boolean;
+  isTestnet?: boolean; // Nuevo: Bandera para indicar si usar la red de prueba
+  // Podrías añadir parámetros para filtrar activos si fuera necesario
+  // assets?: string[]; // Ejemplo: ['BTC', 'USDT']
 }
 
 // --- Configuración de CCXT para Mainnet y Testnet ---
@@ -17,19 +18,28 @@ const exchangeMainnet = new ccxt.binance({
   apiKey: process.env.BINANCE_API_KEY,
   secret: process.env.BINANCE_SECRET_KEY,
   options: {
-    // 'defaultType': 'spot', // O 'future', según lo que necesites por defecto para Mainnet
+    // Configura el tipo por defecto (spot o future) si es necesario para Mainnet
+    // 'defaultType': 'spot', // Por defecto para balances de Spot
+    // 'defaultType': 'future', // Si necesitas balances de Futuros
   },
+  // Por defecto usa la API de producción (Mainnet)
 });
 
 const exchangeTestnet = new ccxt.binance({
     apiKey: process.env.BINANCE_TESTNET_API_KEY,
     secret: process.env.BINANCE_TESTNET_SECRET_KEY,
     options: {
-        // 'defaultType': 'spot', // O 'future', para Testnet
+        // Configura el tipo por defecto (spot o future) para Testnet
+        // 'defaultType': 'spot', // Por defecto para balances de Spot Testnet
+        // 'defaultType': 'future', // Si necesitas balances de Futuros Testnet
     },
     urls: {
-        // URLs para Spot Testnet (ejemplo, verifica las URLs oficiales de Binance Testnet)
-        'api': {
+        // --- URLs de la API de Testnet ---
+        // Es CRUCIAL que configures las URLs correctas para la Testnet de Binance que estés utilizando (Spot o Futures).
+        // Consulta la documentación de Binance para las URLs exactas.
+
+        // Ejemplo para Spot Testnet:
+         'api': {
            'public': 'https://testnet.binance.vision/api/',
            'private': 'https://testnet.binance.vision/api/',
          },
@@ -42,149 +52,171 @@ const exchangeTestnet = new ccxt.binance({
 });
 // --- Fin Configuración CCXT ---
 
+
 // Usaremos POST para mayor consistencia y para poder enviar parámetros como isTestnet
 export async function POST(req: Request) {
-  let isTestnetUserValue: boolean | undefined = undefined;
+  let isTestnet = false; // Valor por defecto
 
   try {
-    const requestBody: BalanceRequest = await req.json();
-    isTestnetUserValue = requestBody.isTestnet;
-    console.log(`[API/Binance/Balance] Solicitud POST recibida. Cuerpo:`, requestBody);
+      const requestBody: BalanceRequest = await req.json();
+      // Desestructurar y asignar valor por defecto a isTestnet si es undefined
+      ({ isTestnet = false } = requestBody);
+      console.log(`[API/Binance/Balance] Recibida solicitud de balances en ${isTestnet ? 'Testnet' : 'Mainnet'}`);
+
   } catch (jsonError: any) {
-    // Si hay un error al parsear el JSON (ej. GET request sin body),
-    // continuamos con isTestnetUserValue como undefined.
-    // Los GET requests se manejarán con isTestnet=false por defecto si no se especifica el query param.
-    console.warn("[API/Binance/Balance] No se pudo parsear el cuerpo JSON (puede ser una solicitud GET o cuerpo vacío).", jsonError.message);
+      // Si hay un error al parsear el JSON, verificamos si es una solicitud GET
+      if (req.method === 'GET') {
+           console.log("[API/Binance/Balance] Procesando solicitud GET sin body. isTestnet por defecto es false.");
+            // Para solicitudes GET sin body, isTestnet permanece en false por defecto
+       } else {
+           console.error("[API/Binance/Balance] Error al parsear el cuerpo de la solicitud POST:", jsonError);
+            return NextResponse.json({
+              success: false,
+              message: "Error al procesar la solicitud POST. Formato JSON inválido."
+            }, { status: 400 });
+       }
   }
 
-  // Determinar isTestnet:
-  // 1. Prioridad al valor del body (si es POST y se parseó).
-  // 2. Si no, verificar query params (para GET).
-  // 3. Default a false.
-  let isTestnet: boolean = false;
-  if (typeof isTestnetUserValue === 'boolean') {
-    isTestnet = isTestnetUserValue;
-  } else if (req.url) {
-    const { searchParams } = new URL(req.url);
-    if (searchParams.has('isTestnet') && searchParams.get('isTestnet')?.toLowerCase() === 'true') {
-      isTestnet = true;
-      console.log("[API/Binance/Balance] isTestnet=true detectado en parámetros de query (GET).");
-    }
-  }
+  // Si la solicitud es GET y no hubo body JSON, verificamos si isTestnet está en los query params
+   if (req.method === 'GET' && req.url) {
+       const { searchParams } = new URL(req.url);
+       // Permitir isTestnet como parámetro de query para solicitudes GET
+       if (searchParams.has('isTestnet') && searchParams.get('isTestnet')?.toLowerCase() === 'true') {
+           isTestnet = true;
+           console.log("[API/Binance/Balance] isTestnet=true detectado en parámetros de query (GET).");
+       }
+   }
+
 
   const exchangeToUse = isTestnet ? exchangeTestnet : exchangeMainnet;
   const networkType = isTestnet ? 'Testnet' : 'Mainnet';
 
-  console.log(`[API/Binance/Balance] Usando configuración para ${networkType}.`);
 
   // --- Validación de Credenciales ---
-  if (!exchangeToUse.apiKey || !exchangeToUse.secret) {
-    console.error(`[API/Binance/Balance] Error: Las credenciales de ${networkType} no están configuradas en .env.local.`);
+  if (exchangeToUse.apiKey === undefined || exchangeToUse.secret === undefined) {
+    console.error(`[API/Binance/Balance] Error: Las credenciales de ${networkType} no están configuradas.`);
     return NextResponse.json({
       success: false,
-      message: `Las credenciales de Binance ${networkType} no están configuradas en las variables de entorno. Revisa tu archivo .env.local y asegúrate de que las variables ${isTestnet ? 'BINANCE_TESTNET_API_KEY/BINANCE_TESTNET_SECRET_KEY' : 'BINANCE_API_KEY/BINANCE_SECRET_KEY'} estén definidas.`
+      message: `Las credenciales de Binance ${networkType} no están configuradas en las variables de entorno (.env.local).`
     }, { status: 500 });
   }
-  console.log(`[API/Binance/Balance] Credenciales de ${networkType} parecen estar cargadas (verificación básica).`);
+    console.log(`[API/Binance/Balance] Credenciales de ${networkType} cargadas correctamente.`);
 
 
   // --- Obtener Balances usando CCXT ---
   try {
     console.log(`[API/Binance/Balance] Solicitando balances a CCXT en ${networkType}...`);
-    const accountBalance = await exchangeToUse.fetchBalance();
-    console.log(`[API/Binance/Balance] Balances obtenidos de CCXT en ${networkType}.`);
 
-    // ccxt.fetchBalance() devuelve una estructura como:
-    // {
-    //   info: { ...raw response... },
-    //   BTC: { free: 0.0, used: 0.0, total: 0.0 },
-    //   USDT: { free: 100.0, used: 10.0, total: 110.0 },
-    //   ...
-    //   free: { BTC: 0.0, USDT: 100.0, ... },
-    //   used: { BTC: 0.0, USDT: 10.0, ... },
-    //   total: { BTC: 0.0, USDT: 110.0, ... }
-    // }
-    // Queremos filtrar y formatear los balances individuales de cada activo.
+    // ccxt.fetchBalance() obtiene los balances de la cuenta Spot por defecto
+    // Si necesitas balances de Futuros, configura 'defaultType' en la instancia de exchange
+    const accountBalance = await exchangeToUse.fetchBalance();
+
+    console.log(`[API/Binance/Balance] Balances obtenidos de CCXT en ${networkType}.`);
+    // console.log(JSON.stringify(accountBalance, null, 2)); // Log detallado si es necesario para depurar
+
+    // ccxt.fetchBalance() devuelve un objeto con la estructura { 'asset': { free: ..., used: ..., total: ... }, ... }
+    // accountBalance.total: { 'USDT': 1000, 'BTC': 0.5, ... }
+    // accountBalance.free: { 'USDT': 900, 'BTC': 0.5, ... } // Saldo disponible
+    // accountBalance.used: { 'USDT': 100, 'BTC': 0, ... } // Saldo en órdenes abiertas
 
     const balancesFormatted: Record<string, { available: number; onOrder: number; total: number }> = {};
 
-    if (accountBalance.total) { // 'total' contiene un objeto con los totales por activo
-      for (const asset in accountBalance.total) {
-        if (Object.prototype.hasOwnProperty.call(accountBalance.total, asset)) {
-          const totalAmount = accountBalance.total[asset];
-          if (totalAmount !== undefined && totalAmount > 0) { // Incluir solo activos con saldo total > 0
-            balancesFormatted[asset] = {
-              available: accountBalance.free[asset] || 0,
-              onOrder: accountBalance.used[asset] || 0,
-              total: totalAmount,
-            };
-          }
+    // Iterar sobre todos los activos reportados por ccxt
+    // CORRECCIÓN APLICADA: Usar aserción a unknown primero para permitir indexación por strings de forma segura
+    if (accountBalance && accountBalance.total) {
+        // Aserción a unknown primero, luego a Record<string, number>
+        const totalBalances = accountBalance.total as unknown as Record<string, number>;
+        const freeBalances = accountBalance.free as unknown as Record<string, number>;
+        const usedBalances = accountBalance.used as unknown as Record<string, number>;
+
+
+        for (const asset in totalBalances) { // Iterar sobre totalBalances que ahora tiene la firma de índice
+            // Usamos Object.prototype.hasOwnProperty.call para una verificación segura de la propiedad
+            if (Object.prototype.hasOwnProperty.call(totalBalances, asset)) {
+                 // Ahora TypeScript permite acceder usando 'asset' porque totalBalances tiene la firma de índice
+                 const total = totalBalances[asset];
+                 const free = freeBalances[asset];
+                 const used = usedBalances[asset];
+
+                 // Opcional: Filtrar activos con saldo insignificante si deseas una respuesta más limpia
+                 // Incluimos activos con saldo total mayor a 0
+                 if (total > 0) { // Puedes ajustar el umbral (ej: 0.00000001) si es necesario
+                     balancesFormatted[asset] = {
+                         available: free,
+                         onOrder: used, // ccxt uses 'used' for funds tied in orders
+                         total: total,
+                     };
+                 }
+            }
         }
-      }
     }
 
-    console.log(`[API/Binance/Balance] ${Object.keys(balancesFormatted).length} activos con saldo > 0 formateados.`);
 
+    console.log(`[API/Binance/Balance] ${Object.keys(balancesFormatted).length} activos con saldo > 0 formateados.`);
+    // console.log(JSON.stringify(balancesFormatted, null, 2)); // Log de balances formateados
+
+    // --- Respuesta Exitosa ---
     return NextResponse.json({
       success: true,
       message: `Balances de cuenta obtenidos con éxito de Binance ${networkType}.`,
-      balances: balancesFormatted,
-      timestamp: accountBalance.timestamp || Date.now(),
-      datetime: accountBalance.datetime || new Date().toISOString(),
+      balances: balancesFormatted, // Devolvemos todos los balances > 0
+      timestamp: accountBalance.timestamp, // Timestamp de la respuesta de Binance
+      datetime: accountBalance.datetime, // Fecha y hora legible
     });
 
   } catch (error: any) {
     console.error(`[API/Binance/Balance] Error al obtener balances con CCXT en ${networkType}:`, error);
 
+    // --- Manejo de Errores Específicos de Binance/CCXT ---
     let userMessage = `Error al obtener los balances de la cuenta en Binance ${networkType}.`;
     let details = error.message || 'Error desconocido';
-    let statusCode = 500;
-    let binanceErrorCode: number | undefined = undefined;
+    let statusCode = 500; // Por defecto, un error interno del servidor
+    let binanceErrorCode = undefined;
 
-    if (error instanceof ccxt.AuthenticationError) {
-         console.error(`[API/Binance/Balance] Error de Autenticación en ${networkType} (CCXT). Código de error de Binance: ${error.message.match(/code=(-?\d+)/)?.[1]}`);
-         userMessage = `Error de autenticación con la API de Binance ${networkType}. Verifica tus claves API y sus permisos. Código de Binance: ${error.message.match(/code=(-?\d+)/)?.[1] || 'No disponible'}`;
+    // ccxt encapsula errores de la API de Binance
+    if (error instanceof ccxt.NetworkError) {
+        console.error(`[API/Binance/Balance] Error de Red al intentar conectar con Binance ${networkType}.`);
+        userMessage = "Error de conexión con la API de Binance. Intenta de nuevo más tarde.";
+        details = error.message;
+        statusCode = 503; // Servicio no disponible temporalmente
+
+    } else if (error instanceof ccxt.AuthenticationError) {
+         console.error(`[API/Binance/Balance] Error de Autenticación en ${networkType}.`);
+         userMessage = "Error de autenticación con la API de Binance. Verifica tus claves API.";
          details = error.message;
          statusCode = 401; // No autorizado
-         const codeMatch = error.message.match(/code=(-?\d+)/);
-         if (codeMatch && codeMatch[1]) {
-             binanceErrorCode = parseInt(codeMatch[1], 10);
-         }
-    } else if (error instanceof ccxt.NetworkError) {
-        userMessage = `Error de conexión con la API de Binance ${networkType}. Intenta de nuevo más tarde.`;
-        statusCode = 503; // Servicio no disponible
+
     } else if (error instanceof ccxt.ExchangeError) {
-         userMessage = `Ocurrió un error en el exchange de Binance (${networkType}) al obtener balances.`;
-         const codeMatch = error.message.match(/code=(-?\d+)/);
-         if (codeMatch && codeMatch[1]) {
-             binanceErrorCode = parseInt(codeMatch[1], 10);
-             userMessage += ` Código de Binance: ${binanceErrorCode}.`;
-         }
+         console.error(`[API/Binance/Balance] Error genérico del Exchange en ${networkType}.`);
+         userMessage = "Ocurrió un error en el exchange de Binance al obtener balances.";
+         details = error.message;
+         // Intentar obtener código de error específico de Binance si está disponible
+         if (error.message.includes('code=')) {
+              const codeMatch = error.message.match(/code=(-?\d+)/);
+              if (codeMatch && codeMatch[1]) {
+                  binanceErrorCode = parseInt(codeMatch[1], 10);
+                  console.warn(`[API/Binance/Balance] Código de error de Binance extraído: ${binanceErrorCode}`);
+              }
+          }
+         // Puedes asignar un statusCode diferente si hay errores de Exchange específicos conocidos
+
+    } else {
+        // Otros tipos de error no capturados específicamente
+        console.error(`[API/Binance/Balance] Error inesperado en ${networkType}:`, error);
+        userMessage = "Ocurrió un error inesperado al obtener los balances.";
+        details = error.message || JSON.stringify(error);
+        statusCode = 500;
     }
 
+
+    // --- Respuesta de Error ---
     return NextResponse.json({
       success: false,
-      message: userMessage,
-      details: details,
-      binanceErrorCode: binanceErrorCode,
-    }, { status: statusCode });
+      message: userMessage, // Mensaje amigable para el usuario
+      details: details,     // Detalles técnicos del error (para depuración)
+      binanceErrorCode: binanceErrorCode, // Código de error específico de Binance si se pudo extraer
+      // Puedes añadir otros campos de error si son útiles
+    }, { status: statusCode }); // Código de estado HTTP apropiado
+
   }
 }
-
-// Permitir solicitudes GET también, aunque el cuerpo no se usará para isTestnet (se usará query param)
-export async function GET(req: Request) {
-  // Para GET, isTestnet se determina únicamente por el query param dentro de la lógica de POST.
-  // Reenviamos la solicitud a POST para unificar la lógica.
-  // Esto es un patrón para manejar GET y POST con la misma lógica si la función POST ya puede manejar
-  // la ausencia de un body (lo cual hemos hecho al tratar jsonError).
-  
-  // Creamos un "Request" artificial que simula no tener body para que la lógica de POST use los query params.
-  const pseudoPostRequest = new Request(req.url, {
-    method: 'POST', // Para que la lógica de POST se active
-    headers: req.headers,
-    // No body, para que la lógica de POST en el catch(jsonError) proceda a revisar query params.
-  });
-  return POST(pseudoPostRequest);
-}
-
-    
