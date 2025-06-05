@@ -1,4 +1,3 @@
-
 // src/hooks/useTradingBot.ts
 import { useState, useEffect, useRef, useCallback } from 'react';
 // Asegúrate de que estos tipos estén bien definidos y exportados
@@ -28,7 +27,7 @@ interface UseTradingBotReturn {
   botOpenPosition: SimulatedPosition | null;
   botLastActionTimestamp: number;
   isPlacingOrder: boolean;
-  placeOrderError: any; 
+  placeOrderError: any; // Estado para errores al colocar orden
 }
 
 export const useTradingBot = ({
@@ -36,8 +35,8 @@ export const useTradingBot = ({
   currentMarketPriceHistory,
   currentPrice,
   allBinanceBalances,
-  botIntervalMs = 15000, 
-  useTestnet = false, 
+  botIntervalMs = 15000, // Valor por defecto: cada 15 segundos
+  useTestnet = false, // Valor por defecto para la nueva prop
   onBotAction, 
 }: UseTradingBotProps): UseTradingBotReturn => {
   const [isBotRunning, setIsBotRunning] = useState(false);
@@ -51,13 +50,21 @@ export const useTradingBot = ({
   
   const [selectedMarketRules, setSelectedMarketRules] = useState<any>(null);
 
-  const BOT_MIN_ACTION_INTERVAL_MS = 5000;
+  const BOT_MIN_ACTION_INTERVAL_MS = 5000; // Mínimo 5 segundos entre acciones reales del bot
+
+  // Log inicial para props
+  useEffect(() => {
+    const networkType = useTestnet ? 'Testnet' : 'Mainnet';
+    console.log(`[useTradingBot - ${networkType}] Hook initialized/updated. Props:`, { selectedMarket: selectedMarket?.symbol, currentPrice, useTestnet, botIntervalMs });
+  }, [selectedMarket, currentPrice, useTestnet, botIntervalMs]);
+
 
   // Efecto para cargar las reglas del mercado (exchange info)
   useEffect(() => {
     const fetchMarketRules = async () => {
       if (!selectedMarket) {
-        // console.log(`[useTradingBot] fetchMarketRules: selectedMarket es nulo. Limpiando reglas.`); // Log original
+        const networkTypePrev = useTestnet ? 'Testnet' : 'Mainnet'; // Para log si selectedMarket era null
+        console.log(`[useTradingBot - ${networkTypePrev}] fetchMarketRules: selectedMarket es nulo. Limpiando reglas.`);
         setSelectedMarketRules(null);
         return;
       }
@@ -79,15 +86,16 @@ export const useTradingBot = ({
 
         if (response.ok && data.success) {
           console.log(`[useTradingBot - ${networkType}] fetchMarketRules: Reglas obtenidas con éxito para ${selectedMarket.symbol}.`);
-          setSelectedMarketRules(data.data);
+          setSelectedMarketRules(data.data); 
           console.log(`[useTradingBot - ${networkType}] fetchMarketRules: Reglas almacenadas para ${selectedMarket.symbol}:`, data.data);
         } else {
           const errorMsg = data.message || `Error HTTP: ${response.status}`;
-          console.error(`[useTradingBot - ${networkType}] fetchMarketRules: Error al obtener reglas para ${selectedMarket.symbol}: ${errorMsg}`, data);
+          const errorDetails = data.details || ""; 
+          console.error(`[useTradingBot - ${networkType}] fetchMarketRules: Error al obtener reglas para ${selectedMarket.symbol}: ${errorMsg}${errorDetails ? ` - Detalle Backend: ${errorDetails}`: ''}`, data);
           setSelectedMarketRules(null);
           toast({
             title: `Error al Cargar Reglas (${networkType})`,
-            description: `No se pudieron obtener las reglas para ${selectedMarket.symbol}. ${errorMsg}`,
+            description: `No se pudieron obtener las reglas para ${selectedMarket.symbol}. ${errorMsg}${errorDetails ? ` Detalle: ${errorDetails}` : ''}`,
             variant: "destructive",
           });
         }
@@ -102,39 +110,41 @@ export const useTradingBot = ({
       }
     };
 
-    if (selectedMarket) {
+    if (selectedMarket) { 
       fetchMarketRules();
     } else {
-      setSelectedMarketRules(null); // Limpiar reglas si no hay mercado seleccionado
-      // console.log(`[useTradingBot - ${useTestnet ? 'Testnet' : 'Mainnet'}] fetchMarketRules: No market selected, clearing market rules.`); // Log original
+      setSelectedMarketRules(null); 
+      const networkTypeCurrent = useTestnet ? 'Testnet' : 'Mainnet';
+      console.log(`[useTradingBot - ${networkTypeCurrent}] fetchMarketRules: No market selected, clearing market rules.`);
     }
-  }, [selectedMarket, useTestnet, toast]);
+  }, [selectedMarket, useTestnet, toast]); 
 
 
   const executeBotStrategy = useCallback(async () => {
     const networkType = useTestnet ? 'Testnet' : 'Mainnet';
 
     if (!isBotRunning) {
-      // console.log(`[Bot Strategy - ${networkType}] Bot no está corriendo. Saliendo.`); // Log original
+      console.log(`[Bot Strategy - ${networkType}] Bot no está corriendo. Saliendo de executeBotStrategy.`);
       return;
     }
 
     if (!selectedMarket || !currentPrice || currentPrice <= 0 || currentMarketPriceHistory.length < 20 || !selectedMarketRules) {
-      console.warn(`[Bot Strategy - ${networkType}] Datos insuficientes para ejecutar. Mercado: ${!!selectedMarket}, Precio: ${currentPrice}, Historial: ${currentMarketPriceHistory.length}, Reglas: ${!!selectedMarketRules}`);
+      console.warn(`[Bot Strategy - ${networkType}] Datos insuficientes (mercado, precio, historial o reglas) para ejecutar la estrategia.`);
+      if (!selectedMarket) console.warn(`[Bot Strategy - ${networkType}] Razón: Mercado no seleccionado.`);
+      if (!currentPrice || currentPrice <= 0) console.warn(`[Bot Strategy - ${networkType}] Razón: Precio actual inválido (${currentPrice}).`);
+      if (currentMarketPriceHistory.length < 20) console.warn(`[Bot Strategy - ${networkType}] Razón: Historial de precios insuficiente (${currentMarketPriceHistory.length} puntos).`);
       if (!selectedMarketRules) {
-        console.warn(`[Bot Strategy - ${networkType}] Causa principal: Reglas del mercado (selectedMarketRules) no cargadas.`);
+           console.warn(`[Bot Strategy - ${networkType}] Razón: Reglas del mercado no cargadas. No se puede proceder.`);
       }
       return;
     }
 
     if (Date.now() - botLastActionTimestamp < BOT_MIN_ACTION_INTERVAL_MS) {
-      // console.log(`[Bot Strategy - ${networkType}] Esperando intervalo mínimo entre acciones.`); // Log original
+      console.log(`[Bot Strategy - ${networkType}] Esperando intervalo mínimo entre acciones.`);
       return;
     }
 
-    console.log(`[Bot Strategy - ${networkType}] Analizando ${selectedMarket.name} a precio: ${currentPrice}`);
-    // console.log(`[Bot Strategy - ${networkType}] Historial:`, currentMarketPriceHistory.map(p => p.price)); // Log original, puede ser muy verboso
-    // console.log(`[Bot Strategy - ${networkType}] Reglas disponibles:`, selectedMarketRules); // Log original
+    console.log(`[Bot Strategy - ${networkType}] Analizando ${selectedMarket.name} a precio: ${currentPrice}. Reglas:`, selectedMarketRules);
 
 
     const latestPriceDataPoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
@@ -152,13 +162,9 @@ export const useTradingBot = ({
             action = 'sell';
             triggerReason = "Cruce SMA Bajista";
         }
-        // console.log(`[Bot Strategy - SMA - ${networkType}] SMA10: ${latestPriceDataPoint.sma10}, SMA20: ${latestPriceDataPoint.sma20}. Prev SMA10: ${previousPriceDataPoint.sma10}, Prev SMA20: ${previousPriceDataPoint.sma20}.`); // Log original
-    } else {
-        // console.log(`[Bot Strategy - SMA - ${networkType}] Datos SMA insuficientes.`); // Log original
     }
 
     if (action === 'hold' && latestPriceDataPoint.macdHistogram !== undefined && previousPriceDataPoint.macdHistogram !== undefined) {
-        // console.log(`[Bot Strategy - MACD - ${networkType}] Hist: ${latestPriceDataPoint.macdHistogram}, Prev Hist: ${previousPriceDataPoint.macdHistogram}.`); // Log original
       if (latestPriceDataPoint.macdHistogram > 0 && previousPriceDataPoint.macdHistogram <= 0) {
         action = 'buy';
         triggerReason = "MACD Histograma Positivo";
@@ -166,15 +172,13 @@ export const useTradingBot = ({
         action = 'sell';
         triggerReason = "MACD Histograma Negativo";
       }
-    } else {
-        // console.log(`[Bot Strategy - MACD - ${networkType}] Datos MACD insuficientes o SMA ya activó.`); // Log original
     }
 
-    console.log(`[Bot Decision - ${networkType}] ${selectedMarket.symbol}: ${action.toUpperCase()} por: ${triggerReason}`);
+    console.log(`[Bot Decision - ${networkType}] ${selectedMarket.symbol}: Acción decidida: ${action.toUpperCase()} por: ${triggerReason}`);
 
     if (action !== 'hold') {
       let tradeAmount = 0;
-      const marketRules = selectedMarketRules; // Usar las reglas cargadas
+      const marketRules = selectedMarketRules; 
 
       if (action === 'buy' && allBinanceBalances && allBinanceBalances[selectedMarket.quoteAsset]) {
         const availableQuote = allBinanceBalances[selectedMarket.quoteAsset].available;
@@ -183,33 +187,38 @@ export const useTradingBot = ({
         console.log(`[Bot Action - Buy - ${networkType}] Balance ${selectedMarket.quoteAsset}: ${availableQuote}. Inversión deseada (${investmentPercentage*100}%): ${desiredQuoteAmount} ${selectedMarket.quoteAsset}.`);
 
         tradeAmount = desiredQuoteAmount / currentPrice;
-        console.log(`[Bot Action - Buy - ${networkType}] Cantidad base inicial: ${tradeAmount} ${selectedMarket.baseAsset}.`);
+        console.log(`[Bot Action - Buy - ${networkType}] Cantidad base inicial (antes de aplicar reglas): ${tradeAmount} ${selectedMarket.baseAsset}.`);
 
-        if (!marketRules.limits || !marketRules.precision) {
-             console.error(`[Bot Action - Buy - ${networkType}] Reglas de exchange incompletas para ${selectedMarket.symbol}. No se puede validar orden.`);
+        if (!marketRules || !marketRules.limits || !marketRules.precision) {
+             console.error(`[Bot Action - Buy - ${networkType}] Reglas de exchange incompletas para ${selectedMarket.symbol}. No se puede validar orden. Reglas:`, marketRules);
              return; 
         }
-        const minNotional = parseFloat(marketRules.limits.cost.min);
-        const minQty = parseFloat(marketRules.limits.amount.min);
-        const stepSize = parseFloat(marketRules.precision.amount);
-        console.log(`[Bot Action - Buy - ${networkType}] Reglas: minNotional=${minNotional}, minQty=${minQty}, stepSize=${stepSize}`);
+        const minNotional = parseFloat(marketRules.limits.cost?.min); 
+        const minQty = parseFloat(marketRules.limits.amount?.min);   
+        const stepSize = parseFloat(marketRules.precision?.amount); 
+
+        if (isNaN(minNotional) || isNaN(minQty) || isNaN(stepSize)) {
+            console.error(`[Bot Action - Buy - ${networkType}] Una o más reglas (minNotional, minQty, stepSize) son NaN. No se puede validar orden. Reglas:`, marketRules);
+            return;
+        }
+        console.log(`[Bot Action - Buy - ${networkType}] Reglas aplicables: minNotional=${minNotional}, minQty=${minQty}, stepSize=${stepSize}`);
 
         if (tradeAmount * currentPrice < minNotional) {
-            console.warn(`[Bot Action - Buy - ${networkType}] Nominal (${(tradeAmount * currentPrice).toFixed(selectedMarket.quotePrecision || 2)}) < minNotional. Ajustando...`);
-            tradeAmount = minNotional / currentPrice; 
+            console.warn(`[Bot Action - Buy - ${networkType}] Nominal (${(tradeAmount * currentPrice).toFixed(selectedMarket.pricePrecision || 2)}) < minNotional (${minNotional}). Ajustando cantidad para cumplir minNotional...`);
+            tradeAmount = (minNotional / currentPrice) * 1.01; 
             console.log(`[Bot Action - Buy - ${networkType}] tradeAmount ajustado para minNotional: ${tradeAmount}`);
         }
         if (stepSize > 0) {
             tradeAmount = Math.floor(tradeAmount / stepSize) * stepSize;
-            tradeAmount = parseFloat(tradeAmount.toFixed(selectedMarket.amountPrecision || selectedMarket.quotePrecision || 6));
-            console.log(`[Bot Action - Buy - ${networkType}] tradeAmount ajustado a stepSize (${stepSize}): ${tradeAmount}.`);
+            tradeAmount = parseFloat(tradeAmount.toFixed(selectedMarket.amountPrecision || 8)); 
+            console.log(`[Bot Action - Buy - ${networkType}] tradeAmount ajustado a stepSize (${stepSize}) y precisión: ${tradeAmount}.`);
         }
         if (tradeAmount < minQty) {
-             console.warn(`[Bot Action - Buy - ${networkType}] Cantidad base (${tradeAmount}) < minQty (${minQty}). Abortando.`);
+             console.warn(`[Bot Action - Buy - ${networkType}] Cantidad base ajustada (${tradeAmount}) < minQty (${minQty}). Abortando orden de compra.`);
              return; 
         }
         if (tradeAmount <= 0) {
-             console.warn(`[Bot Action - Buy - ${networkType}] Cantidad base ajustada <= 0. Abortando.`);
+             console.warn(`[Bot Action - Buy - ${networkType}] Cantidad base ajustada es <= 0 (${tradeAmount}). Abortando orden de compra.`);
              return;
         }
         console.log(`[Bot Action - Buy - ${networkType}] Cantidad final de compra: ${tradeAmount} ${selectedMarket.baseAsset}.`);
@@ -218,47 +227,52 @@ export const useTradingBot = ({
         const availableBase = allBinanceBalances[selectedMarket.baseAsset].available;
         console.log(`[Bot Action - Sell - ${networkType}] Posición abierta: ${botOpenPosition.amount}, Balance ${selectedMarket.baseAsset}: ${availableBase}.`);
         
-        if (availableBase >= botOpenPosition.amount) {
+        if (availableBase >= botOpenPosition.amount) { 
             tradeAmount = botOpenPosition.amount;
             console.log(`[Bot Action - Sell - ${networkType}] Intentando vender la posición completa: ${tradeAmount} ${selectedMarket.baseAsset}.`);
 
-            if (!marketRules.limits || !marketRules.precision) {
-                console.error(`[Bot Action - Sell - ${networkType}] Reglas de exchange incompletas para ${selectedMarket.symbol}. No se puede validar orden.`);
+            if (!marketRules || !marketRules.limits || !marketRules.precision) {
+                console.error(`[Bot Action - Sell - ${networkType}] Reglas de exchange incompletas para ${selectedMarket.symbol}. No se puede validar orden. Reglas:`, marketRules);
                 return;
             }
-            const minQty = parseFloat(marketRules.limits.amount.min);
-            const stepSize = parseFloat(marketRules.precision.amount);
-            const minNotional = parseFloat(marketRules.limits.cost.min);
-            console.log(`[Bot Action - Sell - ${networkType}] Reglas: minNotional=${minNotional}, minQty=${minQty}, stepSize=${stepSize}`);
+            const minQty = parseFloat(marketRules.limits.amount?.min);
+            const stepSize = parseFloat(marketRules.precision?.amount);
+            const minNotional = parseFloat(marketRules.limits.cost?.min);
+
+            if (isNaN(minNotional) || isNaN(minQty) || isNaN(stepSize)) {
+                console.error(`[Bot Action - Sell - ${networkType}] Una o más reglas (minNotional, minQty, stepSize) son NaN. No se puede validar orden. Reglas:`, marketRules);
+                return;
+            }
+            console.log(`[Bot Action - Sell - ${networkType}] Reglas aplicables: minNotional=${minNotional}, minQty=${minQty}, stepSize=${stepSize}`);
 
             if (stepSize > 0) {
                 tradeAmount = Math.floor(tradeAmount / stepSize) * stepSize;
-                tradeAmount = parseFloat(tradeAmount.toFixed(selectedMarket.amountPrecision || selectedMarket.quotePrecision || 6));
-                console.log(`[Bot Action - Sell - ${networkType}] tradeAmount ajustado a stepSize (${stepSize}): ${tradeAmount}.`);
+                 tradeAmount = parseFloat(tradeAmount.toFixed(selectedMarket.amountPrecision || 8));
+                console.log(`[Bot Action - Sell - ${networkType}] tradeAmount ajustado a stepSize (${stepSize}) y precisión: ${tradeAmount}.`);
             }
             if (tradeAmount < minQty) {
-                 console.warn(`[Bot Action - Sell - ${networkType}] Cantidad base (${tradeAmount}) < minQty (${minQty}). Abortando.`);
-                 setBotOpenPosition(null);
+                 console.warn(`[Bot Action - Sell - ${networkType}] Cantidad base ajustada (${tradeAmount}) < minQty (${minQty}). Abortando orden de venta.`);
+                 setBotOpenPosition(null); 
                  return; 
             }
             if (tradeAmount * currentPrice < minNotional) {
-                 console.warn(`[Bot Action - Sell - ${networkType}] Nominal de venta (${(tradeAmount * currentPrice).toFixed(selectedMarket.quotePrecision || 2)}) < minNotional (${minNotional}). Abortando.`);
+                 console.warn(`[Bot Action - Sell - ${networkType}] Nominal de venta (${(tradeAmount * currentPrice).toFixed(selectedMarket.pricePrecision || 2)}) < minNotional (${minNotional}). Abortando orden de venta.`);
                  setBotOpenPosition(null);
                  return;
             }
             if (tradeAmount <= 0) {
-                 console.warn(`[Bot Action - Sell - ${networkType}] Cantidad base ajustada <= 0. Abortando.`);
+                 console.warn(`[Bot Action - Sell - ${networkType}] Cantidad base ajustada es <= 0 (${tradeAmount}). Abortando orden de venta.`);
                  setBotOpenPosition(null);
                  return;
             }
             console.log(`[Bot Action - Sell - ${networkType}] Cantidad final de venta: ${tradeAmount} ${selectedMarket.baseAsset}.`);
         } else {
-            console.warn(`[Bot Action - Sell - ${networkType}] Balance ${selectedMarket.baseAsset} (${availableBase}) insuficiente para cerrar posición de ${botOpenPosition.amount}.`);
-            setBotOpenPosition(null);
+            console.warn(`[Bot Action - Sell - ${networkType}] Balance ${selectedMarket.baseAsset} (${availableBase}) insuficiente para cerrar posición simulada de ${botOpenPosition.amount}. La posición simulada puede estar desincronizada.`);
+            setBotOpenPosition(null); 
             return; 
         }
       } else {
-          console.warn(`[Bot Action - ${networkType}] Condiciones no cumplidas para ${action} (balance/posición).`);
+          console.warn(`[Bot Action - ${networkType}] Condiciones no cumplidas para ${action} (balance/posición). Acción: ${action}, Posición: ${botOpenPosition ? botOpenPosition.amount : 'ninguna'}, Balances: ${allBinanceBalances ? 'cargados' : 'no cargados'}`);
           return;
       }
 
@@ -279,7 +293,7 @@ export const useTradingBot = ({
       };
 
       const endpoint = useTestnet ? '/api/binance/trade-testnet' : '/api/binance/trade';
-      console.log(`[useTradingBot - ${networkType}] Bot llamando a endpoint: ${endpoint} con datos:`, orderData);
+      console.log(`[useTradingBot - ${networkType}] Bot llamando al endpoint: ${endpoint} con datos:`, orderData);
 
       let tradeResult: any = null;
 
@@ -293,43 +307,43 @@ export const useTradingBot = ({
            console.log(`[useTradingBot - ${networkType}] Respuesta del endpoint ${endpoint} (Estado: ${response.status}):`, tradeResult);
 
            if (!response.ok || !tradeResult.success) {
-               const errorDetail = tradeResult?.message || tradeResult?.details || `Error HTTP: ${response.status}`;
-               console.error(`[useTradingBot - ${networkType}] Endpoint ${endpoint} reportó error:`, errorDetail);
+               const errorDetailBackend = tradeResult?.message || tradeResult?.details || `Error HTTP: ${response.status}`;
+               console.error(`[useTradingBot - ${networkType}] Endpoint ${endpoint} reportó error: ${errorDetailBackend}`);
                setPlaceOrderError(tradeResult || { message: `Error HTTP: ${response.status}` });
                if(onBotAction) onBotAction({ type: 'orderPlaced', success: false, details: tradeResult });
                toast({
                  title: `Bot: Error al Colocar Orden (${networkType})`,
-                 description: `Problema con ${selectedMarket?.symbol}: ${errorDetail}`,
+                 description: `Problema con ${selectedMarket?.symbol}: ${errorDetailBackend}`,
                  variant: "destructive",
                });
            } else {
-               console.log(`[useTradingBot - ${networkType}] Orden del bot colocada con éxito. ID: ${tradeResult.orderId}`);
+               console.log(`[useTradingBot - ${networkType}] Orden del bot colocada con éxito. ID: ${tradeResult.orderId}, Estado: ${tradeResult.status}`);
                setBotLastActionTimestamp(Date.now());
                if(onBotAction) onBotAction({ type: 'orderPlaced', success: true, details: tradeResult });
                
                if (action === 'buy') {
                    setBotOpenPosition({
                        marketId: selectedMarket.id,
-                       entryPrice: tradeResult.price || currentPrice, 
-                       amount: tradeResult.executedQty || tradeResult.amount,
+                       entryPrice: parseFloat(tradeResult.price) || currentPrice, 
+                       amount: parseFloat(tradeResult.executedQty || tradeResult.fills?.[0]?.qty || tradeResult.amount),
                        type: 'buy',
-                       timestamp: Math.floor(tradeResult.transactTime / 1000) || Math.floor(Date.now() / 1000)
+                       timestamp: Math.floor((tradeResult.transactTime || Date.now()) / 1000)
                    });
                    toast({
                      title: `Bot: Compra Ejecutada (${networkType})`,
-                     description: `${tradeResult.executedQty || tradeResult.amount} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
+                     description: `${parseFloat(tradeResult.executedQty || tradeResult.fills?.[0]?.qty || tradeResult.amount)} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
                      variant: "default",
                    });
                } else if (action === 'sell') {
                    if(botOpenPosition?.type === 'buy' && botOpenPosition.marketId === selectedMarket.id) {
-                       const exitPrice = tradeResult.price || currentPrice;
+                       const exitPrice = parseFloat(tradeResult.price) || currentPrice;
                        const pnl = (exitPrice - botOpenPosition.entryPrice) * botOpenPosition.amount;
                        console.log(`[useTradingBot - ${networkType}] PnL simulado: ${pnl.toFixed(selectedMarket.quotePrecision || 2)} ${selectedMarket.quoteAsset}`);
                    }
                    setBotOpenPosition(null);
                    toast({
                      title: `Bot: Venta Ejecutada (${networkType})`,
-                     description: `${tradeResult.executedQty || tradeResult.amount} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
+                     description: `${parseFloat(tradeResult.executedQty || tradeResult.fills?.[0]?.qty || tradeResult.amount)} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
                      variant: "default",
                    });
                }
@@ -359,7 +373,7 @@ export const useTradingBot = ({
     toast,
     useTestnet,
     onBotAction,
-    selectedMarketRules // Asegúrate de que selectedMarketRules esté en las dependencias
+    selectedMarketRules 
   ]);
 
   // Efecto para controlar el ciclo de vida del bot
@@ -368,40 +382,41 @@ export const useTradingBot = ({
     console.log(`[useTradingBot - ${networkType}] Efecto ciclo de vida. isBotRunning: ${isBotRunning}, selectedMarket: ${selectedMarket?.symbol}, reglasCargadas: ${!!selectedMarketRules}`);
     let intervalId: NodeJS.Timeout | null = null;
 
-    if (isBotRunning && selectedMarket && selectedMarketRules) {
+    if (isBotRunning && selectedMarket && selectedMarketRules) { 
       console.log(`[useTradingBot - ${networkType}] Iniciando bot para ${selectedMarket.symbol}. Intervalo: ${botIntervalMs / 1000}s`);
-      if (botIntervalRef.current) clearInterval(botIntervalRef.current);
+      if (botIntervalRef.current) clearInterval(botIntervalRef.current); 
       
-      executeBotStrategy(); // Ejecución inmediata
+      executeBotStrategy(); 
       intervalId = setInterval(executeBotStrategy, botIntervalMs);
       botIntervalRef.current = intervalId;
     } else {
       if (botIntervalRef.current) {
         console.log(`[useTradingBot - ${networkType}] Deteniendo bot o condiciones no cumplidas. Limpiando intervalo.`);
-        if (!selectedMarket) console.log(`[useTradingBot - ${networkType}] Razón: No hay mercado seleccionado.`);
-        if (!selectedMarketRules) console.log(`[useTradingBot - ${networkType}] Razón: Reglas del mercado no cargadas.`);
+        if (!selectedMarket) console.log(`[useTradingBot - ${networkType}] Razón para detener/no iniciar: No hay mercado seleccionado.`);
+        if (!selectedMarketRules) console.log(`[useTradingBot - ${networkType}] Razón para detener/no iniciar: Reglas del mercado no cargadas.`);
         clearInterval(botIntervalRef.current);
         botIntervalRef.current = null;
       } else {
-        // console.log(`[useTradingBot - ${networkType}] Bot detenido o condiciones no cumplidas. No había intervalo activo.`); // Log original
+         console.log(`[useTradingBot - ${networkType}] Bot detenido o condiciones no cumplidas. No había intervalo activo.`);
       }
     }
     return () => {
-      // console.log(`[useTradingBot - ${networkType}] Limpieza efecto ciclo de vida.`); // Log original
-      if (intervalId) clearInterval(intervalId);
-      if (botIntervalRef.current) { // Limpieza adicional por si acaso
+      console.log(`[useTradingBot - ${networkType}] Limpieza efecto ciclo de vida (desmontaje o cambio de dependencias).`);
+      if (intervalId) clearInterval(intervalId); 
+      if (botIntervalRef.current) { 
           clearInterval(botIntervalRef.current);
           botIntervalRef.current = null;
+           console.log(`[useTradingBot - ${networkType}] Referencia de intervalo botIntervalRef limpiada.`);
       }
     };
-  }, [isBotRunning, selectedMarket, botIntervalMs, executeBotStrategy, useTestnet, selectedMarketRules]); // selectedMarketRules es dependencia
+  }, [isBotRunning, selectedMarket, botIntervalMs, executeBotStrategy, useTestnet, selectedMarketRules]); 
 
 
   const toggleBotStatus = useCallback(() => {
     setIsBotRunning(prev => {
       const newStatus = !prev;
       const networkType = useTestnet ? 'Testnet' : 'Mainnet';
-      // console.log(`[useTradingBot - ${networkType}] toggleBotStatus: Nuevo estado -> ${newStatus}`); // Log original
+      console.log(`[useTradingBot - ${networkType}] toggleBotStatus: Nuevo estado del bot -> ${newStatus}`);
       setTimeout(() => {
         toast({
           title: `Bot ${newStatus ? "Iniciado" : "Detenido"} (${networkType})`,
