@@ -19,7 +19,7 @@ const exchangeMainnet = new ccxt.binance({
   secret: process.env.BINANCE_SECRET_KEY,
   options: {
     // Configura el tipo por defecto (spot o future) si es necesario para Mainnet
-    // 'defaultType': 'spot', // Por defecto para balances de Spot
+    'defaultType': 'spot', // Por defecto para balances de Spot
     // 'defaultType': 'future', // Si necesitas balances de Futuros
   },
   // Por defecto usa la API de producción (Mainnet)
@@ -30,7 +30,7 @@ const exchangeTestnet = new ccxt.binance({
     secret: process.env.BINANCE_TESTNET_SECRET_KEY,
     options: {
         // Configura el tipo por defecto (spot o future) para Testnet
-        // 'defaultType': 'spot', // Por defecto para balances de Spot Testnet
+        'defaultType': 'spot', // Por defecto para balances de Spot Testnet
         // 'defaultType': 'future', // Si necesitas balances de Futuros Testnet
     },
     urls: {
@@ -54,6 +54,7 @@ const exchangeTestnet = new ccxt.binance({
 
 
 // Usaremos POST para mayor consistencia y para poder enviar parámetros como isTestnet
+// Usaremos POST para mayor consistencia y para poder enviar parámetros como isTestnet
 export async function POST(req: Request) {
   let isTestnet = false; // Valor por defecto
 
@@ -64,20 +65,19 @@ export async function POST(req: Request) {
       console.log(`[API/Binance/Balance] Recibida solicitud de balances en ${isTestnet ? 'Testnet' : 'Mainnet'}`);
 
   } catch (jsonError: any) {
-      // Si hay un error al parsear el JSON, verificamos si es una solicitud GET
-      if (req.method === 'GET') {
-           console.log("[API/Binance/Balance] Procesando solicitud GET sin body. isTestnet por defecto es false.");
-            // Para solicitudes GET sin body, isTestnet permanece en false por defecto
-       } else {
-           console.error("[API/Binance/Balance] Error al parsear el cuerpo de la solicitud POST:", jsonError);
-            return NextResponse.json({
-              success: false,
-              message: "Error al procesar la solicitud POST. Formato JSON inválido."
-            }, { status: 400 });
-       }
+      // Modificación: Eliminar la lógica para manejar solicitudes GET aquí.
+      // Si hay un error al parsear el JSON, asumimos que la solicitud POST no tiene un cuerpo JSON válido.
+      console.error("[API/Binance/Balance] Error al parsear el cuerpo de la solicitud POST:", jsonError);
+      return NextResponse.json({
+          success: false,
+          message: "Error al procesar la solicitud POST. Formato JSON inválido."
+      }, { status: 400 });
+      // Fin de la modificación
   }
 
-  // Si la solicitud es GET y no hubo body JSON, verificamos si isTestnet está en los query params
+  // Modificación: Eliminar la lógica para verificar parámetros de query para solicitudes GET.
+  // Dado que solo manejaremos POST, no necesitamos buscar isTestnet en los query params.
+  /*
    if (req.method === 'GET' && req.url) {
        const { searchParams } = new URL(req.url);
        // Permitir isTestnet como parámetro de query para solicitudes GET
@@ -86,10 +86,14 @@ export async function POST(req: Request) {
            console.log("[API/Binance/Balance] isTestnet=true detectado en parámetros de query (GET).");
        }
    }
+   */
+  // Fin de la modificación
 
 
   const exchangeToUse = isTestnet ? exchangeTestnet : exchangeMainnet;
   const networkType = isTestnet ? 'Testnet' : 'Mainnet';
+
+  // ...resto del código...
 
 
   // --- Validación de Credenciales ---
@@ -118,6 +122,9 @@ export async function POST(req: Request) {
     // accountBalance.total: { 'USDT': 1000, 'BTC': 0.5, ... }
     // accountBalance.free: { 'USDT': 900, 'BTC': 0.5, ... } // Saldo disponible
     // accountBalance.used: { 'USDT': 100, 'BTC': 0, ... } // Saldo en órdenes abiertas
+    // --- LOGGING ADICIONAL PARA DEPURACIÓN ---
+    console.log(`[API/Binance/Balance] Respuesta cruda de fetchBalance:`, accountBalance); // Log de la respuesta antes de formatear
+    // --- FIN LOGGING ADICIONAL ---
 
     const balancesFormatted: Record<string, { available: number; onOrder: number; total: number }> = {};
 

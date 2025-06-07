@@ -23,7 +23,7 @@ const exchangeMainnet = new ccxt.binance({
   options: {
     // Configura el tipo por defecto (spot o future) si es necesario
     // 'defaultType': 'future',
-    // 'defaultType': 'spot',
+     'defaultType': 'spot',
   },
   // Por defecto usa la API de producción (Mainnet)
 });
@@ -34,7 +34,7 @@ const exchangeTestnet = new ccxt.binance({
     options: {
         // Configura el tipo por defecto (spot o future) para Testnet
         // 'defaultType': 'future',
-        // 'defaultType': 'spot',
+         'defaultType': 'spot',
     },
     urls: {
         // Asegúrate de usar las URLs correctas para la Testnet de Binance que necesites (Spot o Futures)
@@ -44,10 +44,12 @@ const exchangeTestnet = new ccxt.binance({
            'private': 'https://testnet.binance.vision/api/',
          },
         // Ejemplo para Futures USD-M Testnet:
-        // 'api': {
-        //   'public': 'https://testnet.binancefuture.com/fapi/v1',
-        //   'private': 'https://testnet.binancefuture.com/fapi/v1',
-        // },
+        /*
+         'api': {
+           'public': 'https://testnet.binancefuture.com/fapi/v1',
+           'private': 'https://testnet.binancefuture.com/fapi/v1',
+         },
+        */
     },
 });
 // --- Fin Configuración CCXT ---

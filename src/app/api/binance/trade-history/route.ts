@@ -25,7 +25,7 @@ const exchangeMainnet = new ccxt.binance({
   secret: process.env.BINANCE_SECRET_KEY,
   options: {
     // Configura el tipo por defecto (spot o future) si es necesario para obtener el historial correcto
-    // 'defaultType': 'spot', // Historial de trades de Spot
+     'defaultType': 'spot', // Historial de trades de Spot
     // 'defaultType': 'future', // Historial de trades de Futuros
   },
   // Por defecto usa la API de producción (Mainnet)
@@ -36,7 +36,7 @@ const exchangeTestnet = new ccxt.binance({
     secret: process.env.BINANCE_TESTNET_SECRET_KEY,
     options: {
         // Configura el tipo por defecto (spot o future) para Testnet
-        // 'defaultType': 'spot', // Historial de trades de Spot Testnet
+         'defaultType': 'spot', // Historial de trades de Spot Testnet
         // 'defaultType': 'future', // Historial de trades de Futuros Testnet
     },
     urls: {
@@ -50,10 +50,12 @@ const exchangeTestnet = new ccxt.binance({
            'private': 'https://testnet.binance.vision/api/',
          },
         // Ejemplo para Futures USD-M Testnet:
-        // 'api': {
-        //   'public': 'https://testnet.binancefuture.com/fapi/v1',
-        //   'private': 'https://testnet.binancefuture.com/fapi/v1',
-        // },
+        /* 
+        'api': {
+           'public': 'https://testnet.binancefuture.com/fapi/v1',
+           'private': 'https://testnet.binancefuture.com/fapi/v1',
+         },
+         */
     },
 });
 // --- Fin Configuración CCXT ---

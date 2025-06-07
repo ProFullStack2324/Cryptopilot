@@ -25,7 +25,23 @@ export function BinanceBalancesDisplay() {
   useEffect(() => {
     const fetchBalances = async () => {
       try {
-        const response = await fetch('/api/binance/balance');
+        // --- COMIENZO DEL FRAGMENTO A CORREGIR ---
+        // Modificar la llamada fetch para usar el método POST
+        const response = await fetch('/api/binance/balance', {
+          method: 'POST', // Especificamos explícitamente el método POST
+          headers: {
+            'Content-Type': 'application/json', // Indicamos que estamos enviando JSON
+          },
+          // Opcional: Si necesitas enviar la bandera isTestnet desde aquí, agrégala al body
+          // Por ejemplo, si tienes un estado o prop para saber si usar testnet:
+          // body: JSON.stringify({ isTestnet: tuVariableIsTestnet }),
+          // Si siempre usas Mainnet desde este componente, no necesitas el body
+          // pero mantener el método POST es crucial. Si no envías body, el backend
+          // usará el valor por defecto de isTestnet (false para Mainnet).
+          body: JSON.stringify({ isTestnet: false }), // Ejemplo: Asumiendo Mainnet
+        });
+        // --- FIN DEL FRAGMENTO A CORREGIR ---
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(`Error HTTP ${response.status}: ${errorData.message || 'Error desconocido'}`);
@@ -41,6 +57,7 @@ export function BinanceBalancesDisplay() {
     };
     fetchBalances();
   }, []);
+
 
   return (
     <Card>
