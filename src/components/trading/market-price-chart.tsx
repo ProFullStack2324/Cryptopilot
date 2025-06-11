@@ -28,6 +28,7 @@ import { useBinanceMarketData } from '@/hooks/useBinanceMarketData'; // Importac
 interface MarketPriceChartProps {
   marketId: string; // BTCUSDT
   marketName: string; // BTC/USD
+  priceHistory: MarketPriceDataPoint[];
   aiSignalEvents?: SignalEvent[];
   smaCrossoverEvents?: SmaCrossoverEvent[];
   isBotActive: boolean;
@@ -48,6 +49,7 @@ const DynamicChartContainer = dynamic(
 export function MarketPriceChart({
   marketId,
   marketName,
+  priceHistory,
   aiSignalEvents = [],
   smaCrossoverEvents = [],
   isBotActive,

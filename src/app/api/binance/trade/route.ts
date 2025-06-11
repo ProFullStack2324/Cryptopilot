@@ -48,7 +48,7 @@ const exchangeTestnet = new ccxt.binance({
          'api': {
            'public': 'https://testnet.binancefuture.com/fapi/v1',
            'private': 'https://testnet.binancefuture.com/fapi/v1',
-         },
+        },
         */
     },
 });

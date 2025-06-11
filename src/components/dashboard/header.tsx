@@ -1,5 +1,7 @@
 
 "use client";
+// src/components/dashboard/header.tsx
+import React, { Dispatch, SetStateAction } from 'react'; // Asegúrate de importar Dispatch y SetStateAction
 
 import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -14,6 +16,11 @@ interface AppHeaderProps {
   portfolioBalance: number | null;
   isBotRunning: boolean;
   toggleBotStatus: () => void;
+  // ¡Asegúrate de que estas propiedades estén definidas aquí!
+  useTestnet: boolean;
+  setUseTestnet: Dispatch<SetStateAction<boolean>>; // O (value: boolean) => void;
+  isBinanceBalancesLoading: boolean;
+  binanceBalancesError: string | null;
 }
 
 export function AppHeader({
@@ -23,7 +30,11 @@ export function AppHeader({
   isRightSidebarOpen,
   portfolioBalance,
   isBotRunning,
-  toggleBotStatus
+  toggleBotStatus,
+  useTestnet, // Desestructura estas props en el componente
+  setUseTestnet,
+  isBinanceBalancesLoading,
+  binanceBalancesError,
 }: AppHeaderProps) {
 
   const { marketPrice, isLoading, error: marketError } = useBinanceMarketData({ symbol: "BTCUSDT" }); // <-- ¡CORRECCIÓN!

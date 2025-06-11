@@ -18,8 +18,8 @@ const exchangeMainnet = new ccxt.binance({
   secret: BINANCE_SECRET_KEY,
    options: {
      // Configura el tipo por defecto (spot o future) si es necesario para obtener los klines correctos de Mainnet
-     'defaultType': 'future', // Ejemplo: Para operar en futuros USD-M en Mainnet
-     // 'defaultType': 'spot', // Ejemplo: Para operar en Spot en Mainnet
+     //'defaultType': 'future', // Ejemplo: Para operar en futuros USD-M en Mainnet
+     'defaultType': 'spot', // Ejemplo: Para operar en Spot en Mainnet
    },
   timeout: 10000, // Aumentar el timeout a 10 segundos
   enableRateLimit: true, // Habilita la limitación de tasa interna de ccxt
@@ -32,7 +32,7 @@ const exchangeTestnet = new ccxt.binance({
     options: {
          // Configura el tipo por defecto (spot o future) para Testnet
         'defaultType': 'future', // Ejemplo: Para operar en futuros USD-M en Testnet
-        // 'defaultType': 'spot', // Ejemplo: Para operar en Spot en Testnet
+        //'defaultType': 'spot', // Ejemplo: Para operar en Spot en Testnet
     },
     urls: {
         // --- URLs de la API de Testnet ---
@@ -49,7 +49,7 @@ const exchangeTestnet = new ccxt.binance({
         // 'api': {
         //    'public': 'https://testnet.binance.vision/api/',
         //    'private': 'https://testnet.binance.vision/api/',
-        // },
+        /* ,*/
     },
     timeout: 10000, // Aumentar el timeout
     enableRateLimit: true, // Habilita la limitación de tasa
@@ -156,7 +156,6 @@ export async function GET(request: Request) {
       }
 
       // Los elementos de kline son: [timestamp, open, high, low, close, volume]
-      // Asegurarse de que los valores no sean null/undefined antes de usar
       const timestampMs = kline[0];
       const openPrice = kline[1];
       const highPrice = kline[2];
@@ -165,24 +164,25 @@ export async function GET(request: Request) {
       const tradeVolume = kline[5];
 
       // Verificación de tipos y valores válidos
-      // Usamos typeof y verificamos que no sean null
-      if (typeof timestampMs !== 'number' || timestampMs === null ||
-          typeof closePrice !== 'number' || closePrice === null ||
-          typeof tradeVolume !== 'number' || tradeVolume === null) { // Añadir verificación para null
-        console.warn(`[API Klines] Datos numéricos faltantes, nulos o inválidos en kline en ${networkType}: ${kline}`);
+      if (
+        typeof timestampMs !== 'number' ||
+        typeof closePrice !== 'number' ||
+        typeof tradeVolume !== 'number'
+      ) {
+        console.warn(`[API Klines] Datos numéricos faltantes o inválidos en kline en ${networkType}: ${kline}`);
         return null;
       }
 
       return {
-        timestamp: Math.floor(timestampMs / 1000), // Convertir ms a segundos
-        price: closePrice, // Usar el precio de cierre
+        timestamp: Math.floor(timestampMs / 1000),
+        price: closePrice,
         volume: tradeVolume,
-        // Puedes añadir open, high, low aquí si tu MarketPriceDataPoint lo soporta y lo necesitas en el frontend
-        // open: typeof openPrice === 'number' && openPrice !== null ? openPrice : undefined, // Ejemplo de manejo seguro
-        // high: typeof highPrice === 'number' && highPrice !== null ? highPrice : undefined,
-        // low: typeof lowPrice === 'number' && lowPrice !== null ? lowPrice : undefined,
+        // Si deseas agregar más:
+        // open: typeof openPrice === 'number' ? openPrice : undefined,
+        // high: typeof highPrice === 'number' ? highPrice : undefined,
+        // low: typeof lowPrice === 'number' ? lowPrice : undefined,
       };
-    }).filter((kline): kline is MarketPriceDataPoint => kline !== null); // Filtrar nulos y asegurar el tipo
+    }).filter((kline): kline is MarketPriceDataPoint => kline !== null);
 
 
     if (transformedKlines.length === 0) {

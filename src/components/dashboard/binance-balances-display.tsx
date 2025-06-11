@@ -1,63 +1,28 @@
 // src/components/dashboard/binance-balances-display.tsx
 "use client";
 
-import { useEffect, useState } from 'react';
+import React from 'react';
+// useEffect and useState are removed because this component now receives data via props.
+// The fetching logic should be in a parent component (e.g., page.tsx).
+// import { useEffect, useState } from 'react'; 
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Wallet } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+// Consolidate all lucide-react imports into one line to avoid duplicates
+import { Loader2, AlertCircle, Wallet, DollarSign } from 'lucide-react'; 
 
-// Define las interfaces para los datos que esperamos de la API de balances
-interface Balance {
-  available: string;
-  onOrder: string;
-}
+// Import Balance and BinanceBalancesDisplayProps from types.ts
+// Ensure these interfaces are correctly defined in src/lib/types.ts
+import type { Balance, BinanceBalancesDisplayProps } from '@/lib/types'; 
 
-interface BalancesResponse {
-  message: string;
-  balances: Record<string, Balance>;
-}
+// BalancesResponse interface and local BinanceBalancesDisplayProps declaration are removed
+// because they are either imported from types.ts or the fetching logic is moved out.
 
-export function BinanceBalancesDisplay() {
-  const [balances, setBalances] = useState<BalancesResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchBalances = async () => {
-      try {
-        // --- COMIENZO DEL FRAGMENTO A CORREGIR ---
-        // Modificar la llamada fetch para usar el método POST
-        const response = await fetch('/api/binance/balance', {
-          method: 'POST', // Especificamos explícitamente el método POST
-          headers: {
-            'Content-Type': 'application/json', // Indicamos que estamos enviando JSON
-          },
-          // Opcional: Si necesitas enviar la bandera isTestnet desde aquí, agrégala al body
-          // Por ejemplo, si tienes un estado o prop para saber si usar testnet:
-          // body: JSON.stringify({ isTestnet: tuVariableIsTestnet }),
-          // Si siempre usas Mainnet desde este componente, no necesitas el body
-          // pero mantener el método POST es crucial. Si no envías body, el backend
-          // usará el valor por defecto de isTestnet (false para Mainnet).
-          body: JSON.stringify({ isTestnet: false }), // Ejemplo: Asumiendo Mainnet
-        });
-        // --- FIN DEL FRAGMENTO A CORREGIR ---
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(`Error HTTP ${response.status}: ${errorData.message || 'Error desconocido'}`);
-        }
-        const data: BalancesResponse = await response.json();
-        setBalances(data);
-      } catch (err: any) {
-        console.error("[BinanceBalancesDisplay] Error al cargar balances:", err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchBalances();
-  }, []);
-
+// The component now accepts props: balances, isLoading, and error
+export function BinanceBalancesDisplay({ balances, isLoading, error }: BinanceBalancesDisplayProps) {
+  // No local state (useState) or fetching logic (useEffect) here,
+  // as the data is passed down through props.
 
   return (
     <Card>
@@ -71,9 +36,12 @@ export function BinanceBalancesDisplay() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {loading && <p className="text-sm text-muted-foreground">Cargando balances...</p>}
+        {/* Use isLoading and error directly from props */}
+        {isLoading && <p className="text-sm text-muted-foreground">Cargando balances...</p>}
         {error && <p className="text-sm text-red-500">Error: {error}</p>}
-        {balances && Object.keys(balances.balances).length > 0 ? (
+        
+        {/* Access 'balances' directly from props. 'balances.balances' is incorrect now. */}
+        {balances && Object.keys(balances).length > 0 ? ( 
           <ScrollArea className="h-[200px] w-full rounded-md border p-4">
             <table className="w-full text-sm">
               <thead>
@@ -84,18 +52,21 @@ export function BinanceBalancesDisplay() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(balances.balances).map(([asset, data]) => (
+                {/* Iterate directly over the 'balances' prop */}
+                {Object.entries(balances).map(([asset, data]) => (
                   <tr key={asset} className="border-b last:border-b-0">
                     <td className="py-2 px-4 font-semibold">{asset}</td>
-                    <td className="py-2 px-4">{parseFloat(data.available).toFixed(8)}</td>
-                    <td className="py-2 px-4">{parseFloat(data.onOrder).toFixed(8)}</td>
+                    {/* Assuming data.available and data.onOrder are numbers based on the Balance interface */}
+                    <td className="py-2 px-4">{data.available.toFixed(8)}</td> 
+                    <td className="py-2 px-4">{data.onOrder.toFixed(8)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </ScrollArea>
         ) : (
-          !loading && !error && <p className="text-sm text-muted-foreground">No se encontraron balances significativos.</p>
+          // Display message when not loading, no error, and no significant balances
+          !isLoading && !error && <p className="text-sm text-muted-foreground">No se encontraron balances significativos.</p>
         )}
       </CardContent>
     </Card>

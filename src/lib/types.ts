@@ -1,19 +1,29 @@
 // src/lib/types.ts
 import type { ChartConfig } from "@/components/ui/chart"; // Importa ChartConfig desde tu componente UI
+import type { Dispatch, SetStateAction } from 'react'; // Asegúrate de importar Dispatch y SetStateAction
 
 export const PRICE_HISTORY_POINTS_TO_KEEP = 200;
 
 export interface Trade {
-  id: string;
-  date: string;
-  type: 'Compra' | 'Venta';
-  asset: string;
-  amount: number;
-  price: number;
-  total: number;
-  status: 'Completado' | 'Pendiente' | 'Fallido';
-  pnl?: number;
+  id: string; // Identificador único del trade
+  orderId?: string; // ID de la orden en Binance (opcional, puede que no siempre lo tengas o lo necesites en el frontend para todos los trades)
+  timestamp: number; // Unix timestamp en milisegundos
+  datetime: string; // Fecha y hora legible (ej: '2023-10-21T10:30:00.000Z')
+  symbol: string; // Símbolo del par (ej: 'BTC/USDT')
+  type: 'market' | 'limit' | string; // Tipo de orden (market, limit, u otros que Binance soporte)
+  side: 'buy' | 'sell'; // Lado de la orden
+  price: number; // Precio de ejecución
+  amount: number; // Cantidad del activo base
+  cost: number; // Costo total del trade (price * amount)
+  fee?: { // Información de la comisión (opcional)
+    cost: number; // Costo de la comisión
+    currency: string; // Moneda de la comisión
+    rate?: number; // Tasa de la comisión (opcional)
+  };
+  status?: 'Completado' | 'Pendiente' | 'Fallido' | 'Cancelado' | string; // Estado del trade/orden
+  pnl?: number; // Ganancia o pérdida (opcional, más relevante para posiciones cerradas)
 }
+
 
 export interface MarketPriceDataPoint {
   timestamp: number; // Unix timestamp en segundos
@@ -34,10 +44,6 @@ export interface MarketPriceDataPoint {
   signalLine?: number;      // Línea de Señal MACD
   macdHistogram?: number;   // Histograma MACD
 }
-
-// **IMPORTANTE:** Aquí NO se declara ChartConfig de nuevo. Se importa desde "@/components/ui/chart".
-// Si el archivo 'chart.tsx' NO exporta ChartConfig, entonces tendrías que definirla aquí,
-// pero tu importación sugiere que ya existe en otro lugar.
 
 export const marketPriceChartConfigDark = {
   price: {
@@ -72,42 +78,32 @@ export const marketPriceChartConfigDark = {
     label: "Cruce SMA (Venta)",
     color: "hsl(var(--destructive) / 0.7)", // Un rojo un poco más tenue
   },
-  // NUEVAS CONFIGURACIONES MACD
   macdLine: {
     label: "MACD Line",
-    color: "hsl(var(--chart-6))", // Un nuevo color, ej. azul oscuro
+    color: "hsl(var(--chart-6))", 
   },
   signalLine: {
     label: "MACD Signal",
-    color: "hsl(var(--chart-7))", // Otro nuevo color, ej. naranja
+    color: "hsl(var(--chart-7))", 
   },
   macdHistogram: {
-    label: "MACD Histograma", // Este se mostrará en el tooltip, pero la barra tendrá colores condicionales
+    label: "MACD Histograma", 
   },
 } satisfies ChartConfig;
 
-
-// src/lib/types.ts
-
-// ... (todo tu código anterior, como Trade, MarketPriceDataPoint, etc.) ...
-
 export interface Market {
-  id: string; // El símbolo completo del exchange (ej. BTCUSDT)
-  symbol: string; // El símbolo estandarizado (ej. BTC/USDT)
+  id: string; // El símbolo completo del exchange (ej. BTCUSDT) - USADO PARA API DE BINANCE
+  symbol: string; // El símbolo estandarizado (ej. BTC/USDT) - USADO PARA CCXT Y DISPLAY
   name: string; // Nombre amigable (ej. BTC/USDT)
   baseAsset: string; // Moneda base (ej. BTC)
   quoteAsset: string; // Moneda cotizada (ej. USDT)
-  latestPrice: number | null; // Precio actual (puede actualizarse aparte)
-  change24h: number | null; 
-  // --- Añadir estas propiedades para las reglas de trading ---
+  latestPrice: number | null;
+  change24h?: number | null; // Puede ser opcional si no siempre está disponible
   minNotional?: number;
   minQty?: number;
-  amountPrecision?: number;
-  pricePrecision?: number;
-  quotePrecision?: number;
-  // --- Fin propiedades añadidas ---
-  // ... otras propiedades si las tienes
-
+  amountPrecision?: number; // Precisión para la cantidad del activo base
+  pricePrecision?: number;  // Precisión para el precio
+  quotePrecision?: number;  // Precisión para la moneda cotizada (a menudo igual a pricePrecision)
 }
 
 export interface SignalItem {
@@ -116,6 +112,11 @@ export interface SignalItem {
 }
 
 export interface AISignalData {
+  summary: string;
+  signal: 'BUY' | 'SELL' | 'HOLD';
+  confidence: number; // 0 a 1
+  reasoning: string;
+  timestamp: number;
   signals: string; // JSON string de SignalItem[]
   explanation: string;
 }
@@ -124,7 +125,7 @@ export type ParsedSignals = SignalItem[];
 
 export interface OrderFormData {
   type: 'buy' | 'sell';
-  marketId: string;
+  marketId: string; // Símbolo de Binance, ej: BTCUSDT
   amount: number;
   price?: number;
   orderType: 'market' | 'limit';
@@ -144,8 +145,9 @@ export const mockPerformanceChartConfigDark = {
 export interface SignalEvent {
   timestamp: number;
   price: number;
-  type: 'BUY' | 'SELL';
+  type: 'BUY' | 'SELL'; // Para el bot, la acción es comprar o vender
   confidence: number;
+  signal: 'BUY' | 'SELL' | 'HOLD'; // La señal original de la IA
 }
 
 export interface SmaCrossoverEvent {
@@ -162,26 +164,89 @@ export interface SimulatedPosition {
   timestamp: number;
 }
 
-// Example historical data to be used by the AI when auto-generating signals
 export const exampleHistoricalDataForAI = JSON.stringify([
   {"timestamp": "2023-10-01T00:00:00Z", "open": 27000, "high": 27200, "low": 26800, "close": 27100, "volume": 1000},
   {"timestamp": "2023-10-02T00:00:00Z", "open": 27100, "high": 27500, "low": 27000, "close": 27400, "volume": 1200},
-  {"timestamp": "2023-10-03T00:00:00Z", "open": 27400, "high": 28000, "low": 27300, "close": 27900, "volume": 1500},
-  {"timestamp": "2023-10-04T00:00:00Z", "open": 27900, "high": 28100, "low": 27700, "close": 27800, "volume": 1100},
-  {"timestamp": "2023-10-05T00:00:00Z", "open": 27800, "high": 28200, "low": 27500, "close": 28150, "volume": 1300}
+  // ... más datos
 ], null, 2);
 
-// Ajuste CORRECTO para BalanceCardProps
-export interface BalanceCardProps {
-  // Las propiedades 'label', 'value', 'unit', 'change', 'changePercentage', 'isPositive'
-  // que habíamos puesto antes, parece que no son las que usas en BalanceCard.
-  // En su lugar, estás usando estas:
-  balance: number | null; // El valor del balance, puede ser null si está cargando o hay error
-  asset: string; // La divisa o el activo, ej. "USD", "BTC"
-  isLoading: boolean; // Para saber si los datos están cargando
-  description: string; // Una descripción para la tarjeta
-  title: string; // El título de la tarjeta
-  // Puedes añadir más propiedades aquí si tu BalanceCard las necesita, por ejemplo:
-  // icon?: React.ComponentType<{ className?: string }>;
+export interface Balance {
+  available: number;
+  onOrder: number;
+  total: number;
 }
 
+export interface UseTradingBotProps {
+  selectedMarket: Market | null; // Permitir que sea null si no hay mercado seleccionado
+  currentMarketPriceHistory: MarketPriceDataPoint[];
+  currentPrice: number | null;
+  allBinanceBalances: Record<string, Balance> | null; // Permitir que sea null si no se han cargado
+  // onPlaceOrder se maneja internamente en el bot ahora
+  botIntervalMs: number;
+  isBotRunning: boolean;
+  setIsBotRunning: Dispatch<SetStateAction<boolean>>;
+  useTestnet?: boolean;
+  onBotAction?: (result: { type: 'orderPlaced', success: boolean, details?: any }) => void;
+}
+
+export interface AppHeaderProps {
+  toggleLeftSidebar: () => void;
+  isLeftSidebarOpen: boolean;
+  toggleRightSidebar: () => void;
+  isRightSidebarOpen: boolean;
+  portfolioBalance: number | null;
+  isBotRunning: boolean;
+  toggleBotStatus: () => void;
+  isBinanceBalancesLoading: boolean;
+  binanceBalancesError: string | null;
+  useTestnet: boolean; // Prop para saber si se usa Testnet
+  setUseTestnet: Dispatch<SetStateAction<boolean>>; // Prop para cambiar el modo Testnet
+}
+
+export interface MarketPriceChartProps {
+  marketId: string;
+  marketName: string;
+  priceHistory: MarketPriceDataPoint[];
+  smaCrossoverEvents: SmaCrossoverEvent[];
+  aiSignalEvents: SignalEvent[];
+  isBotActive: boolean;
+}
+
+export interface TradeFormProps {
+  market: Market; // El objeto Market completo
+  currentPrice: number | null;
+  availableQuoteBalance: number;
+  availableBaseBalance: number;
+  onPlaceOrder: (orderData: OrderFormData) => Promise<boolean>;
+  isLoadingTrade: boolean;
+}
+
+export interface BalanceCardProps {
+  title: string;
+  description: string;
+  balance: number | null;
+  asset: string;
+  isLoading: boolean;
+  error: string | null;
+}
+
+export interface BinanceBalancesDisplayProps {
+  balances: Record<string, Balance>;
+  isLoading: boolean;
+  error: string | null;
+  useTestnet?: boolean; // Añadido para consistencia si se necesita en el futuro
+}
+
+export interface BotControlsProps {
+    isBotRunning: boolean;
+    onToggleBot: () => void;
+    isLoadingAiSignals: boolean;
+    onGenerateSignals: () => void; // Asumo que esta es la función para generar señales de IA manualmente
+    aiSignalError: string | null;
+    useTestnet: boolean; // Para mostrar el modo actual
+    selectedMarketSymbol?: string; // Para mostrar el mercado actual en los mensajes
+    marketRulesError: string | null; // Error al cargar reglas del mercado
+    areMarketRulesLoaded: boolean; // Indica si las reglas del mercado se han cargado
+}
+
+    

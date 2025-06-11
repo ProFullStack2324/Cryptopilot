@@ -1,4 +1,4 @@
-// src/app/api/binance/ticker/route.ts
+// src/app/api/binance/route.ts
 
 import { NextResponse } from 'next/server';
 import Binance from 'node-binance-api';

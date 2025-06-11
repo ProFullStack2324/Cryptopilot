@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Ya tenías Card
 import { useToast } from '@/hooks/use-toast';
-import { Market } from '@/lib/types'; // Asumiendo que Market es importable
+import type { Market, OrderFormData } from '@/lib/types'; 
 
 // Definir la interfaz para los datos que enviaremos al backend
 interface TradeRequest {
@@ -24,6 +24,8 @@ interface TradeFormProps {
   availableQuoteBalance: number; // Ej. balance de USDT
   availableBaseBalance: number; // Ej. balance de BTC
   onBotTrade?: (tradeData: TradeRequest) => Promise<any>; // Función para que el bot realice una orden
+  onPlaceOrder: (orderData: OrderFormData) => Promise<boolean>;
+  isLoadingTrade: boolean;
 }
 
 export default function TradeForm({
@@ -32,6 +34,8 @@ export default function TradeForm({
   availableQuoteBalance,
   availableBaseBalance,
   onBotTrade,
+  onPlaceOrder, // Asegúrate de que onPlaceOrder se desestructure aquí
+  isLoadingTrade, //
 }: TradeFormProps) {
   const [type, setType] = useState<TradeRequest['type']>('market');
   const [side, setSide] = useState<TradeRequest['side']>('buy'); // 'buy' o 'sell'
