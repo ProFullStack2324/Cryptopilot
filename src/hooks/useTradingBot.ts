@@ -1,6 +1,6 @@
 
 // src/hooks/useTradingBot.ts
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 // Asegúrate de que estos tipos estén bien definidos y exportados
 import type { Market, MarketPriceDataPoint, OrderFormData, SimulatedPosition } from '@/lib/types';
 
@@ -18,8 +18,7 @@ interface UseTradingBotProps {
   currentMarketPriceHistory: MarketPriceDataPoint[];
   currentPrice: number | null; // El precio actual más reciente
   allBinanceBalances: Record<string, FormattedBalance> | null;
-  botIntervalMs?: number; // Intervalo de ejecución del bot en ms
-  useTestnet?: boolean; // Indica si el bot debe operar en la red de prueba
+  botIntervalMs: number;
   onBotAction?: (result: { type: 'orderPlaced', success: boolean, details?: any }) => void; // Opcional: Callback para notificar al UI
   isBotRunning: boolean;
   setIsBotRunning: React.Dispatch<React.SetStateAction<boolean>>;
@@ -41,8 +40,8 @@ export const useTradingBot = ({
   currentMarketPriceHistory,
   currentPrice,
   allBinanceBalances,
-  botIntervalMs = 15000, 
-  useTestnet = false, 
+  botIntervalMs,
+
   onBotAction, 
   isBotRunning, 
   setIsBotRunning, 
@@ -57,31 +56,28 @@ export const useTradingBot = ({
   const [placeOrderError, setPlaceOrderError] = useState<any>(null);
   const [selectedMarketRules, setSelectedMarketRules] = useState<any>(null);
   const [marketRulesError, setMarketRulesError] = useState<string | null>(null);
-  
+
   const BOT_MIN_ACTION_INTERVAL_MS = 5000;
 
   const fetchMarketRules = useCallback(async () => {
-    const networkType = useTestnet ? 'Testnet' : 'Mainnet';
+    console.log(`[useTradingBot] Iniciando fetch de reglas del mercado.`);
     if (!selectedMarket) {
-      console.log(`[useTradingBot - ${networkType}] selectedMarket es nulo. Limpiando reglas del mercado.`);
+      console.log(`[useTradingBot] selectedMarket es nulo. Limpiando reglas del mercado.`);
       setSelectedMarketRules(null);
       setMarketRulesError(null); // También limpiar error si no hay mercado
       return;
     }
-
-    console.log(`[useTradingBot - ${networkType}] Fetching exchange info for ${selectedMarket.symbol}...`);
+    console.log(`[useTradingBot] Fetching exchange info for ${selectedMarket.symbol}...`);
     setMarketRulesError(null); // Limpiar error de reglas antes de cada intento
 
-    const endpoint = `/api/binance/exchange-info?symbol=${selectedMarket.symbol}&isTestnet=${useTestnet}`;
+    const endpoint = `/api/binance/exchange-info?symbol=${selectedMarket.symbol}`;
 
     try {
       const response = await fetch(endpoint);
       const data = await response.json();
 
-      console.log(`[useTradingBot - ${networkType}] DEBUG fetchMarketRules: HTTP Status for rules: ${response.status}`);
-      console.log(`[useTradingBot - ${networkType}] DEBUG fetchMarketRules: Raw response data for rules:`, data);
-
       if (response.ok && data.success && data.data) {
+        console.log(`[useTradingBot] Reglas del mercado ${selectedMarket.symbol} obtenidas.`);
         setSelectedMarketRules(data.data);
         console.log(`[useTradingBot - ${networkType}] Reglas del mercado ${selectedMarket.symbol} almacenadas:`, data.data);
       } else {
@@ -90,13 +86,13 @@ export const useTradingBot = ({
         setSelectedMarketRules(null);
         setMarketRulesError(errorMsg);
         toast({
-          title: "Error al Cargar Reglas del Mercado",
-          description: `No se pudieron obtener las reglas para ${selectedMarket.symbol} en ${networkType}. Detalles: ${errorMsg}`,
+          title: "Error al Cargar Reglas",
+          description: `No se pudieron obtener las reglas para ${selectedMarket.symbol}. Detalles: ${errorMsg}`,
           variant: "destructive",
         });
       }
     } catch (error: any) {
-      const errorMsg = `Error de conexión o al parsear reglas para ${selectedMarket.symbol}: ${error.message}`;
+      const errorMsg = `Error de conexión o al parsear reglas: ${error.message}`;
       console.error(`[useTradingBot - ${networkType}] Fetch error en market rules: ${errorMsg}`, error);
       setSelectedMarketRules(null);
       setMarketRulesError(errorMsg);
@@ -106,16 +102,14 @@ export const useTradingBot = ({
         variant: "destructive",
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMarket, useTestnet, toast]);
+  }, [selectedMarket, toast]); // Eliminada dependencia de useTestnet
 
-  useEffect(() => {
+useEffect(() => {
     fetchMarketRules();
   }, [fetchMarketRules]);
-  
+
   const executeBotStrategy = useCallback(async () => {
-    const networkType = useTestnet ? 'Testnet' : 'Mainnet';
-    console.groupCollapsed(`[Bot Strategy - ${networkType}] Ejecución ${new Date().toLocaleTimeString()} para ${selectedMarket?.symbol}`);
+    console.groupCollapsed(`[Bot Strategy] Ejecución ${new Date().toLocaleTimeString()} para ${selectedMarket?.symbol}`);
 
     if (!isBotRunning) {
       console.log(`[Bot Strategy - ${networkType}] Bot no está corriendo. Saliendo.`);
@@ -242,7 +236,7 @@ export const useTradingBot = ({
       } else { // action === 'sell'
         if (!botOpenPosition || botOpenPosition.marketId !== selectedMarket.id) {
           console.warn(`[Bot Action - ${networkType}] Sin posición abierta simulada para vender en ${selectedMarket.symbol}.`);
-          console.groupEnd();
+          console.groupEnd(); // Added missing console.groupEnd()
           return;
         }
         const baseBalanceInfo = allBinanceBalances[selectedMarket.baseAsset];
@@ -285,7 +279,6 @@ export const useTradingBot = ({
         type: 'market' as 'market' | 'limit', 
         side: action,
         amount: tradeAmount,
-        isTestnet: useTestnet, // Enviar el flag de testnet
       };
 
       const endpoint = '/api/binance/trade'; 
@@ -377,7 +370,6 @@ export const useTradingBot = ({
     useTestnet,
     onBotAction,
     selectedMarketRules,
-    marketRulesError, 
     setIsPlacingOrder, 
     setPlaceOrderError,
     setBotLastActionTimestamp,
@@ -385,7 +377,6 @@ export const useTradingBot = ({
   ]);
 
   useEffect(() => {
-    const networkType = useTestnet ? 'Testnet' : 'Mainnet';
     console.log(`[useTradingBot - ${networkType}] Efecto ciclo de vida. Bot: ${isBotRunning}, Mercado: ${selectedMarket?.symbol}, Reglas: ${!!selectedMarketRules}`);
     let intervalId: NodeJS.Timeout | null = null;
 
@@ -418,7 +409,7 @@ export const useTradingBot = ({
            botIntervalRef.current = null;
       }
     };
-  }, [isBotRunning, selectedMarket, botIntervalMs, executeBotStrategy, useTestnet, selectedMarketRules, marketRulesError]);
+  }, [isBotRunning, selectedMarket, botIntervalMs, executeBotStrategy, selectedMarketRules, marketRulesError]);
 
   const toggleBotStatus = useCallback(() => {
     setIsBotRunning(prev => {
@@ -434,10 +425,10 @@ export const useTradingBot = ({
       }, 0);
       return newStatus;
     });
-  }, [toast, selectedMarket, useTestnet, setIsBotRunning]); 
+  }, [toast, selectedMarket, setIsBotRunning]);
 
   return {
-    isBotRunning,
+    isBotRunning, // <-- Keep this line
     toggleBotStatus,
     botOpenPosition,
     botLastActionTimestamp,

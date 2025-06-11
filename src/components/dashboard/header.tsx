@@ -1,7 +1,6 @@
 
 "use client";
 // src/components/dashboard/header.tsx
-import React from 'react'; // No es necesario Dispatch, SetStateAction aquí
 
 import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -20,9 +19,6 @@ export function AppHeader({
   portfolioBalance,
   isBotRunning,
   toggleBotStatus,
-  // LAS SIGUIENTES PROPS YA NO SE RECIBEN NI SE USAN EN ESTE COMPONENTE:
-  // useTestnet, 
-  // setUseTestnet,
   isBinanceBalancesLoading, // Esta se mantiene si la usas para mostrar un estado de carga de balances
   binanceBalancesError,   // Esta se mantiene si la usas para mostrar un error de balances
 }: AppHeaderProps) { 
@@ -109,8 +105,6 @@ export function AppHeader({
                 </div>
             )
           )}
-
-          {/* Ya no hay lógica de useTestnet aquí, por lo que se elimina cualquier texto condicional relacionado */}
 
           <Button variant="ghost" size="icon" onClick={toggleRightSidebar} className="hidden md:inline-flex">
             {isRightSidebarOpen ? <PanelRightClose className="h-5 w-5" /> : <PanelRightOpen className="h-5 w-5" />}
