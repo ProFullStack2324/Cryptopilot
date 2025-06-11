@@ -195,7 +195,7 @@ export default function TradingPlatformPage() {
   const marketPriceUpdateIntervalRef = useRef<number | null>(null);
   
   
-  // ESTADO PARA CONTROLAR TESTNET/MAINNET
+  // ESTADO PARA CONTROLAR TESTNET/MAINNET (SE MANTIENE PORQUE OTROS COMPONENTES LO USAN)
   const [useTestnet, setUseTestnet] = useState<boolean>(false); // Por defecto Mainnet
 
   const [isLoadingTrade, setIsLoadingTrade] = useState(false); 
@@ -267,7 +267,7 @@ export default function TradingPlatformPage() {
             side: orderData.type,
             amount: orderData.amount,
             price: orderData.price,
-            // isTestnet: useTestnet, // El endpoint deducirá esto o ya estará configurado
+            isTestnet: useTestnet, // El endpoint deducirá esto o ya estará configurado
         };
 
         console.log("[handlePlaceOrder] Enviando payload al backend:", tradePayload);
@@ -536,8 +536,7 @@ export default function TradingPlatformPage() {
         toggleBotStatus={toggleBotStatus}
         isBinanceBalancesLoading={isBinanceBalancesLoading}
         binanceBalancesError={binanceBalancesError}
-        useTestnet={useTestnet}
-        setUseTestnet={setUseTestnet}
+        // NO SE PASAN useTestnet NI setUseTestnet a AppHeader
       />
 
       <main className="flex-1">
@@ -772,5 +771,3 @@ export default function TradingPlatformPage() {
     </div>
   );
 }
-
-    

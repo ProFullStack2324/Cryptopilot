@@ -8,20 +8,10 @@ import { Button } from "@/components/ui/button";
 //import { useBitcoinPrice } from "@/hooks/useBinanceMarketData";
 import { useBinanceMarketData } from '@/hooks/useBinanceMarketData';
 
-interface AppHeaderProps {
-  toggleLeftSidebar: () => void;
-  isLeftSidebarOpen: boolean;
-  toggleRightSidebar: () => void;
-  isRightSidebarOpen: boolean;
-  portfolioBalance: number | null;
-  isBotRunning: boolean;
-  toggleBotStatus: () => void;
-  // ¡Asegúrate de que estas propiedades estén definidas aquí!
-  useTestnet: boolean;
-  setUseTestnet: Dispatch<SetStateAction<boolean>>; // O (value: boolean) => void;
-  isBinanceBalancesLoading: boolean;
-  binanceBalancesError: string | null;
-}
+// La interfaz AppHeaderProps se importa ahora de src/lib/types.ts
+// y ya no contendrá useTestnet ni setUseTestnet
+import type { AppHeaderProps } from '@/lib/types';
+
 
 export function AppHeader({
   toggleLeftSidebar,
@@ -31,11 +21,12 @@ export function AppHeader({
   portfolioBalance,
   isBotRunning,
   toggleBotStatus,
-  useTestnet, // Desestructura estas props en el componente
-  setUseTestnet,
+  // LAS SIGUIENTES PROPS YA NO SE RECIBEN:
+  // useTestnet, 
+  // setUseTestnet,
   isBinanceBalancesLoading,
   binanceBalancesError,
-}: AppHeaderProps) {
+}: AppHeaderProps) { // La firma del componente ya no incluye useTestnet ni setUseTestnet
 
   const { marketPrice, isLoading, error: marketError } = useBinanceMarketData({ symbol: "BTCUSDT" }); // <-- ¡CORRECCIÓN!
 // Esto desestructura la propiedad 'error' del objeto devuelto por el hook
@@ -108,7 +99,8 @@ export function AppHeader({
             </div>
           )}
 
-          <span className="text-xs text-muted-foreground hidden xl:inline border-l pl-3 ml-1">Entorno de Simulación</span>
+          {/* SE ELIMINA EL TEXTO "Entorno de Simulación" YA QUE EL MODO TESTNET NO SE CONTROLA DESDE EL HEADER */}
+          {/* <span className="text-xs text-muted-foreground hidden xl:inline border-l pl-3 ml-1">Entorno de Simulación</span> */}
 
           <Button variant="ghost" size="icon" onClick={toggleRightSidebar} className="hidden md:inline-flex">
             {isRightSidebarOpen ? <PanelRightClose className="h-5 w-5" /> : <PanelRightOpen className="h-5 w-5" />}

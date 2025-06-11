@@ -185,7 +185,7 @@ export interface UseTradingBotProps {
   botIntervalMs: number;
   isBotRunning: boolean;
   setIsBotRunning: Dispatch<SetStateAction<boolean>>;
-  useTestnet?: boolean;
+  useTestnet?: boolean; // AÚN PRESENTE AQUÍ, PERO APPREADER YA NO LA NECESITA DIRECTAMENTE
   onBotAction?: (result: { type: 'orderPlaced', success: boolean, details?: any }) => void;
 }
 
@@ -199,8 +199,9 @@ export interface AppHeaderProps {
   toggleBotStatus: () => void;
   isBinanceBalancesLoading: boolean;
   binanceBalancesError: string | null;
-  useTestnet: boolean; // Prop para saber si se usa Testnet
-  setUseTestnet: Dispatch<SetStateAction<boolean>>; // Prop para cambiar el modo Testnet
+  // LAS SIGUIENTES PROPIEDADES SERÁN ELIMINADAS:
+  // useTestnet: boolean; 
+  // setUseTestnet: Dispatch<SetStateAction<boolean>>;
 }
 
 export interface MarketPriceChartProps {
@@ -234,19 +235,17 @@ export interface BinanceBalancesDisplayProps {
   balances: Record<string, Balance>;
   isLoading: boolean;
   error: string | null;
-  useTestnet?: boolean; // Añadido para consistencia si se necesita en el futuro
+  useTestnet?: boolean; // AÚN PRESENTE AQUÍ, PERO APPREADER YA NO LA NECESITA DIRECTAMENTE
 }
 
 export interface BotControlsProps {
     isBotRunning: boolean;
     onToggleBot: () => void;
     isLoadingAiSignals: boolean;
-    onGenerateSignals: () => void; // Asumo que esta es la función para generar señales de IA manualmente
+    onGenerateSignals: () => void; 
     aiSignalError: string | null;
-    useTestnet: boolean; // Para mostrar el modo actual
-    selectedMarketSymbol?: string; // Para mostrar el mercado actual en los mensajes
-    marketRulesError: string | null; // Error al cargar reglas del mercado
-    areMarketRulesLoaded: boolean; // Indica si las reglas del mercado se han cargado
+    useTestnet: boolean; 
+    selectedMarketSymbol?: string; 
+    marketRulesError: string | null; 
+    areMarketRulesLoaded: boolean; 
 }
-
-    
