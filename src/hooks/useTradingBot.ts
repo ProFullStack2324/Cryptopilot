@@ -1,52 +1,21 @@
 
 // src/hooks/useTradingBot.ts
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-// Asegúrate de que estos tipos estén bien definidos y exportados
-import type { Market, MarketPriceDataPoint, OrderFormData, SimulatedPosition } from '@/lib/types';
+import type { Market, MarketPriceDataPoint, OrderFormData, SimulatedPosition, Balance as FormattedBalance, UseTradingBotProps, UseTradingBotReturn } from '@/lib/types';
+import { useToast } from "@/hooks/use-toast";
 
-import { useToast } from "@/hooks/use-toast"; // Si el hook usará toasts
-
-// Asegúrate de que esta interfaz FormattedBalance esté definida o importada
-interface FormattedBalance {
-    available: number;
-    onOrder: number;
-    total: number;
-}
-
-interface UseTradingBotProps {
-  selectedMarket: Market | null;
-  currentMarketPriceHistory: MarketPriceDataPoint[];
-  currentPrice: number | null; // El precio actual más reciente
-  allBinanceBalances: Record<string, FormattedBalance> | null;
-  botIntervalMs: number;
-  onBotAction?: (result: { type: 'orderPlaced', success: boolean, details?: any }) => void; // Opcional: Callback para notificar al UI
-  isBotRunning: boolean;
-  setIsBotRunning: React.Dispatch<React.SetStateAction<boolean>>;
-}
-
-interface UseTradingBotReturn {
-  isBotRunning: boolean;
-  toggleBotStatus: () => void;
-  botOpenPosition: SimulatedPosition | null;
-  botLastActionTimestamp: number;
-  isPlacingOrder: boolean;
-  placeOrderError: any;
-  selectedMarketRules: any;
-  marketRulesError: string | null;
-}
+console.log('[useTradingBot] Hook execution start - Version: 2024-06-08_A'); // Debug log
 
 export const useTradingBot = ({
   selectedMarket,
   currentMarketPriceHistory,
   currentPrice,
   allBinanceBalances,
-  botIntervalMs,
-
+  botIntervalMs = 30000,
   onBotAction,
   isBotRunning,
   setIsBotRunning,
 }: UseTradingBotProps): UseTradingBotReturn => {
-
   const [botOpenPosition, setBotOpenPosition] = useState<SimulatedPosition | null>(null);
   const [botLastActionTimestamp, setBotLastActionTimestamp] = useState<number>(0);
   const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -64,14 +33,13 @@ export const useTradingBot = ({
     if (!selectedMarket) {
       console.log(`[useTradingBot] selectedMarket es nulo. Limpiando reglas del mercado.`);
       setSelectedMarketRules(null);
-      setMarketRulesError(null); // También limpiar error si no hay mercado
+      setMarketRulesError(null);
       return;
     }
     console.log(`[useTradingBot] Fetching exchange info for ${selectedMarket.symbol} (Mainnet)...`);
-    setMarketRulesError(null); // Limpiar error de reglas antes de cada intento
+    setMarketRulesError(null);
 
-    // El endpoint ahora opera solo en Mainnet
-    const endpoint = `/api/binance/exchange-info?symbol=${selectedMarket.symbol}`;
+    const endpoint = `/api/binance/exchange-info?symbol=${selectedMarket.id}`; // Use selectedMarket.id for Binance symbol
 
     try {
       const response = await fetch(endpoint);
@@ -80,10 +48,9 @@ export const useTradingBot = ({
       if (response.ok && data.success && data.data) {
         console.log(`[useTradingBot] Reglas del mercado ${selectedMarket.symbol} (Mainnet) obtenidas.`);
         setSelectedMarketRules(data.data);
-        console.log(`[useTradingBot - Mainnet] Reglas del mercado ${selectedMarket.symbol} almacenadas:`, data.data);
       } else {
         const errorMsg = data.message || data.details || `Error HTTP ${response.status} al obtener reglas para ${selectedMarket.symbol}.`;
-        console.error(`[useTradingBot - Mainnet] Error al cargar reglas: ${errorMsg}`, data);
+        console.error(`[useTradingBot] Error al cargar reglas para ${selectedMarket.symbol} (Mainnet): ${errorMsg}`, data);
         setSelectedMarketRules(null);
         setMarketRulesError(errorMsg);
         toast({
@@ -94,7 +61,7 @@ export const useTradingBot = ({
       }
     } catch (error: any) {
       const errorMsg = `Error de conexión o al parsear reglas: ${error.message}`;
-      console.error(`[useTradingBot - Mainnet] Fetch error en market rules: ${errorMsg}`, error);
+      console.error(`[useTradingBot] Fetch error en market rules para ${selectedMarket.symbol} (Mainnet): ${errorMsg}`, error);
       setSelectedMarketRules(null);
       setMarketRulesError(errorMsg);
       toast({
@@ -105,7 +72,7 @@ export const useTradingBot = ({
     }
   }, [selectedMarket, toast]);
 
-useEffect(() => {
+  useEffect(() => {
     fetchMarketRules();
   }, [fetchMarketRules]);
 
@@ -181,22 +148,22 @@ useEffect(() => {
       const marketRules = selectedMarketRules;
       const minNotional = parseFloat(marketRules.limits.cost.min);
       const minQty = parseFloat(marketRules.limits.amount.min);
-      const stepSize = parseFloat(marketRules.precision.amount);
+      // stepSize from CCXT's market.precision.amount is the "tick size" for amount.
+      // It's the smallest increment the amount can change by.
+      const stepSize = marketRules.precision?.amount ? parseFloat(marketRules.precision.amount) : 0;
+
 
       let amountPrecisionPlaces = 0;
-      if (marketRules.precision && typeof marketRules.precision.amount === 'number') {
-        if (marketRules.precision.amount > 0 && marketRules.precision.amount < 1) {
-            const precisionString = marketRules.precision.amount.toString();
-            amountPrecisionPlaces = precisionString.includes('.') ? precisionString.split('.')[1].length : 0;
-        } else if (marketRules.precision.amount === 1) {
+        // Determine precision from stepSize (e.g., 0.001 -> 3 places, 1 -> 0 places)
+        if (stepSize > 0 && stepSize < 1) {
+            const stepSizeStr = stepSize.toString();
+            amountPrecisionPlaces = stepSizeStr.includes('.') ? stepSizeStr.split('.')[1].length : 0;
+        } else if (stepSize === 1) { // If stepSize is 1, precision is 0 decimal places
             amountPrecisionPlaces = 0;
-        } else {
-            amountPrecisionPlaces = selectedMarket.amountPrecision || 6;
+        } else { // Fallback if stepSize is 0 or not a typical fractional value, or if precision from market is better
+            amountPrecisionPlaces = selectedMarket.amountPrecision !== undefined ? selectedMarket.amountPrecision : 6;
         }
-      } else {
-        amountPrecisionPlaces = selectedMarket.amountPrecision || 6;
-      }
-      console.log(`[Bot Action - Mainnet] Precisión de cantidad para ${selectedMarket.baseAsset}: ${amountPrecisionPlaces} decimales (Regla: ${marketRules.precision?.amount})`);
+      console.log(`[Bot Action - Mainnet] Precisión de cantidad para ${selectedMarket.baseAsset}: ${amountPrecisionPlaces} decimales (StepSize de Regla: ${stepSize}, Fallback amountPrecision: ${selectedMarket.amountPrecision})`);
 
 
       if (action === 'buy') {
@@ -217,8 +184,8 @@ useEffect(() => {
         tradeAmount = desiredQuoteAmount / currentPrice;
 
         if ((tradeAmount * currentPrice) < minNotional) {
-          tradeAmount = (minNotional / currentPrice) * 1.01; 
-          console.log(`[Bot Action - Mainnet - Buy] Ajustando tradeAmount a ${tradeAmount.toFixed(amountPrecisionPlaces)} para cumplir minNotional.`);
+          tradeAmount = (minNotional / currentPrice) * 1.01; // Ensure slightly above minNotional
+          console.log(`[Bot Action - Mainnet - Buy] Ajustando tradeAmount (antes de stepSize) a ${tradeAmount.toFixed(amountPrecisionPlaces + 2)} para cumplir minNotional.`);
         }
         if (stepSize > 0) {
           tradeAmount = Math.floor(tradeAmount / stepSize) * stepSize;
@@ -271,7 +238,6 @@ useEffect(() => {
       setIsPlacingOrder(true);
       setPlaceOrderError(null);
 
-      // El payload ya no incluye isTestnet
       const orderPayload = {
         symbol: selectedMarket.symbol, 
         type: 'market' as 'market' | 'limit',
@@ -310,18 +276,21 @@ useEffect(() => {
           if (action === 'buy') {
             const filledAmount = parseFloat(tradeResult.filled || tradeAmount.toString());
             const entryPrice = parseFloat(tradeResult.price || currentPrice?.toString() || "0");
-            const timestamp = tradeResult.timestamp ? Math.floor(tradeResult.timestamp / 1000) : Math.floor(Date.now() / 1000);
+            // Preferir timestamp de la respuesta si está disponible y es un número válido
+            const transactionTime = typeof tradeResult.transactTime === 'number' ? tradeResult.transactTime : (typeof tradeResult.time === 'number' ? tradeResult.time : Date.now());
+            const timestampInSeconds = Math.floor(transactionTime / 1000);
+
 
             setBotOpenPosition({
               marketId: selectedMarket.id,
               entryPrice: entryPrice,
               amount: filledAmount,
               type: 'buy',
-              timestamp: timestamp
+              timestamp: timestampInSeconds 
             });
             toast({
               title: `Bot: Compra Ejecutada (Mainnet)`,
-              description: `Orden de ${filledAmount} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
+              description: `Orden de ${filledAmount.toFixed(amountPrecisionPlaces)} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
               variant: "default",
             });
           } else if (action === 'sell') {
@@ -334,7 +303,7 @@ useEffect(() => {
             setBotOpenPosition(null);
             toast({
               title: `Bot: Venta Ejecutada (Mainnet)`,
-              description: `Orden de ${tradeResult.filled || tradeAmount} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
+              description: `Orden de ${(tradeResult.filled || tradeAmount).toFixed(amountPrecisionPlaces)} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
               variant: "default",
             });
           }
@@ -367,7 +336,7 @@ useEffect(() => {
     toast,
     onBotAction,
     selectedMarketRules,
-    marketRulesError, // Añadido marketRulesError a dependencias
+    marketRulesError,
     setIsPlacingOrder,
     setPlaceOrderError,
     setBotLastActionTimestamp,
@@ -383,7 +352,9 @@ useEffect(() => {
       if (botIntervalRef.current) {
         clearInterval(botIntervalRef.current);
       }
-      executeBotStrategy();
+      // No llamar executeBotStrategy() inmediatamente aquí si ya se llama en el intervalo y queremos que se respeten los tiempos.
+      // O si se llama, asegurar que respete BOT_MIN_ACTION_INTERVAL_MS si es relevante al inicio.
+      // Por ahora, el intervalo se encargará de la primera ejecución tras el delay.
       intervalId = setInterval(executeBotStrategy, botIntervalMs);
       botIntervalRef.current = intervalId;
     } else {
@@ -403,7 +374,8 @@ useEffect(() => {
       if (intervalId) {
         clearInterval(intervalId);
       }
-      if (botIntervalRef.current && botIntervalRef.current === intervalId) {
+      // Asegurarse de limpiar la ref correcta si el intervalo que se está limpiando es el actual.
+      if (botIntervalRef.current && botIntervalRef.current === intervalId) { 
            botIntervalRef.current = null;
       }
     };
@@ -412,8 +384,7 @@ useEffect(() => {
   const toggleBotStatus = useCallback(() => {
     setIsBotRunning(prev => {
       const newStatus = !prev;
-      // const networkType = 'Mainnet'; // Siempre Mainnet ahora
-      console.log(`[useTradingBot - Mainnet] Cambiando estado del bot a: ${newStatus} para ${selectedMarket?.symbol || 'el mercado seleccionado'}`);
+      console.log(`[useTradingBot] Cambiando estado del bot a: ${newStatus} para ${selectedMarket?.symbol || 'el mercado seleccionado'} en Mainnet.`);
       setTimeout(() => {
         toast({
           title: `Bot ${newStatus ? "Iniciado" : "Detenido"} (Mainnet)`,
@@ -436,3 +407,5 @@ useEffect(() => {
     marketRulesError,
   };
 };
+
+    
