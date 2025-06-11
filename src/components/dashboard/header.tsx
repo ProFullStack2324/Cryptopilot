@@ -125,5 +125,3 @@ export function AppHeader({
     </header>
   );
 }
-
-```

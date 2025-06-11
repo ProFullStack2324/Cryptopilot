@@ -1,3 +1,4 @@
+
 // src/lib/types.ts
 import type { ChartConfig } from "@/components/ui/chart"; // Importa ChartConfig desde tu componente UI
 import type { Dispatch, SetStateAction } from 'react'; // Asegúrate de importar Dispatch y SetStateAction
@@ -199,8 +200,7 @@ export interface AppHeaderProps {
   toggleBotStatus: () => void;
   isBinanceBalancesLoading: boolean;
   binanceBalancesError: string | null;
-  // useTestnet: boolean; // ELIMINADA - AppHeader ya no gestiona el estado de Testnet
-  // setUseTestnet: Dispatch<SetStateAction<boolean>>; // ELIMINADA
+  // useTestnet y setUseTestnet eliminadas porque AppHeader ya no gestiona este estado directamente
 }
 
 export interface MarketPriceChartProps {
@@ -248,5 +248,3 @@ export interface BotControlsProps {
     marketRulesError: string | null; 
     areMarketRulesLoaded: boolean; 
 }
-
-```
