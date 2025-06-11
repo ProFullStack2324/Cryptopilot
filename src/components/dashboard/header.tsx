@@ -1,15 +1,14 @@
 
 "use client";
 // src/components/dashboard/header.tsx
-import React, { Dispatch, SetStateAction } from 'react'; // Asegúrate de importar Dispatch y SetStateAction
+import React from 'react'; // No es necesario Dispatch, SetStateAction aquí
 
 import { Bot, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, Wallet, Power, Bitcoin as BitcoinIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-//import { useBitcoinPrice } from "@/hooks/useBinanceMarketData";
 import { useBinanceMarketData } from '@/hooks/useBinanceMarketData';
 
 // La interfaz AppHeaderProps se importa ahora de src/lib/types.ts
-// y ya no contendrá useTestnet ni setUseTestnet
+// y ya NO contendrá useTestnet ni setUseTestnet
 import type { AppHeaderProps } from '@/lib/types';
 
 
@@ -21,16 +20,15 @@ export function AppHeader({
   portfolioBalance,
   isBotRunning,
   toggleBotStatus,
-  // LAS SIGUIENTES PROPS YA NO SE RECIBEN:
+  // LAS SIGUIENTES PROPS YA NO SE RECIBEN NI SE USAN EN ESTE COMPONENTE:
   // useTestnet, 
   // setUseTestnet,
-  isBinanceBalancesLoading,
-  binanceBalancesError,
-}: AppHeaderProps) { // La firma del componente ya no incluye useTestnet ni setUseTestnet
+  isBinanceBalancesLoading, // Esta se mantiene si la usas para mostrar un estado de carga de balances
+  binanceBalancesError,   // Esta se mantiene si la usas para mostrar un error de balances
+}: AppHeaderProps) { 
 
-  const { marketPrice, isLoading, error: marketError } = useBinanceMarketData({ symbol: "BTCUSDT" }); // <-- ¡CORRECCIÓN!
-// Esto desestructura la propiedad 'error' del objeto devuelto por el hook
-// y la renombra a 'marketError' para usarla localmente.
+  const { marketPrice, isLoading, error: marketError } = useBinanceMarketData({ symbol: "BTCUSDT" });
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 max-w-screen-2xl items-center px-4 md:px-6">
@@ -93,14 +91,26 @@ export function AppHeader({
               </span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground p-2 rounded-md bg-muted/50 border border-border shadow-sm">
-              <Wallet className="h-5 w-5 text-muted-foreground" />
-              <span className="text-xs">Cargando saldo...</span>
-            </div>
+            // Mostrar estado de carga o error para el balance del portafolio si es necesario
+            isBinanceBalancesLoading ? (
+                <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground p-2 rounded-md bg-muted/50 border border-border shadow-sm">
+                    <Wallet className="h-5 w-5 text-muted-foreground animate-pulse" />
+                    <span className="text-xs">Cargando...</span>
+                </div>
+            ) : binanceBalancesError ? (
+                 <div className="flex items-center gap-2 text-sm font-semibold text-red-500 p-2 rounded-md bg-red-500/10 border border-red-500/30 shadow-sm">
+                    <Wallet className="h-5 w-5" />
+                    <span className="text-xs" title={binanceBalancesError}>Error Saldo</span>
+                </div>
+            ) : (
+                 <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground p-2 rounded-md bg-muted/50 border border-border shadow-sm">
+                    <Wallet className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-xs">N/A</span>
+                </div>
+            )
           )}
 
-          {/* SE ELIMINA EL TEXTO "Entorno de Simulación" YA QUE EL MODO TESTNET NO SE CONTROLA DESDE EL HEADER */}
-          {/* <span className="text-xs text-muted-foreground hidden xl:inline border-l pl-3 ml-1">Entorno de Simulación</span> */}
+          {/* Ya no hay lógica de useTestnet aquí, por lo que se elimina cualquier texto condicional relacionado */}
 
           <Button variant="ghost" size="icon" onClick={toggleRightSidebar} className="hidden md:inline-flex">
             {isRightSidebarOpen ? <PanelRightClose className="h-5 w-5" /> : <PanelRightOpen className="h-5 w-5" />}
@@ -115,3 +125,5 @@ export function AppHeader({
     </header>
   );
 }
+
+```

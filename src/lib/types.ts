@@ -185,7 +185,7 @@ export interface UseTradingBotProps {
   botIntervalMs: number;
   isBotRunning: boolean;
   setIsBotRunning: Dispatch<SetStateAction<boolean>>;
-  useTestnet?: boolean; // AÚN PRESENTE AQUÍ, PERO APPREADER YA NO LA NECESITA DIRECTAMENTE
+  useTestnet?: boolean; 
   onBotAction?: (result: { type: 'orderPlaced', success: boolean, details?: any }) => void;
 }
 
@@ -199,9 +199,8 @@ export interface AppHeaderProps {
   toggleBotStatus: () => void;
   isBinanceBalancesLoading: boolean;
   binanceBalancesError: string | null;
-  // LAS SIGUIENTES PROPIEDADES SERÁN ELIMINADAS:
-  // useTestnet: boolean; 
-  // setUseTestnet: Dispatch<SetStateAction<boolean>>;
+  // useTestnet: boolean; // ELIMINADA - AppHeader ya no gestiona el estado de Testnet
+  // setUseTestnet: Dispatch<SetStateAction<boolean>>; // ELIMINADA
 }
 
 export interface MarketPriceChartProps {
@@ -235,7 +234,7 @@ export interface BinanceBalancesDisplayProps {
   balances: Record<string, Balance>;
   isLoading: boolean;
   error: string | null;
-  useTestnet?: boolean; // AÚN PRESENTE AQUÍ, PERO APPREADER YA NO LA NECESITA DIRECTAMENTE
+  useTestnet?: boolean; 
 }
 
 export interface BotControlsProps {
@@ -249,3 +248,5 @@ export interface BotControlsProps {
     marketRulesError: string | null; 
     areMarketRulesLoaded: boolean; 
 }
+
+```
