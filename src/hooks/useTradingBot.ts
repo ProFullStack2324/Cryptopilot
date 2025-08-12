@@ -1,411 +1,827 @@
-
 // src/hooks/useTradingBot.ts
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Market, MarketPriceDataPoint, OrderFormData, SimulatedPosition, Balance as FormattedBalance, UseTradingBotProps, UseTradingBotReturn } from '@/lib/types';
-import { useToast } from "@/hooks/use-toast";
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useToast } from './use-toast';
 
-console.log('[useTradingBot] Hook execution start - Version: 2024-06-08_A'); // Debug log
+import {
+    Market,
+    MarketRules,
+    BinanceBalance,
+    OrderFormData,
+    BinanceOrderResult,
+    BotOpenPosition,
+    BotActionDetails,
+    MarketPriceDataPoint,
+    PRICE_HISTORY_POINTS_TO_KEEP,
+    ApiResult,
+    KLine, // Importado como KLine (con L mayúscula)
+    TradeEndpointResponse // <-- ¡AGREGA ESTA LÍNEA AQUÍ!
+} from '@/lib/types';
 
-export const useTradingBot = ({
-  selectedMarket,
-  currentMarketPriceHistory,
-  currentPrice,
-  allBinanceBalances,
-  botIntervalMs = 30000,
-  onBotAction,
-  isBotRunning,
-  setIsBotRunning,
-}: UseTradingBotProps): UseTradingBotReturn => {
-  const [botOpenPosition, setBotOpenPosition] = useState<SimulatedPosition | null>(null);
-  const [botLastActionTimestamp, setBotLastActionTimestamp] = useState<number>(0);
-  const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const { toast } = useToast();
+import { decideTradeActionAndAmount } from '@/lib/strategies/tradingStrategy';
+import { calculateSMA, calculateRSI, calculateMACD, calculateBollingerBands } from '@/lib/indicators';
 
-  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
-  const [placeOrderError, setPlaceOrderError] = useState<any>(null);
-  const [selectedMarketRules, setSelectedMarketRules] = useState<any>(null);
-  const [marketRulesError, setMarketRulesError] = useState<string | null>(null);
+// Helper para validar si un valor es un número válido (no undefined, null, NaN).
+const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
-  const BOT_MIN_ACTION_INTERVAL_MS = 5000;
+// ======================================================================================================
+// Hook Principal: useTradingBot
+// ======================================================================================================
+export const useTradingBot = (props: {
+    selectedMarket: Market | null;
+    allBinanceBalances: BinanceBalance[];
+    onBotAction?: (details: BotActionDetails) => void;
+}) => {
+    const { selectedMarket, allBinanceBalances, onBotAction } = props;
 
-  const fetchMarketRules = useCallback(async () => {
-    console.log(`[useTradingBot] Iniciando fetch de reglas del mercado.`);
-    if (!selectedMarket) {
-      console.log(`[useTradingBot] selectedMarket es nulo. Limpiando reglas del mercado.`);
-      setSelectedMarketRules(null);
-      setMarketRulesError(null);
-      return;
-    }
-    console.log(`[useTradingBot] Fetching exchange info for ${selectedMarket.symbol} (Mainnet)...`);
-    setMarketRulesError(null);
+    // ======================================================================================================
+    // Estados del Bot
+    // ======================================================================================================
+    const [isBotRunning, setIsBotRunning] = useState<boolean>(false);
+    const [botOpenPosition, setBotOpenPosition] = useState<BotOpenPosition | null>(null);
+    const [botLastActionTimestamp, setBotLastActionTimestamp] = useState<number | null>(null);
+    const [isPlacingOrder, setIsPlacingOrder] = useState<boolean>(false);
+    const [placeOrderError, setPlaceOrderError] = useState<string | null>(null);
 
-    const endpoint = `/api/binance/exchange-info?symbol=${selectedMarket.id}`; // Use selectedMarket.id for Binance symbol
+    // Estado para las reglas del mercado
+    const [selectedMarketRules, setSelectedMarketRules] = useState<MarketRules | null>(null);
+    const [rulesLoading, setRulesLoading] = useState<boolean>(true);
+    const [rulesError, setRulesError] = useState<string | null>(null);
 
-    try {
-      const response = await fetch(endpoint);
-      const data = await response.json();
+    // ESTADOS PARA GESTIONAR EL HISTORIAL DE PRECIOS Y EL PRECIO ACTUAL
+    const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>([]);
+    const [currentPrice, setCurrentPrice] = useState<number | null>(null);
 
-      if (response.ok && data.success && data.data) {
-        console.log(`[useTradingBot] Reglas del mercado ${selectedMarket.symbol} (Mainnet) obtenidas.`);
-        setSelectedMarketRules(data.data);
-      } else {
-        const errorMsg = data.message || data.details || `Error HTTP ${response.status} al obtener reglas para ${selectedMarket.symbol}.`;
-        console.error(`[useTradingBot] Error al cargar reglas para ${selectedMarket.symbol} (Mainnet): ${errorMsg}`, data);
-        setSelectedMarketRules(null);
-        setMarketRulesError(errorMsg);
-        toast({
-          title: "Error al Cargar Reglas (Mainnet)",
-          description: `No se pudieron obtener las reglas para ${selectedMarket.symbol}. Detalles: ${errorMsg}`,
-          variant: "destructive",
-        });
-      }
-    } catch (error: any) {
-      const errorMsg = `Error de conexión o al parsear reglas: ${error.message}`;
-      console.error(`[useTradingBot] Fetch error en market rules para ${selectedMarket.symbol} (Mainnet): ${errorMsg}`, error);
-      setSelectedMarketRules(null);
-      setMarketRulesError(errorMsg);
-      toast({
-        title: "Error de Conexión (Reglas Mercado - Mainnet)",
-        description: `No se pudo conectar para obtener las reglas del mercado ${selectedMarket.symbol}. Detalles: ${error.message}`,
-        variant: "destructive",
-      });
-    }
-  }, [selectedMarket, toast]);
+    const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false); 
+    const [botIntervalMs, setBotIntervalMs] = useState(5000); // Frecuencia de ejecución de la estrategia (5 segundos por defecto)
+    const [signalCounts, setSignalCounts] = useState({ buy: 0, sell: 0, hold: 0 });
 
-  useEffect(() => {
-    fetchMarketRules();
-  }, [fetchMarketRules]);
+    const { toast } = useToast();
+    const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const priceFetchIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const executeBotStrategy = useCallback(async () => {
-    console.groupCollapsed(`[Bot Strategy - Mainnet] Ejecución ${new Date().toLocaleTimeString()} para ${selectedMarket?.symbol}`);
+    // Bandera para controlar si el componente está montado.
+    const isMounted = useRef(false);
 
-    if (!isBotRunning) {
-      console.log(`[Bot Strategy - Mainnet] Bot no está corriendo. Saliendo.`);
-      console.groupEnd();
-      return;
-    }
-    if (!selectedMarket || !currentPrice || currentPrice <= 0 || currentMarketPriceHistory.length < 20 || !selectedMarketRules) {
-      console.warn(`[Bot Strategy - Mainnet] Datos insuficientes (mercado, precio, historial o reglas) para ejecutar la estrategia.`);
-      if (!selectedMarket) console.warn(`[Bot Strategy - Mainnet] Razón: selectedMarket es nulo.`);
-      if (!currentPrice || currentPrice <= 0) console.warn(`[Bot Strategy - Mainnet] Razón: currentPrice es inválido (${currentPrice}).`);
-      if (currentMarketPriceHistory.length < 20) console.warn(`[Bot Strategy - Mainnet] Razón: historial de precios corto (${currentMarketPriceHistory.length}).`);
-      if (!selectedMarketRules) console.warn(`[Bot Strategy - Mainnet] Razón: Reglas del mercado no cargadas. ${marketRulesError || ''}`);
-      console.groupEnd();
-      return;
-    }
-    console.log(`[Bot Strategy - Mainnet] Condiciones iniciales cumplidas. Procediendo con la estrategia para ${selectedMarket.name} a precio: ${currentPrice}.`);
-    console.log(`[Bot Strategy - Mainnet] Reglas del mercado disponibles:`, selectedMarketRules);
-
-    const timeSinceLastAction = Date.now() - botLastActionTimestamp;
-    if (timeSinceLastAction < BOT_MIN_ACTION_INTERVAL_MS) {
-      console.log(`[Bot Strategy - Mainnet] Esperando intervalo mínimo entre acciones. Faltan ${BOT_MIN_ACTION_INTERVAL_MS - timeSinceLastAction}ms.`);
-      console.groupEnd();
-      return;
-    }
-
-    const latestPriceDataPoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
-    const previousPriceDataPoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 2];
-
-    let action: 'buy' | 'sell' | 'hold' = 'hold';
-    let triggerReason = "Ninguna";
-
-    console.log(`[Bot Strategy - Mainnet - SMA] Evaluando...`);
-    if (latestPriceDataPoint.sma10 !== undefined && latestPriceDataPoint.sma20 !== undefined &&
-        previousPriceDataPoint.sma10 !== undefined && previousPriceDataPoint.sma20 !== undefined) {
-      if (latestPriceDataPoint.sma10 > latestPriceDataPoint.sma20 && previousPriceDataPoint.sma10 <= previousPriceDataPoint.sma20) {
-        action = 'buy';
-        triggerReason = "Cruce SMA Alcista";
-      } else if (latestPriceDataPoint.sma10 < latestPriceDataPoint.sma20 && previousPriceDataPoint.sma10 >= previousPriceDataPoint.sma20) {
-        action = 'sell';
-        triggerReason = "Cruce SMA Bajista";
-      }
-    }
-
-    if (action === 'hold') {
-      console.log(`[Bot Strategy - Mainnet - MACD] Evaluando...`);
-      if (latestPriceDataPoint.macdHistogram !== undefined && previousPriceDataPoint.macdHistogram !== undefined) {
-        if (latestPriceDataPoint.macdHistogram > 0 && previousPriceDataPoint.macdHistogram <= 0) {
-          action = 'buy';
-          triggerReason = "MACD Histograma Positivo";
-        } else if (latestPriceDataPoint.macdHistogram < 0 && previousPriceDataPoint.macdHistogram >= 0) {
-          action = 'sell';
-          triggerReason = "MACD Histograma Negativo";
-        }
-      }
-    }
-    console.log(`[Bot Decision - Mainnet] ${selectedMarket.symbol}: Acción: ${action.toUpperCase()} por: ${triggerReason}`);
-
-    if (action !== 'hold') {
-      console.log(`[Bot Action - Mainnet] Preparando para ejecutar: ${action.toUpperCase()}.`);
-      let tradeAmount = 0;
-
-      if (!allBinanceBalances) {
-        console.error(`[Bot Action - Mainnet] Balances no cargados. Abortando.`);
-        console.groupEnd();
-        return;
-      }
-
-      const marketRules = selectedMarketRules;
-      const minNotional = parseFloat(marketRules.limits.cost.min);
-      const minQty = parseFloat(marketRules.limits.amount.min);
-      // stepSize from CCXT's market.precision.amount is the "tick size" for amount.
-      // It's the smallest increment the amount can change by.
-      const stepSize = marketRules.precision?.amount ? parseFloat(marketRules.precision.amount) : 0;
-
-
-      let amountPrecisionPlaces = 0;
-        // Determine precision from stepSize (e.g., 0.001 -> 3 places, 1 -> 0 places)
-        if (stepSize > 0 && stepSize < 1) {
-            const stepSizeStr = stepSize.toString();
-            amountPrecisionPlaces = stepSizeStr.includes('.') ? stepSizeStr.split('.')[1].length : 0;
-        } else if (stepSize === 1) { // If stepSize is 1, precision is 0 decimal places
-            amountPrecisionPlaces = 0;
-        } else { // Fallback if stepSize is 0 or not a typical fractional value, or if precision from market is better
-            amountPrecisionPlaces = selectedMarket.amountPrecision !== undefined ? selectedMarket.amountPrecision : 6;
-        }
-      console.log(`[Bot Action - Mainnet] Precisión de cantidad para ${selectedMarket.baseAsset}: ${amountPrecisionPlaces} decimales (StepSize de Regla: ${stepSize}, Fallback amountPrecision: ${selectedMarket.amountPrecision})`);
-
-
-      if (action === 'buy') {
-        const quoteBalanceInfo = allBinanceBalances[selectedMarket.quoteAsset];
-        if (!quoteBalanceInfo || quoteBalanceInfo.available <= 0) {
-          console.warn(`[Bot Action - Mainnet] Sin balance de ${selectedMarket.quoteAsset} para comprar.`);
-          console.groupEnd();
-          return;
-        }
-        const availableQuote = quoteBalanceInfo.available;
-        const investmentPercentage = 0.05; 
-        let desiredQuoteAmount = availableQuote * investmentPercentage;
-
-        if (!currentPrice || currentPrice <= 0) {
-            console.error(`[Bot Action - Mainnet - Buy] Precio actual inválido (${currentPrice}). Abortando.`);
-            console.groupEnd(); return;
-        }
-        tradeAmount = desiredQuoteAmount / currentPrice;
-
-        if ((tradeAmount * currentPrice) < minNotional) {
-          tradeAmount = (minNotional / currentPrice) * 1.01; // Ensure slightly above minNotional
-          console.log(`[Bot Action - Mainnet - Buy] Ajustando tradeAmount (antes de stepSize) a ${tradeAmount.toFixed(amountPrecisionPlaces + 2)} para cumplir minNotional.`);
-        }
-        if (stepSize > 0) {
-          tradeAmount = Math.floor(tradeAmount / stepSize) * stepSize;
-        }
-        tradeAmount = parseFloat(tradeAmount.toFixed(amountPrecisionPlaces));
-
-        if (tradeAmount < minQty || tradeAmount <= 0) {
-          console.warn(`[Bot Action - Mainnet - Buy] Cantidad final (${tradeAmount}) no cumple minQty (${minQty}) o es <=0. Abortando.`);
-          console.groupEnd();
-          return;
-        }
-      } else { // action === 'sell'
-        if (!botOpenPosition || botOpenPosition.marketId !== selectedMarket.id) {
-          console.warn(`[Bot Action - Mainnet] Sin posición abierta simulada para vender en ${selectedMarket.symbol}.`);
-          console.groupEnd();
-          return;
-        }
-        const baseBalanceInfo = allBinanceBalances[selectedMarket.baseAsset];
-        if (!baseBalanceInfo || baseBalanceInfo.available < botOpenPosition.amount) {
-          console.warn(`[Bot Action - Mainnet] Balance de ${selectedMarket.baseAsset} (${baseBalanceInfo?.available || 0}) insuficiente para vender posición simulada (${botOpenPosition.amount}).`);
-          setBotOpenPosition(null);
-          console.groupEnd();
-          return;
-        }
-        tradeAmount = botOpenPosition.amount;
-        if (stepSize > 0) {
-          tradeAmount = Math.floor(tradeAmount / stepSize) * stepSize;
-        }
-        tradeAmount = parseFloat(tradeAmount.toFixed(amountPrecisionPlaces));
-
-        if (tradeAmount < minQty || tradeAmount <= 0) {
-          console.warn(`[Bot Action - Mainnet - Sell] Cantidad final (${tradeAmount}) no cumple minQty (${minQty}) o es <=0. Abortando.`);
-          setBotOpenPosition(null);
-          console.groupEnd();
-          return;
-        }
-        if (!currentPrice || currentPrice <= 0) {
-            console.error(`[Bot Action - Mainnet - Sell] Precio actual inválido (${currentPrice}) para validar nominal. Abortando.`);
-            setBotOpenPosition(null); console.groupEnd(); return;
-        }
-        if ((tradeAmount * currentPrice) < minNotional) {
-           console.warn(`[Bot Action - Mainnet - Sell] Nominal de venta (${(tradeAmount * currentPrice).toFixed(selectedMarket.quotePrecision || 2)}) por debajo de minNotional (${minNotional}). Abortando.`);
-           setBotOpenPosition(null);
-           console.groupEnd();
-           return;
-        }
-      }
-      console.log(`[Bot Action - Mainnet] Cantidad validada para ${action.toUpperCase()}: ${tradeAmount} ${selectedMarket.baseAsset}.`);
-
-      setIsPlacingOrder(true);
-      setPlaceOrderError(null);
-
-      const orderPayload = {
-        symbol: selectedMarket.symbol, 
-        type: 'market' as 'market' | 'limit',
-        side: action,
-        amount: tradeAmount,
-      };
-
-      const endpoint = '/api/binance/trade';
-      console.log(`[useTradingBot - Mainnet] Bot llamando al endpoint: ${endpoint} con payload:`, JSON.stringify(orderPayload));
-
-      let tradeResult: any = null;
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderPayload),
-        });
-        tradeResult = await response.json();
-        console.log(`[useTradingBot - Mainnet] Respuesta del endpoint ${endpoint} (Orden Bot):`, tradeResult);
-
-        if (!response.ok || !tradeResult.success) {
-          const errorMsg = tradeResult?.message || tradeResult?.details || `Error HTTP: ${response.status}`;
-          console.error(`[useTradingBot - Mainnet] Endpoint ${endpoint} reportó error en operación: ${errorMsg}`);
-          setPlaceOrderError(tradeResult || { message: `Error HTTP: ${response.status}` });
-          if (onBotAction) onBotAction({ type: 'orderPlaced', success: false, details: tradeResult });
-          toast({
-            title: `Bot: Error al Colocar Orden (Mainnet)`,
-            description: `Error en ${selectedMarket.symbol}: ${errorMsg}`,
-            variant: "destructive",
-          });
-        } else {
-          console.log(`[useTradingBot - Mainnet] Orden del bot en ${selectedMarket.symbol} exitosa. ID: ${tradeResult.orderId}`);
-          setBotLastActionTimestamp(Date.now());
-          if (onBotAction) onBotAction({ type: 'orderPlaced', success: true, details: tradeResult });
-
-          if (action === 'buy') {
-            const filledAmount = parseFloat(tradeResult.filled || tradeAmount.toString());
-            const entryPrice = parseFloat(tradeResult.price || currentPrice?.toString() || "0");
-            // Preferir timestamp de la respuesta si está disponible y es un número válido
-            const transactionTime = typeof tradeResult.transactTime === 'number' ? tradeResult.transactTime : (typeof tradeResult.time === 'number' ? tradeResult.time : Date.now());
-            const timestampInSeconds = Math.floor(transactionTime / 1000);
-
-
-            setBotOpenPosition({
-              marketId: selectedMarket.id,
-              entryPrice: entryPrice,
-              amount: filledAmount,
-              type: 'buy',
-              timestamp: timestampInSeconds 
+    // ======================================================================================================
+    // Callbacks de Utilidad (log, debug)
+    // ======================================================================================================
+    const log = useCallback((message: string, details?: any) => {
+        console.log(`LOG: [${message}]`, details || '');
+        if (onBotAction) {
+            onBotAction({
+                type: 'strategyExecuted',
+                success: true,
+                timestamp: Date.now(),
+                message: message,
+                data: details,
             });
-            toast({
-              title: `Bot: Compra Ejecutada (Mainnet)`,
-              description: `Orden de ${filledAmount.toFixed(amountPrecisionPlaces)} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
-              variant: "default",
-            });
-          } else if (action === 'sell') {
-            if (botOpenPosition?.type === 'buy' && botOpenPosition.marketId === selectedMarket.id) {
-              const exitPrice = parseFloat(tradeResult.price || currentPrice?.toString() || "0");
-              const executedAmount = parseFloat(tradeResult.filled || tradeAmount.toString());
-              const pnl = (exitPrice - botOpenPosition.entryPrice) * executedAmount;
-              console.log(`[useTradingBot - Mainnet] PnL simulado: ${pnl.toFixed(selectedMarket.quotePrecision || 2)} ${selectedMarket.quoteAsset}`);
+        }
+    }, [onBotAction]);
+
+    const debug = useCallback((message: string, details?: any) => {
+        console.debug(`DEBUG: ${message}`, details || '');
+    }, []);
+
+    // ======================================================================================================
+    // Función Centralizada para Anotar el Historial con Indicadores
+    // ======================================================================================================
+    const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
+        log(`[useTradingBot - Annotate] Iniciando anotación de ${klines.length} klines.`);
+        if (!klines || klines.length === 0) {
+            log(`[useTradingBot - Annotate] Klines vacíos o nulos, no se puede anotar.`);
+            return [];
+        }
+
+        const annotatedHistory: MarketPriceDataPoint[] = [];
+
+        // Iterar sobre cada kline para construir el historial anotado
+        for (let i = 0; i < klines.length; i++) {
+            const klineItem = klines[i];
+
+            // Validar la kline actual antes de procesarla
+            if (!isValidNumber(klineItem[0]) || !isValidNumber(klineItem[1]) || !isValidNumber(klineItem[2]) || !isValidNumber(klineItem[3]) || !isValidNumber(klineItem[4]) || !isValidNumber(klineItem[5])) {
+                log(`[useTradingBot - Annotate] Kline inválido en el índice ${i}, saltando.`, klineItem);
+                continue; // Saltar esta kline si los valores esenciales son inválidos
             }
-            setBotOpenPosition(null);
-            toast({
-              title: `Bot: Venta Ejecutada (Mainnet)`,
-              description: `Orden de ${(tradeResult.filled || tradeAmount).toFixed(amountPrecisionPlaces)} ${selectedMarket.baseAsset} en ${selectedMarket.symbol}.`,
-              variant: "default",
-            });
-          }
+
+            const currentKlineDataPoint: MarketPriceDataPoint = {
+                timestamp: klineItem[0] as number,
+                openPrice: klineItem[1] as number,
+                highPrice: klineItem[2] as number,
+                lowPrice: klineItem[3] as number,
+                closePrice: klineItem[4] as number,
+                volume: klineItem[5] as number,
+            };
+
+            // Extraer los precios de cierre hasta el punto actual (inclusive)
+            // Esto es crucial porque las funciones de indicadores en indicators.ts operan sobre un array de precios
+            const closesUpToCurrent: number[] = klines.slice(0, i + 1).map(k => k[4] as number);
+
+            // Calcular indicadores para el punto actual usando las funciones existentes de indicators.ts
+            // Estas funciones devuelven valores únicos, que se asignan directamente.
+
+            // SMA
+            // Asegurarse de tener suficientes datos para el período más grande (SMA50)
+            if (closesUpToCurrent.length >= 50) { 
+                currentKlineDataPoint.sma10 = calculateSMA(closesUpToCurrent, 10);
+                currentKlineDataPoint.sma20 = calculateSMA(closesUpToCurrent, 20);
+                currentKlineDataPoint.sma50 = calculateSMA(closesUpToCurrent, 50);
+            }
+
+            // RSI
+            // Necesita al menos `period + 1` precios. Periodo es 14, así que necesita 15.
+            if (closesUpToCurrent.length >= 15) { 
+                currentKlineDataPoint.rsi = calculateRSI(closesUpToCurrent, 14);
+            }
+
+            // MACD
+            // calculateMACD en indicators.ts ya maneja sus propios requisitos de longitud de historial internamente.
+            // Necesita al menos `slowPeriod + signalPeriod - 1` = 26 + 9 - 1 = 34 precios para empezar a dar resultados significativos.
+            // Usaremos un umbral de 50 para ser seguros y consistentes con otros indicadores complejos.
+            if (closesUpToCurrent.length >= 50) { 
+                const macdResult = calculateMACD(closesUpToCurrent, 12, 26, 9);
+                currentKlineDataPoint.macdLine = isValidNumber(macdResult.macdLine) ? macdResult.macdLine : undefined;
+                currentKlineDataPoint.signalLine = isValidNumber(macdResult.signalLine) ? macdResult.signalLine : undefined;
+                currentKlineDataPoint.macdHistogram = isValidNumber(macdResult.macdHistogram) ? macdResult.macdHistogram : undefined;
+            }
+
+            // Bollinger Bands
+            // Necesita al menos `period` precios. Periodo es 20.
+            if (closesUpToCurrent.length >= 20) {
+                const bbResult = calculateBollingerBands(closesUpToCurrent, 20, 2);
+                currentKlineDataPoint.upperBollingerBand = isValidNumber(bbResult.upperBollingerBand) ? bbResult.upperBollingerBand : undefined;
+                currentKlineDataPoint.middleBollingerBand = isValidNumber(bbResult.middleBollingerBand) ? bbResult.middleBollingerBand : undefined;
+                currentKlineDataPoint.lowerBollingerBand = isValidNumber(bbResult.lowerBollingerBand) ? bbResult.lowerBollingerBand : undefined;
+            }
+
+            annotatedHistory.push(currentKlineDataPoint);
         }
-      } catch (fetchError: any) {
-        const errorDetails = { message: `Error de red al colocar orden en Mainnet.`, details: fetchError.message };
-        console.error(`[useTradingBot - Mainnet] Error fetch en endpoint ${endpoint}:`, fetchError);
-        setPlaceOrderError(errorDetails);
-        if (onBotAction) onBotAction({ type: 'orderPlaced', success: false, details: errorDetails });
-        toast({
-          title: `Bot: Error Crítico Conexión (Mainnet)`,
-          description: `No se pudo comunicar con el servidor para ${selectedMarket.symbol}. Detalles: ${errorDetails.details}`,
-          variant: "destructive",
-        });
-      } finally {
-        setIsPlacingOrder(false);
-      }
-    } else {
-      console.log(`[Bot Action - Mainnet] No se decidió acción (${action}).`);
-    }
-    console.groupEnd();
-  }, [
-    isBotRunning,
-    selectedMarket,
-    currentMarketPriceHistory,
-    currentPrice,
-    allBinanceBalances,
-    botLastActionTimestamp,
-    botOpenPosition,
-    toast,
-    onBotAction,
-    selectedMarketRules,
-    marketRulesError,
-    setIsPlacingOrder,
-    setPlaceOrderError,
-    setBotLastActionTimestamp,
-    setBotOpenPosition,
-  ]);
 
-  useEffect(() => {
-    console.log(`[useTradingBot - Mainnet] Efecto ciclo de vida. Bot: ${isBotRunning}, Mercado: ${selectedMarket?.symbol}, Reglas: ${!!selectedMarketRules}`);
-    let intervalId: NodeJS.Timeout | null = null;
+        log(`[useTradingBot - Annotate] Historial anotado completado. Longitud final: ${annotatedHistory.length}. Última vela:`, annotatedHistory.at(-1));
+        return annotatedHistory;
+    }, [log]); 
 
-    if (isBotRunning && selectedMarket && selectedMarketRules) {
-      console.log(`[useTradingBot - Mainnet] Bot INICIADO para ${selectedMarket.symbol}. Intervalo: ${botIntervalMs / 1000}s`);
-      if (botIntervalRef.current) {
-        clearInterval(botIntervalRef.current);
-      }
-      // No llamar executeBotStrategy() inmediatamente aquí si ya se llama en el intervalo y queremos que se respeten los tiempos.
-      // O si se llama, asegurar que respete BOT_MIN_ACTION_INTERVAL_MS si es relevante al inicio.
-      // Por ahora, el intervalo se encargará de la primera ejecución tras el delay.
-      intervalId = setInterval(executeBotStrategy, botIntervalMs);
-      botIntervalRef.current = intervalId;
-    } else {
-      if (botIntervalRef.current) {
-        console.log(`[useTradingBot - Mainnet] Bot DETENIDO o condiciones no cumplidas. Limpiando intervalo para ${selectedMarket?.symbol || 'ningún mercado'}.`);
-        clearInterval(botIntervalRef.current);
-        botIntervalRef.current = null;
-      } else {
-        console.log(`[useTradingBot - Mainnet] Bot DETENIDO o condiciones no cumplidas. No había intervalo activo para ${selectedMarket?.symbol || 'ningún mercado'}.`);
-      }
-       if(!selectedMarket) console.log(`[useTradingBot - Mainnet] Razón: No hay mercado seleccionado.`);
-       if(!selectedMarketRules) console.log(`[useTradingBot - Mainnet] Razón: Reglas del mercado no cargadas. ${marketRulesError || ''}`);
-    }
+    // ======================================================================================================
+    // fetchRealTimeKlinesCallback Refactorizada para usar `annotateMarketPriceHistory`
+    // ======================================================================================================
+    const fetchRealTimeKlinesCallback = useCallback(async () => {
+        if (!isMounted.current) {
+            console.warn("WARN: [Realtime Klines] Componente desmontado, saltando fetching de klines.");
+            return;
+        }
 
-    return () => {
-      console.log(`[useTradingBot - Mainnet] Limpieza efecto ciclo de vida para ${selectedMarket?.symbol || 'ningún mercado'}.`);
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      // Asegurarse de limpiar la ref correcta si el intervalo que se está limpiando es el actual.
-      if (botIntervalRef.current && botIntervalRef.current === intervalId) { 
-           botIntervalRef.current = null;
-      }
+        if (!selectedMarket?.symbol || !selectedMarketRules) {
+            console.log("[useTradingBot - Realtime Klines] No market or rules, stopping real-time fetches.");
+            return;
+        }
+
+        const abortController = new AbortController();
+        const signal = abortController.signal;
+
+        try {
+            if (signal.aborted) {
+                console.log("[useTradingBot - Realtime Klines] Solicitud cancelada (pre-fetch).");
+                return;
+            }
+
+            const response = await fetch(
+                `/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=1`,
+                { signal } 
+            );
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+            }
+            
+            const data: ApiResult<KLine[]> = await response.json(); // Usar KLine aquí
+            log("LOG: [useTradingBot - Realtime Klines] Raw KLines data received:", data);
+
+            if (signal.aborted) {
+                console.log("[useTradingBot - Realtime Klines] Solicitud cancelada (post-fetch).");
+                return;
+            }
+
+            const klinesArray = data.data || (data as any).klines; 
+
+            if (data.success && Array.isArray(klinesArray) && klinesArray.length > 0) {
+                const newRawKline = klinesArray[0];
+
+                setCurrentMarketPriceHistory(prevHistory => {
+                    // Convertir prevHistory (MarketPriceDataPoint[]) a KLine[] para poder manipularlo como un array de raw klines
+                    // Esto es necesario porque annotateMarketPriceHistory espera KLine[]
+                    const rawKlinesFromHistory: KLine[] = prevHistory.map(dp => [
+                        dp.timestamp, dp.openPrice, dp.highPrice, dp.lowPrice, dp.closePrice, dp.volume, 0, 0, 0, 0, 0, 0 // Asegurar que el formato sea KLine
+                    ]);
+                    const lastKlineInHistory = rawKlinesFromHistory.at(-1);
+
+                    let tempRawHistory: KLine[];
+
+                    // Si la última vela en el historial tiene el mismo timestamp que la nueva, se actualiza.
+                    if (lastKlineInHistory && lastKlineInHistory[0] === newRawKline[0]) {
+                        tempRawHistory = [...rawKlinesFromHistory.slice(0, -1), newRawKline];
+                        log(`[Realtime Klines] Vela existente actualizada: ${new Date(newRawKline[0] as number).toLocaleTimeString()}`);
+                    } else {
+                        // Si es una nueva vela, se añade y se mantiene el límite de historial.
+                        tempRawHistory = [...rawKlinesFromHistory, newRawKline];
+                        if (tempRawHistory.length > PRICE_HISTORY_POINTS_TO_KEEP) {
+                            tempRawHistory.shift(); 
+                            log(`[Realtime Klines] Historial de velas: eliminada vela antigua. Nuevo tamaño: ${tempRawHistory.length}`);
+                        }
+                        log(`[Realtime Klines] Nueva vela añadida: ${new Date(newRawKline[0] as number).toLocaleTimeString()}. Nuevo tamaño: ${tempRawHistory.length}`);
+                    }
+
+                    // Anotar el historial completo con los indicadores
+                    const annotatedResult = annotateMarketPriceHistory(tempRawHistory);
+                    
+                    if (annotatedResult.length > 0) {
+                        const latestAnnotated = annotatedResult.at(-1)!;
+                        setCurrentPrice(latestAnnotated.closePrice); 
+                        log(`[Realtime Klines] Indicadores de la última vela recalculados. (RSI: ${latestAnnotated.rsi?.toFixed(2) || 'N/A'})`);
+                        return annotatedResult; 
+                    } else {
+                        log(`[Realtime Klines] Fallo al anotar el historial de klines en tiempo real.`, { newRawKline });
+                        return prevHistory; // Mantener el historial anterior si la anotación falla
+                    }
+                });
+                
+            } else {
+                console.warn("WARN: [Realtime Klines] Respuesta de klines exitosa pero sin datos de velas. Data:", data);
+            }
+        } catch (error: any) {
+            if (error.name === 'AbortError') {
+                console.log("[useTradingBot - Realtime Klines] Fetch de klines en tiempo real abortado (por cleanup).");
+                return;
+            }
+            console.error("ERROR: [useTradingBot - Realtime Klines] Error en fetchRealTimeKlines:", error);
+            if (isMounted.current) { 
+                toast({
+                    title: "Error de conexión",
+                    description: "No se pudieron obtener datos de mercado en tiempo real.",
+                    variant: "destructive",
+                });
+            }
+        }
+    }, [selectedMarket, selectedMarketRules, isMounted, toast, log, annotateMarketPriceHistory]); 
+
+    // ======================================================================================================
+    // Lógica principal de la estrategia del bot (AHORA CON MONITOREO DE SL/TP)
+    // ======================================================================================================
+    const executeBotStrategy = useCallback(async () => {
+        const minDataPointsForStrategy = 51; 
+
+        console.groupCollapsed(`LOG: [Bot Cycle] Ejecutando estrategia para ${selectedMarket?.symbol || 'N/A'} @ ${new Date().toLocaleTimeString()} (Velas: ${currentMarketPriceHistory.length})`);
+        
+        console.log("LOG: [Bot Cycle] Estado de las guardas de ejecución:");
+        console.log(`- isBotRunning: ${isBotRunning}`);
+        console.log(`- selectedMarket: ${!!selectedMarket}`);
+        console.log(`- currentPrice: ${currentPrice}`);
+        console.log(`- historyLength (${currentMarketPriceHistory.length}) >= minDataPointsForStrategy (${minDataPointsForStrategy}): ${currentMarketPriceHistory.length >= minDataPointsForStrategy}`);
+        console.log(`- selectedMarketRules: ${!!selectedMarketRules}`);
+        console.log(`- isPlacingOrder: ${isPlacingOrder}`);
+        
+        if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < minDataPointsForStrategy || !selectedMarketRules || isPlacingOrder) {
+            console.warn("[Bot Cycle] Bot NO está listo para ejecutar la estrategia principal. Razones:");
+            if (!isBotRunning) console.warn("   - El bot no está en estado 'Running'.");
+            if (!selectedMarket) console.warn("   - No se ha seleccionado un mercado.");
+            if (currentPrice === null) console.warn("   - Precio actual es null.");
+            if (currentMarketPriceHistory.length < minDataPointsForStrategy) console.warn(`   - Insuficientes velas históricas (actual: ${currentMarketPriceHistory.length}, requerido: ${minDataPointsForStrategy}).`);
+            if (!selectedMarketRules) console.warn("   - Reglas del mercado no cargadas.");
+            if (isPlacingOrder) console.warn("   - Ya hay una orden en proceso de colocación.");
+            console.groupEnd(); 
+            return;
+        }
+
+        console.log(`[Bot Cycle] Todas las condiciones iniciales CUMPLIDAS para ${selectedMarket.symbol}.`);
+        console.log(`[Bot Cycle] Precio actual (última vela cerrada): ${currentPrice?.toFixed(selectedMarket.pricePrecision || 2)} ${selectedMarket.quoteAsset}`);
+
+        let actionToExecute: 'buy' | 'sell' | 'hold' = 'hold';
+        let orderDataToExecute: OrderFormData | undefined;
+
+        // --- Monitoreo de Stop Loss y Take Profit (Si hay una posición abierta) ---
+        if (botOpenPosition) {
+            console.log("[Bot Cycle] Detectada posición abierta. Evaluando SL/TP...");
+            const { amount, stopLossPrice, takeProfitPrice, entryPrice } = botOpenPosition;
+
+            console.log(`LOG: [Bot Open Position] Tipo: ${botOpenPosition.type.toUpperCase()}, Entrada: ${entryPrice.toFixed(selectedMarket.pricePrecision || 2)}, Cantidad: ${amount.toFixed(selectedMarket.precision.amount || 2)}`);
+            console.log(`LOG: [Bot Open Position] SL: ${stopLossPrice?.toFixed(selectedMarket.pricePrecision || 2) || 'N/A'}, TP: ${takeProfitPrice?.toFixed(selectedMarket.pricePrecision || 2) || 'N/A'}`);
+
+            if (stopLossPrice && currentPrice <= stopLossPrice) {
+                actionToExecute = 'sell';
+                orderDataToExecute = {
+                    symbol: selectedMarket.symbol,
+                    side: 'SELL',
+                    orderType: 'MARKET', 
+                    quantity: amount,
+                    price: currentPrice, 
+                };
+                console.warn(`[Bot Action] ¡STOP LOSS ALCANZADO! Precio actual (${currentPrice.toFixed(selectedMarket.pricePrecision || 2)}) <= SL (${stopLossPrice.toFixed(selectedMarket.pricePrecision || 2)}). Preparando VENTA.`);
+                toast({
+                    title: "¡Stop Loss Activado!",
+                    description: `El bot vendió ${amount.toFixed(selectedMarket.precision.amount || 2)} ${selectedMarket.baseAsset} a ${currentPrice.toFixed(selectedMarket.pricePrecision || 2)} ${selectedMarket.quoteAsset}.`,
+                    variant: "destructive",
+                });
+            }
+            else if (takeProfitPrice && currentPrice >= takeProfitPrice) {
+                actionToExecute = 'sell';
+                orderDataToExecute = {
+                    symbol: selectedMarket.symbol,
+                    side: 'SELL',
+                    orderType: 'MARKET',
+                    quantity: amount,
+                    price: currentPrice, 
+                };
+                console.log(`[Bot Action] ¡TAKE PROFIT ALCANZADO! Precio actual (${currentPrice.toFixed(selectedMarket.pricePrecision || 2)}) >= TP (${takeProfitPrice.toFixed(selectedMarket.pricePrecision || 2)}). Preparando VENTA.`);
+                toast({
+                    title: "¡Take Profit Activado!",
+                    description: `El bot vendió ${amount.toFixed(selectedMarket.precision.amount || 2)} ${selectedMarket.baseAsset} a ${currentPrice.toFixed(selectedMarket.pricePrecision || 2)} ${selectedMarket.quoteAsset}.`,
+                    variant: "default",
+                });
+            } else {
+                console.log("[Bot Cycle] Posición abierta, pero ni SL ni TP activados. Manteniendo posición.");
+                actionToExecute = 'hold'; 
+            }
+        }
+
+        // Si no se activó SL/TP (o no hay posición abierta), pedir a la estrategia la decisión de entrada/salida
+        if (actionToExecute === 'hold') { 
+            console.log("[Bot Cycle] No hay SL/TP activos o posición. Consultando la estrategia de trading (decideTradeActionAndAmount)...");
+            
+            const strategyDecision = decideTradeActionAndAmount({
+                selectedMarket,
+                currentMarketPriceHistory, 
+                currentPrice,
+                allBinanceBalances,
+                botOpenPosition, 
+                selectedMarketRules,
+                logStrategyMessage: (msg: string, details?: any) => console.log(`[Strategy Output - decideTradeActionAndAmount] ${msg}`, details || '')
+            });
+            
+            actionToExecute = strategyDecision.action;
+            orderDataToExecute = strategyDecision.orderData;
+            
+            console.log(`LOG: [Bot Cycle] 'decideTradeActionAndAmount' decidió: { action: "${actionToExecute.toUpperCase()}", orderData: ${orderDataToExecute ? JSON.stringify(orderDataToExecute) : 'undefined'} }`);
+        }
+
+        // --- Colocación de Orden a través de Endpoint de API ---
+        if (actionToExecute !== 'hold' && orderDataToExecute) {
+            console.log(`[Bot Cycle] Decisión final: ${actionToExecute.toUpperCase()}. Evaluando condiciones para colocar orden...`);
+            console.log(`[Bot Cycle] Detalles de la orden propuesta:`, orderDataToExecute);
+
+            if (isPlacingOrder) {
+                console.warn("[Bot Cycle] YA HAY UNA ORDEN EN PROCESO. Saltando la colocación de esta orden para evitar duplicados.");
+                setPlaceOrderError("Ya hay una orden en proceso. Por favor, espera.");
+                if (onBotAction) {
+                    onBotAction({
+                        type: 'strategyExecuted',
+                        success: false, 
+                        timestamp: Date.now(),
+                        data: { action: 'hold' }, 
+                        message: `Decisión de Estrategia: ${actionToExecute.toUpperCase()} - Orden no enviada (otra en proceso).`
+                    });
+                }
+                console.groupEnd(); 
+                return; 
+            }
+
+            setIsPlacingOrder(true); 
+            setPlaceOrderError(null); 
+
+            try {
+                const endpoint = '/api/binance/trade';
+                console.log(`LOG: [API Call] Bot llamando al endpoint de trade: ${endpoint} con body:`, JSON.stringify(orderDataToExecute, null, 2));
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderDataToExecute),
+                });
+
+                const tradeResult: TradeEndpointResponse = await response.json();
+                if (!response.ok || !tradeResult.success) {
+                    const errorMessage = tradeResult.error || tradeResult.message || "Error desconocido al colocar la orden.";
+                    console.error(`ERROR: [API Response] Fallo al colocar la orden: ${errorMessage}`, tradeResult.details);
+                    setPlaceOrderError(errorMessage);
+                    toast({
+                        title: "Error al colocar orden del bot",
+                        description: errorMessage,
+                        variant: "destructive",
+                    });
+
+                    if (onBotAction) {
+                        onBotAction({ 
+                            type: 'orderPlaced', 
+                            success: false, 
+                            timestamp: Date.now(),
+                            details: tradeResult, 
+                            data: { action: actionToExecute as 'buy' | 'sell' } 
+                        });
+
+                    }
+                } else {
+                    const orderDetails: BinanceOrderResult = tradeResult.data!;
+                    console.log(`LOG: [API Response] Orden colocada con éxito. Order ID: ${orderDetails?.orderId}`, orderDetails);
+                    setBotLastActionTimestamp(Date.now());
+                    
+                    if (onBotAction) {
+                        onBotAction({ 
+                            type: 'orderPlaced', 
+                            success: true, 
+                            timestamp: Date.now(),
+                            details: tradeResult, 
+                            data: { action: actionToExecute as 'buy' | 'sell' } 
+                        });
+                    }
+
+                    if (actionToExecute === 'buy') {
+                        if (orderDetails?.executedQty && orderDetails?.cummulativeQuoteQty && orderDetails?.transactTime) {
+                            const executedQtyNum = parseFloat(orderDetails.executedQty);
+                            const cummulativeQuoteQtyNum = parseFloat(orderDetails.cummulativeQuoteQty);
+                            const entryPrice = executedQtyNum > 0 ? cummulativeQuoteQtyNum / executedQtyNum : 0;
+                            const executedAmount = executedQtyNum;
+
+                            // Definir Stop Loss y Take Profit porcentual
+                            const stopLossPrice = entryPrice * (1 - 0.02); // 2% de pérdida
+                            const takeProfitPrice = entryPrice * (1 + 0.04); // 4% de ganancia
+
+                            setBotOpenPosition({
+                                marketId: selectedMarket.id,
+                                entryPrice: parseFloat(entryPrice.toFixed(selectedMarket.pricePrecision || 2)),
+                                amount: parseFloat(executedAmount.toFixed(selectedMarket.precision.amount || 2)),
+                                type: 'buy',
+                                timestamp: Math.floor(orderDetails.transactTime),
+                                stopLossPrice: parseFloat(stopLossPrice.toFixed(selectedMarket.pricePrecision || 2)),
+                                takeProfitPrice: parseFloat(takeProfitPrice.toFixed(selectedMarket.pricePrecision || 2)),
+                            });
+                            toast({
+                                title: "¡Orden de Compra Exitosa!",
+                                description: `El bot compró ${executedAmount.toFixed(selectedMarket.precision.amount || 2)} ${selectedMarket.baseAsset} @ ${entryPrice.toFixed(selectedMarket.pricePrecision || 2)} ${selectedMarket.quoteAsset}. SL: ${stopLossPrice.toFixed(selectedMarket.pricePrecision || 2)}, TP: ${takeProfitPrice.toFixed(selectedMarket.pricePrecision || 2)}.`,
+                                variant: "default",
+                            });
+                            setSignalCounts(prev => ({ ...prev, buy: prev.buy + 1 }));
+
+                        } else {
+                            console.warn("[useTradingBot] Detalles de orden de compra incompletos para actualizar la posición. OrderResult:", orderDetails);
+                            toast({
+                                title: "Orden de Compra Exitosa (parcial)",
+                                description: "La orden se colocó pero los detalles de actualización de posición fueron incompletos.",
+                                variant: "default",
+                            });
+                        }
+                    } else if (actionToExecute === 'sell') {
+                        setBotOpenPosition(null); // Borrar la posición abierta al vender
+                        toast({
+                            title: "¡Orden de Venta Exitosa!",
+                            description: `El bot vendió la posición de ${botOpenPosition?.amount.toFixed(selectedMarket.precision.amount || 2)} ${selectedMarket.baseAsset} @ ${currentPrice?.toFixed(selectedMarket.pricePrecision || 2)} ${selectedMarket.quoteAsset}.`,
+                            variant: "default",
+                        });
+                        setSignalCounts(prev => ({ ...prev, sell: prev.sell + 1 }));
+                    }
+                }
+            } catch (fetchError: any) {
+                console.error("[useTradingBot] Error de red o en la respuesta de la API (fetch catch):", fetchError);
+                const errorMessage = fetchError.message || "Error de conexión con la API de Binance.";
+                setPlaceOrderError(errorMessage);
+                toast({
+                    title: "Error de conexión",
+                    description: errorMessage,
+                    variant: "destructive",
+                });
+
+                if (onBotAction) {
+                    onBotAction({ 
+                        type: 'orderPlaced', 
+                        success: false, 
+                        timestamp: Date.now(),
+                        details: { error: errorMessage }, 
+                        data: { action: actionToExecute as 'buy' | 'sell' } 
+                    });
+                }         
+            } finally {
+                setIsPlacingOrder(false); // Siempre resetea isPlacingOrder
+            }
+        } else {
+            console.log(`[Bot Cycle] No se decidió acción para ejecutar (${actionToExecute}) o orderDataToExecute es undefined. Saltando colocación de orden.`);
+            if (onBotAction) {
+                onBotAction({
+                    type: 'strategyExecuted',
+                    success: true, 
+                    timestamp: Date.now(),
+                    data: { action: 'hold' }, 
+                    message: `Decisión de Estrategia: HOLD (No se tomó acción de trading en este ciclo).`
+                });
+            }
+            setSignalCounts(prev => ({ ...prev, hold: prev.hold + 1 }));
+        }
+        console.groupEnd(); 
+    }, [
+        isBotRunning,
+        selectedMarket,
+        currentMarketPriceHistory,
+        currentPrice,
+        allBinanceBalances,
+        botOpenPosition,
+        selectedMarketRules,
+        isPlacingOrder,
+        toast,
+        onBotAction,
+        log,
+        botLastActionTimestamp, 
+        setBotOpenPosition,
+        setBotLastActionTimestamp,
+        setPlaceOrderError,
+        setIsPlacingOrder,
+        setSignalCounts,
+    ]);
+
+    // ======================================================================================================
+    // Efecto para gestionar la bandera isMounted.
+    // ======================================================================================================
+    useEffect(() => {
+        isMounted.current = true; 
+        console.log("LOG: [useTradingBot - Lifecycle] Componente montado. isMounted = true.");
+        return () => {
+            isMounted.current = false; 
+            console.log("LOG: [useTradingBot - Lifecycle] Componente desmontándose. isMounted = false.");
+        };
+    }, []);
+
+    // ======================================================================================================
+    // Efecto para la Carga Inicial de Reglas del Mercado y el Historial de Velas (OHLCV).
+    // ======================================================================================================
+    useEffect(() => {
+        if (botIntervalRef.current) {
+            clearInterval(botIntervalRef.current);
+            botIntervalRef.current = null;
+            console.log("[useTradingBot] Limpiando intervalo anterior de estrategia.");
+        }
+        if (priceFetchIntervalRef.current) {
+            clearInterval(priceFetchIntervalRef.current);
+            priceFetchIntervalRef.current = null;
+            console.log("[useTradingBot] Limpiando intervalo anterior de fetching de precios.");
+        }
+
+        const fetchMarketRulesAndKlines = async () => {
+            console.groupCollapsed(`LOG: [useTradingBot - Init] Iniciando la carga de datos fundamentales para ${selectedMarket?.symbol || 'N/A'}`);
+            if (!selectedMarket?.symbol) {
+                console.log("[useTradingBot] Ausencia de mercado seleccionado para la carga de reglas. La inicialización se detiene.");
+                if (isMounted.current) {
+                    setSelectedMarketRules(null);
+                    setRulesLoading(false);
+                    setCurrentMarketPriceHistory([]); 
+                    setCurrentPrice(null);
+                    setIsDataLoaded(false); 
+                } else {
+                    console.warn("WARN: [useTradingBot - Init] Componente desmontado, no se actualiza el estado por falta de mercado.");
+                }
+                console.groupEnd();
+                return;
+            }
+
+            if (isDataLoaded && selectedMarketRules?.symbol === selectedMarket.symbol && currentMarketPriceHistory.length > 0) {
+                console.log(`LOG: [useTradingBot - Init] Los datos fundamentales para ${selectedMarket.symbol} ya han sido cargados y se encuentran en estado estable. Se omite la recarga.`);
+                console.groupEnd();
+                return;
+            }
+
+            if (isMounted.current) {
+                setRulesLoading(true);
+                setRulesError(null); 
+                setIsDataLoaded(false); 
+            } else {
+                console.warn("WARN: [useTradingBot - Init] Componente desmontado, no se resetea el estado de carga inicial.");
+                console.groupEnd();
+                return;
+            }
+            
+            console.log(`LOG: [useTradingBot - Init] Iniciando el proceso de adquisición de reglas y series de velas para ${selectedMarket.symbol}...`);
+            try {
+                console.log(`LOG: [useTradingBot - Init] Fetching exchange-info for ${selectedMarket.symbol}`);
+                const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
+                if (!rulesResponse.ok) {
+                    const errorText = await rulesResponse.text(); 
+                    console.error(`ERROR: [useTradingBot - Init] Fallo HTTP en la carga de reglas: ${rulesResponse.status} - ${errorText}`);
+                    throw new Error(`Error HTTP! status: ${rulesResponse.status} - ${errorText}`);
+                }
+                const rulesData: ApiResult<any> = await rulesResponse.json(); 
+                console.log(`LOG: [useTradingBot - Init] Raw rulesData received:`, rulesData);
+                
+                if (rulesData.success && rulesData.data) { 
+                    const ccxtMarketInfo = rulesData.data;
+
+                    const parseMarketRules = (marketInfo: any): MarketRules => {
+                        const lotSizeFilter = marketInfo.info.filters.find((f: any) => f.filterType === 'LOT_SIZE');
+                        const minNotionalFilter = marketInfo.info.filters.find((f: any) => f.filterType === 'MIN_NOTIONAL');
+                        const priceFilter = marketInfo.info.filters.find((f: any) => f.filterType === 'PRICE_FILTER');
+
+                        return {
+                            symbol: marketInfo.symbol,
+                            status: marketInfo.active ? 'TRADING' : 'BREAK', 
+                            baseAsset: marketInfo.base,
+                            quoteAsset: marketInfo.quote,
+                            baseAssetPrecision: marketInfo.precision.base,
+                            quotePrecision: marketInfo.precision.quote,
+                            icebergAllowed: marketInfo.info.icebergAllowed,
+                            ocoAllowed: marketInfo.info.ocoAllowed,
+                            quoteOrderQtyMarketAllowed: marketInfo.info.quoteOrderQtyMarketAllowed,
+                            isSpotTradingAllowed: marketInfo.info.isSpotTradingAllowed,
+                            isMarginTradingAllowed: marketInfo.info.isMarginTradingAllowed,
+                            filters: marketInfo.info.filters, 
+                            lotSize: {
+                                minQty: parseFloat(lotSizeFilter?.minQty || '0'),
+                                maxQty: parseFloat(lotSizeFilter?.maxQty || '0'),
+                                stepSize: parseFloat(lotSizeFilter?.stepSize || '0'),
+                            },
+                            minNotional: {
+                                minNotional: parseFloat(minNotionalFilter?.minNotional || '0'),
+                            },
+                            priceFilter: {
+                                minPrice: parseFloat(priceFilter?.minPrice || '0'),
+                                maxPrice: parseFloat(priceFilter?.maxPrice || '0'),
+                                tickSize: parseFloat(priceFilter?.tickSize || '0'),
+                            },
+                            precision: {
+                                price: marketInfo.precision.price,
+                                amount: marketInfo.precision.amount,
+                                base: marketInfo.precision.base, 
+                                quote: marketInfo.precision.quote 
+                            }
+                        };
+                    };
+                    
+                    const parsedRules: MarketRules = parseMarketRules(ccxtMarketInfo);
+                    
+                    if (isMounted.current) {
+                        setSelectedMarketRules(parsedRules);
+                        console.log(`LOG: [useTradingBot - Init] Parsed MarketRules:`, parsedRules);
+                    } else {
+                        console.warn("WARN: [useTradingBot - Init] Componente desmontado, no se actualizan las reglas de mercado.");
+                    }
+                                        
+                    console.log(`LOG: [useTradingBot - Init] Fetching klines for ${selectedMarket.symbol}`);
+                    const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
+                    
+                    if (!klinesResponse.ok) {
+                        const errorText = await klinesResponse.text();
+                        console.error(`ERROR: [useTradingBot - Init] Fallo HTTP en la carga de klines: ${klinesResponse.status} - ${errorText}`);
+                        throw new Error(`Error HTTP! status: ${klinesResponse.status} en la obtención de klines - ${errorText}`);
+                    }
+                    const klinesData: ApiResult<KLine[]> = await klinesResponse.json(); // Usar KLine aquí
+                    console.log("LOG: [useTradingBot - Init] Raw KLines data received:", klinesData);
+
+                    const klinesArray = klinesData.data || (klinesData as any).klines; 
+                    if (klinesData.success && Array.isArray(klinesArray) && klinesArray.length > 0) {
+                        console.log("LOG: [useTradingBot - Init] Klines encontrados en 'data' o 'klines' propiedad.");
+
+                        // Aquí se anota el historial completo con los indicadores
+                        const historyWithIndicators = annotateMarketPriceHistory(klinesArray);
+                        
+                        if (isMounted.current) { 
+                            setCurrentMarketPriceHistory(historyWithIndicators);
+                            // Tomar el closePrice de la última vela anotada como el precio actual
+                            setCurrentPrice(historyWithIndicators[historyWithIndicators.length - 1]?.closePrice || null); 
+                            console.log(`LOG: [useTradingBot - Init] La serie histórica inicial de ${historyWithIndicators.length} velas reales ha sido cargada con éxito.`);
+                            setIsDataLoaded(true); 
+                            console.log(`[useTradingBot - Init] La carga fundamental de reglas y velas ha concluido.`);
+                        } else {
+                            console.warn("WARN: [useTradingBot - Init] Componente desmontado, no se actualizan historial/precio inicial.");
+                        }
+
+                    } else {
+                        console.warn("[useTradingBot - Init] No fue posible obtener una serie histórica de velas válida o esta se encuentra vacía. Detalles:", klinesData);
+                        if (isMounted.current) { 
+                            setCurrentMarketPriceHistory([]);
+                            setCurrentPrice(null);
+                            setRulesError("No se pudieron cargar velas históricas iniciales. Verifique la validez del símbolo y la disponibilidad de datos."); 
+                            setIsDataLoaded(false); 
+                        } else {
+                            console.warn("WARN: [useTradingBot - Init] Componente desmontado, no se actualiza estado por fallo de klines.");
+                        }
+                    }
+                } else {
+                    const errorMessage = rulesData.message || "Error desconocido al cargar reglas del mercado desde exchange-info.";
+                    console.error("ERROR: [useTradingBot - Init] Error en la carga de reglas:", errorMessage, rulesData);
+                    if (isMounted.current) { 
+                        setRulesError(errorMessage);
+                        setIsDataLoaded(false); 
+                    }
+                    throw new Error(errorMessage); 
+                }
+            } catch (error: any) {
+                console.error("ERROR: [useTradingBot - Init] Falencia crítica en el proceso de carga inicial (reglas/velas):", error);
+                const errorMessage = error.message || "Error desconocido durante el proceso de carga fundamental de datos.";
+                if (isMounted.current) { 
+                    setRulesError(errorMessage);
+                    setIsDataLoaded(false); 
+                    setCurrentPrice(null);
+                    setCurrentMarketPriceHistory([]);
+                    toast({
+                        title: "Error al cargar datos de mercado",
+                        description: errorMessage,
+                        variant: "destructive",
+                    });
+                } else {
+                    console.warn("WARN: [useTradingBot - Init] Componente desmontado, no se actualiza estado en catch de carga inicial.");
+                }
+            } finally {
+                if (isMounted.current) { 
+                    setRulesLoading(false);
+                    console.log("[useTradingBot - Init] Carga inicial de reglas y velas finalizada.");
+                    console.groupEnd();
+                } else {
+                    console.log("LOG: [useTradingBot - Init] finally: Componente desmontado, no se actualiza rulesLoading.");
+                }
+            }
+        };
+
+        fetchMarketRulesAndKlines();
+        
+        return () => {
+            if (priceFetchIntervalRef.current) {
+                clearInterval(priceFetchIntervalRef.current);
+                priceFetchIntervalRef.current = null;
+                console.log("LOG: [useTradingBot - Init Cleanup] Intervalo de fetching de precios limpiado.");
+            }
+            if (botIntervalRef.current) {
+                clearInterval(botIntervalRef.current);
+                botIntervalRef.current = null;
+                console.log("LOG: [useTradingBot - Init Cleanup] Intervalo de estrategia limpiado.");
+            }
+        };
+    }, [selectedMarket?.symbol, toast, log, isMounted, setSelectedMarketRules, setRulesLoading, setCurrentMarketPriceHistory, setCurrentPrice, setIsDataLoaded, setRulesError, annotateMarketPriceHistory]); 
+
+    // ======================================================================================================
+    // Efecto para OBTENER LA ÚLTIMA VELA (O EL PRECIO ACTUAL SI NO HAY NUEVA VELA) y mantener el historial
+    // ======================================================================================================
+    useEffect(() => {
+        if (!selectedMarket?.symbol || !selectedMarketRules) {
+            if (priceFetchIntervalRef.current) {
+                clearInterval(priceFetchIntervalRef.current);
+                priceFetchIntervalRef.current = null;
+            }
+            console.log("[useTradingBot - Realtime Klines] No market or rules, stopping real-time fetches.");
+            return;
+        }
+
+        fetchRealTimeKlinesCallback(); 
+
+        if (priceFetchIntervalRef.current) {
+            clearInterval(priceFetchIntervalRef.current);
+        }
+        priceFetchIntervalRef.current = setInterval(fetchRealTimeKlinesCallback, 1000); 
+
+        return () => {
+            if (priceFetchIntervalRef.current) {
+                clearInterval(priceFetchIntervalRef.current);
+                priceFetchIntervalRef.current = null; // Corrected from botIntervalRef.current = null;
+            }
+            console.log("LOG: [useTradingBot - Realtime Klines Cleanup] Intervalo de klines limpiado.");
+        };
+    }, [selectedMarket?.symbol, selectedMarketRules, fetchRealTimeKlinesCallback]); 
+
+    // ======================================================================================================
+    // Efecto para iniciar/detener el bot
+    // ======================================================================================================
+    useEffect(() => {
+        if (isBotRunning) {
+            console.log("LOG: [Bot Control] Bot iniciado. Estableciendo intervalo de estrategia.");
+            if (botIntervalRef.current) {
+                clearInterval(botIntervalRef.current); 
+            }
+            botIntervalRef.current = setInterval(executeBotStrategy, botIntervalMs); // Usar botIntervalMs aquí
+            executeBotStrategy(); // Ejecutar inmediatamente al iniciar
+        } else {
+            console.log("LOG: [Bot Control] Bot detenido. Limpiando intervalo de estrategia.");
+            if (botIntervalRef.current) {
+                clearInterval(botIntervalRef.current);
+                botIntervalRef.current = null;
+            }
+        }
+
+        return () => {
+            if (botIntervalRef.current) {
+                clearInterval(botIntervalRef.current);
+                botIntervalRef.current = null;
+            }
+            console.log("LOG: [Bot Control Cleanup] Intervalo de estrategia limpiado.");
+        };
+    }, [isBotRunning, executeBotStrategy, botIntervalMs]); // Añadir botIntervalMs como dependencia
+
+    // ======================================================================================================
+    // Retorno del Hook
+    // ======================================================================================================
+    return {
+        isBotRunning,
+        toggleBotStatus: () => setIsBotRunning(prev => !prev),
+        botOpenPosition,
+        botLastActionTimestamp,
+        isPlacingOrder,
+        placeOrderError,
+        selectedMarketRules,
+        rulesLoading,
+        rulesError,
+        currentPrice,
+        currentMarketPriceHistory,
+        signalCounts, 
     };
-  }, [isBotRunning, selectedMarket, botIntervalMs, executeBotStrategy, selectedMarketRules, marketRulesError]);
-
-  const toggleBotStatus = useCallback(() => {
-    setIsBotRunning(prev => {
-      const newStatus = !prev;
-      console.log(`[useTradingBot] Cambiando estado del bot a: ${newStatus} para ${selectedMarket?.symbol || 'el mercado seleccionado'} en Mainnet.`);
-      setTimeout(() => {
-        toast({
-          title: `Bot ${newStatus ? "Iniciado" : "Detenido"} (Mainnet)`,
-          description: `El bot ahora está ${newStatus ? "activo" : "inactivo"} para ${selectedMarket?.symbol || 'el mercado actual'}.`,
-          variant: newStatus ? "default" : "destructive",
-        });
-      }, 0);
-      return newStatus;
-    });
-  }, [toast, selectedMarket, setIsBotRunning]);
-
-  return {
-    isBotRunning,
-    toggleBotStatus,
-    botOpenPosition,
-    botLastActionTimestamp,
-    isPlacingOrder,
-    placeOrderError,
-    selectedMarketRules,
-    marketRulesError,
-  };
 };
-
-    

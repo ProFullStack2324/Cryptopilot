@@ -1,165 +1,94 @@
-
 // src/app/api/binance/klines/route.ts
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
-import { MarketPriceDataPoint } from '@/lib/types';
 
-const BINANCE_API_KEY = process.env.BINANCE_API_KEY;
-const BINANCE_SECRET_KEY = process.env.BINANCE_SECRET_KEY;
-
-// Configura la instancia de Binance para la red principal ÚNICAMENTE
+// Configura la instancia de CCXT para Mainnet Binance Spot
 const exchangeMainnet = new ccxt.binance({
-  apiKey: BINANCE_API_KEY,
-  secret: BINANCE_SECRET_KEY,
-  options: {
-    'defaultType': 'spot', // O 'future' si es lo que usas principalmente
-  },
-  timeout: 10000,
-  enableRateLimit: true,
+    apiKey: process.env.BINANCE_API_KEY,
+    secret: process.env.BINANCE_SECRET_KEY,
+    options: {
+        'defaultType': 'spot',
+        // ✅ AJUSTE CRÍTICO: Habilitar el ajuste automático de la diferencia horaria
+        'adjustForTimeDifference': true,
+        // ✅ AJUSTE CRÍTICO: Aumentar la ventana de recepción a 60 segundos (60000ms)
+        'recvWindow': 60000, 
+    },
+    enableRateLimit: true, // Habilitar el control de límites de tasa
+    timeout: 10000,
 });
 
 export async function GET(request: Request) {
-  console.log('[API Klines Mainnet] Solicitud GET entrante.');
+    try {
+        const { searchParams } = new URL(request.url);
+        const symbolParam = searchParams.get('symbol'); // Ej: 'BTC/USDT'
+        const intervalParam = searchParams.get('interval') || '1m'; // Ej: '1m', '5m', '1h' (default: '1m')
+        const limitParam = searchParams.get('limit'); // Cantidad de velas a obtener (default de CCXT es 1000)
+        const limit = limitParam ? parseInt(limitParam, 10) : 200; // Por ejemplo, 200 velas
 
-  let symbol: string | null = null;
-  let timeframe: string | null = null;
-  let limitParam: string | null = null;
-  let limit: number | undefined;
+        if (!symbolParam) {
+            return NextResponse.json({ success: false, message: 'Falta el parámetro "symbol".' }, { status: 400 });
+        }
 
-  try {
-    const { searchParams } = new URL(request.url);
-    symbol = searchParams.get('symbol'); // Ej: BTCUSDT
-    timeframe = searchParams.get('timeframe'); // Ej: 1m, 5m, 1h, 1d
-    limitParam = searchParams.get('limit');
+        console.log(`[API/Binance/Klines] Obteniendo ${limit} velas de ${intervalParam} para ${symbolParam}...`);
 
-    // La lógica de isTestnet y networkType se elimina
-    console.log(`[API Klines Mainnet] Solicitud para Mainnet.`);
+        if (!exchangeMainnet.apiKey || !exchangeMainnet.secret) {
+            console.error('[API/Binance/Klines] Credenciales de Mainnet no configuradas.');
+            return NextResponse.json({
+                success: false,
+                message: 'Credenciales de Binance Mainnet no configuradas en variables de entorno.',
+            }, { status: 500 });
+        }
 
-    if (!symbol || !timeframe) {
-      console.warn(`[API Klines Mainnet] Error 400: Parámetros "symbol" y "timeframe" son requeridos.`);
-      return NextResponse.json(
-        { success: false, message: `Parámetros "symbol" y "timeframe" son requeridos para obtener klines en Mainnet.` },
-        { status: 400 }
-      );
+        try {
+            await exchangeMainnet.loadMarkets();
+            const ccxtSymbol = symbolParam.includes('/') ? symbolParam : `${symbolParam.replace(/USDT$/i, '')}/USDT`;
+
+            // Obtener velas (OHLCV) de Binance
+            // OHLCV: [timestamp, open, high, low, close, volume]
+            const ohlcv = await exchangeMainnet.fetchOHLCV(ccxtSymbol, intervalParam, undefined, limit);
+
+            if (!ohlcv || ohlcv.length === 0) {
+                console.warn(`[API/Binance/Klines] No se encontraron velas para ${ccxtSymbol} con intervalo ${intervalParam}.`);
+                return NextResponse.json({ success: true, symbol: ccxtSymbol, interval: intervalParam, klines: [] }, { status: 200 });
+            }
+
+            console.log(`[API/Binance/Klines] ${ohlcv.length} velas obtenidas para ${ccxtSymbol}.`);
+            return NextResponse.json({ success: true, symbol: ccxtSymbol, interval: intervalParam, klines: ohlcv }, { status: 200 });
+
+        } catch (err: any) {
+            console.error('[API/Binance/Klines] Error al obtener velas:', err);
+            if (err instanceof ccxt.AuthenticationError) {
+                return NextResponse.json({
+                    success: false,
+                    message: 'Error de autenticación al obtener velas. Verifica tus claves API.',
+                    details: err.message || err.toString(),
+                }, { status: 401 });
+            } else if (err instanceof ccxt.NetworkError) {
+                return NextResponse.json({
+                    success: false,
+                    message: 'Error de red al conectar con Binance para obtener velas.',
+                    details: err.message || err.toString(),
+                }, { status: 503 });
+            } else if (err instanceof ccxt.ExchangeError) {
+                // Errores específicos del exchange (ej. símbolo o intervalo inválido)
+                return NextResponse.json({
+                    success: false,
+                    message: 'Error del exchange al solicitar velas.',
+                    details: err.message || err.toString(),
+                }, { status: 400 });
+            }
+            return NextResponse.json({
+                success: false,
+                message: 'Error interno al obtener velas.',
+                details: err.message || err.toString(),
+            }, { status: 500 });
+        }
+    } catch (err: any) {
+        console.error('[API/Binance/Klines] Error genérico en GET:', err);
+        return NextResponse.json({
+            success: false,
+            message: 'Error genérico en endpoint GET de klines.',
+            details: err.message || err.toString(),
+        }, { status: 500 });
     }
-
-    if (exchangeMainnet.apiKey === undefined || exchangeMainnet.secret === undefined) {
-      console.error(`[API Klines Mainnet] Error: Las credenciales de Mainnet no están configuradas.`);
-      return NextResponse.json({
-        success: false,
-        message: `Las credenciales de Binance Mainnet no están configuradas en las variables de entorno (.env.local).`
-      }, { status: 500 });
-    }
-    console.log(`[API Klines Mainnet] Credenciales de Mainnet cargadas correctamente.`);
-
-    if (limitParam) {
-      const parsedLimit = parseInt(limitParam);
-      if (isNaN(parsedLimit) || parsedLimit <= 0) {
-        console.warn(`[API Klines Mainnet] Advertencia: Límite inválido "${limitParam}". Usando predeterminado.`);
-        limit = undefined;
-      } else {
-        limit = parsedLimit;
-      }
-    }
-
-    // Normalizar el símbolo para ccxt (ej: BTCUSDT -> BTC/USDT)
-    const ccxtSymbol = symbol.includes('/') ? symbol.toUpperCase() : `${symbol.toUpperCase().replace(/USDT$/, '')}/USDT`;
-    console.log(`[API Klines Mainnet] Procesando solicitud para: ${ccxtSymbol}, timeframe: ${timeframe}, limit: ${limit || 'ccxt default'}.`);
-
-    const klines = await exchangeMainnet.fetchOHLCV(
-      ccxtSymbol,
-      timeframe,
-      undefined,
-      limit
-    );
-
-    if (!klines || klines.length === 0) {
-      console.warn(`[API Klines Mainnet] No se recibieron klines para ${ccxtSymbol} (${timeframe}).`);
-      return NextResponse.json(
-        { success: true, message: `No se encontraron datos de klines para ${ccxtSymbol} (${timeframe}) en Mainnet.`, klines: [] },
-        { status: 200 }
-      );
-    }
-
-    console.log(`[API Klines Mainnet] Klines recibidos de Binance Mainnet: ${klines.length} puntos.`);
-
-    const transformedKlines: MarketPriceDataPoint[] = (klines as any[]).map(kline => {
-      if (!Array.isArray(kline) || kline.length < 6) {
-        console.warn(`[API Klines Mainnet] Dato kline incompleto o malformado, saltando:`, kline);
-        return null;
-      }
-      const [timestampMs, openPrice, highPrice, lowPrice, closePrice, tradeVolume] = kline;
-      if (
-        typeof timestampMs !== 'number' ||
-        typeof closePrice !== 'number' ||
-        typeof tradeVolume !== 'number'
-      ) {
-        console.warn(`[API Klines Mainnet] Datos numéricos faltantes o inválidos en kline: ${kline}`);
-        return null;
-      }
-      return {
-        timestamp: Math.floor(timestampMs / 1000),
-        price: closePrice,
-        volume: tradeVolume,
-      };
-    }).filter((kline): kline is MarketPriceDataPoint => kline !== null);
-
-    if (transformedKlines.length === 0) {
-      console.warn(`[API Klines Mainnet] Todos los klines filtrados después de la transformación.`);
-      return NextResponse.json(
-        { success: false, message: `Los datos de klines recibidos para ${ccxtSymbol} (${timeframe}) en Mainnet no pudieron ser procesados.`, klines: [] },
-        { status: 500 }
-      );
-    }
-
-    console.log(`[API Klines Mainnet] Klines transformados y listos para enviar: ${transformedKlines.length} puntos.`);
-    return NextResponse.json({
-      success: true,
-      message: `Klines para ${symbol} (${timeframe}) obtenidos con éxito de Mainnet.`,
-      klines: transformedKlines,
-    }, {
-      status: 200,
-      headers: {
-        'Cache-Control': 's-maxage=60, stale-while-revalidate=120',
-        'Content-Type': 'application/json',
-      }
-    });
-
-  } catch (error: any) {
-    let details: string | undefined = undefined;
-    let errorMessage = `Error desconocido al obtener Klines de Binance Mainnet.`;
-    let statusCode = 500;
-    let binanceErrorCode = undefined;
-
-    if (error instanceof ccxt.NetworkError) {
-      errorMessage = `Error de red o conexión con Binance Mainnet: ${error.message}`;
-      details = error.message;
-      statusCode = 503;
-    } else if (error instanceof ccxt.ExchangeError) {
-      errorMessage = `Error de la API de Binance Mainnet: ${error.message}`;
-      details = error.message;
-      statusCode = 502;
-      if (error.message.includes('code=')) {
-          const codeMatch = error.message.match(/code=(-?\d+)/);
-          if (codeMatch && codeMatch[1]) {
-              binanceErrorCode = parseInt(codeMatch[1], 10);
-              console.warn(`[API Klines Mainnet] Código de error de Binance extraído: ${binanceErrorCode}`);
-          }
-      }
-    } else if (error instanceof Error) {
-      errorMessage = `Error interno del servidor al procesar klines para ${symbol || 'símbolo desconocido'} en Mainnet: ${error.message}`;
-      details = error.message;
-      statusCode = 500;
-    } else {
-      console.error(`[API Klines Mainnet] Error inesperado para ${symbol || 'símbolo desconocido'}:`, error);
-      errorMessage = `Ocurrió un error inesperado al obtener klines para ${symbol || 'símbolo desconocido'} en Mainnet.`;
-      details = error.message || JSON.stringify(error);
-      statusCode = 500;
-    }
-    console.error(`[API Klines Mainnet] Error al procesar solicitud: ${errorMessage}`, error);
-    return NextResponse.json(
-      { success: false, message: errorMessage, details: details, binanceErrorCode: binanceErrorCode },
-      { status: statusCode }
-    );
-  }
 }

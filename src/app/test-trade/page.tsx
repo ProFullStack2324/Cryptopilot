@@ -1,3 +1,4 @@
+//src/app/test-trade/page.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -27,7 +28,7 @@ export default function TestTradePage() {
   useEffect(() => {
     const fetchBalance = async () => {
       try {
-        const res = await fetch('/api/binance/trade-testnet?balance=true');
+        const res = await fetch('/api/binance/trade-mainnet?balance=true');
         const data = await res.json();
         if (res.ok && data.balance) {
           setBalance(data.balance);

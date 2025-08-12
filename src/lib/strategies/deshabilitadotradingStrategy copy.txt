@@ -1,0 +1,248 @@
+// src/lib/strategies/tradingStrategy.ts
+
+import { Market, MarketRules, BinanceBalance, BotOpenPosition, TradeAction, OrderFormData, MarketPriceDataPoint } from '@/lib/types';
+
+// ======================================================================================================
+// Función Principal de Decisión de la Estrategia de Trading
+//
+// Esta función es el "cerebro" del bot. Analiza los datos de mercado y decide si comprar, vender o mantener.
+// Recibe todos los datos necesarios para tomar una decisión informada.
+// ======================================================================================================
+
+/**
+ * Define la estructura de la decisión de trading que la estrategia devuelve.
+ */
+export interface StrategyDecision {
+    action: 'buy' | 'sell' | 'hold'; // La acción que el bot debe tomar
+    orderData?: OrderFormData;       // Datos de la orden si la acción es 'buy' o 'sell'
+}
+
+/**
+ * Función principal de la estrategia que decide la acción del bot.
+ * Es una función pura: toma todos los datos necesarios como entrada y devuelve una decisión.
+ * NO interactúa directamente con el estado de React ni con APIs externas.
+ *
+ * @param params Objeto que contiene todos los datos necesarios para la estrategia.
+ * @returns Un objeto `StrategyDecision` que indica la acción y los datos de la orden.
+ */
+export const decideTradeActionAndAmount = (params: {
+    selectedMarket: Market;
+    currentMarketPriceHistory: MarketPriceDataPoint[]; // Ahora con indicadores ya calculados
+    currentPrice: number;
+    allBinanceBalances: BinanceBalance[];
+    botOpenPosition: BotOpenPosition | null;
+    selectedMarketRules: MarketRules;
+    logStrategyMessage: (message: string, details?: any) => void; // Función para loguear mensajes específicos de la estrategia
+}): StrategyDecision => {
+
+    const {
+        selectedMarket,
+        currentMarketPriceHistory,
+        currentPrice,
+        allBinanceBalances,
+        botOpenPosition,
+        selectedMarketRules,
+        logStrategyMessage
+    } = params;
+
+    const log = logStrategyMessage; // Usa la función de log proporcionada por el hook
+
+    // Asegurarse de que tenemos suficientes datos para que los indicadores sean válidos
+    // Los indicadores como MACD (EMAs de 12, 26 periodos y una señal de 9) y Bollinger Bands (SMA de 20)
+    // requieren un historial mínimo para un cálculo preciso. MACD necesita al menos 34-35 periodos.
+    const MIN_REQUIRED_HISTORY_FOR_INDICATORS = 50; // Para SMA50, BB, y asegurar RSI/MACD estabilidad
+    if (currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_INDICATORS) {
+        log(`HOLD: Historial insuficiente para cálculos de indicadores (${currentMarketPriceHistory.length}/${MIN_REQUIRED_HISTORY_FOR_INDICATORS} velas).`);
+        return { action: 'hold' };
+    }
+
+    // Extraer los dos últimos puntos de datos, que contienen los indicadores precalculados
+    const latestDataPoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
+    const prevDataPoint = currentMarketPriceHistory[currentMarketPriceHistory.length - 2];
+
+    // ======================================================================================================
+    // Recuperar valores de indicadores de las últimas velas
+    // Estos valores ya han sido calculados en useTradingBot.ts y adjuntados al MarketPriceDataPoint
+    // ======================================================================================================
+    const currentRSI = latestDataPoint.rsi;
+    const currentSMA10 = latestDataPoint.sma10;
+    const currentSMA20 = latestDataPoint.sma20;
+    const currentMACDLine = latestDataPoint.macdLine;
+    const currentSignalLine = latestDataPoint.signalLine;
+    const currentMACDHistogram = latestDataPoint.macdHistogram;
+    const currentUpperBB = latestDataPoint.upperBollingerBand;
+    const currentMiddleBB = latestDataPoint.middleBollingerBand;
+    const currentLowerBB = latestDataPoint.lowerBollingerBand;
+
+    const prevSMA10 = prevDataPoint.sma10;
+    const prevSMA20 = prevDataPoint.sma20;
+    const prevMACDLine = prevDataPoint.macdLine;
+    const prevSignalLine = prevDataPoint.signalLine;
+
+    // Verificar que los indicadores esenciales para esta estrategia estén definidos
+    // Esto es vital ya que los primeros puntos del historial tendrán 'undefined'
+    if (
+        currentRSI === undefined || currentSMA10 === undefined || currentSMA20 === undefined ||
+        currentMACDLine === undefined || currentSignalLine === undefined || currentMACDHistogram === undefined ||
+        currentUpperBB === undefined || currentMiddleBB === undefined || currentLowerBB === undefined ||
+        prevSMA10 === undefined || prevSMA20 === undefined ||
+        prevMACDLine === undefined || prevSignalLine === undefined
+    ) {
+        log("HOLD: Uno o más indicadores clave (RSI, SMA, MACD, BB) no están definidos en las últimas velas. Posiblemente falta de datos suficientes para el cálculo inicial.");
+        return { action: 'hold' };
+    }
+
+    log(`Current Price: ${currentPrice.toFixed(selectedMarket.pricePrecision)}`);
+    log(`Current SMA10: ${currentSMA10.toFixed(selectedMarket.pricePrecision)}`);
+    log(`Current SMA20: ${currentSMA20.toFixed(selectedMarket.pricePrecision)}`);
+    log(`Previous SMA10: ${prevSMA10.toFixed(selectedMarket.pricePrecision)}`);
+    log(`Previous SMA20: ${prevSMA20.toFixed(selectedMarket.pricePrecision)}`);
+    log(`Current MACD Line: ${currentMACDLine.toFixed(selectedMarket.pricePrecision)}, Signal Line: ${currentSignalLine.toFixed(selectedMarket.pricePrecision)}, Histogram: ${currentMACDHistogram.toFixed(selectedMarket.pricePrecision)}`);
+    log(`Current RSI: ${currentRSI.toFixed(2)}`);
+    log(`Current Bollinger Bands: Upper=${currentUpperBB.toFixed(selectedMarket.pricePrecision)}, Middle=${currentMiddleBB.toFixed(selectedMarket.pricePrecision)}, Lower=${currentLowerBB.toFixed(selectedMarket.pricePrecision)}`);
+
+
+    //let action: TradeAction = 'hold'; // Inicializamos la acción como 'hold'
+    let tradeQuantity: number = 0;
+
+    // Obtener los balances disponibles para el activo base (ej. BTC) y el activo de cotización (ej. USDT)
+    const baseAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.baseAsset)?.free || 0;
+    const quoteAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.quoteAsset)?.free || 0;
+
+    // ======================================================================================================
+    // Lógica de Venta (Si el bot tiene una posición abierta)
+    // PRIORIDAD: Monitoreo de Stop Loss y Take Profit ya se maneja en useTradingBot.ts.
+    // Aquí nos enfocamos en salir por condiciones de estrategia.
+    // ======================================================================================================
+    if (botOpenPosition) {
+        // Condición de Venta:
+        // 1. Cruce de SMA10 por debajo de SMA20 a la baja (Death Cross).
+        // 2. El precio actual está por debajo de la SMA10 (confirmación).
+        // 3. MACD Line cruza por debajo de Signal Line Y MACD Histogram es negativo.
+        // 4. RSI está por encima de un umbral de sobrecompra (ej. 65).
+        // 5. El precio está cerca o por encima de la banda superior de Bollinger (potencial reversión bajista).
+        if (
+            currentSMA10 < currentSMA20 &&               // SMA10 actual está por debajo de SMA20 actual
+            prevSMA10 >= prevSMA20 &&                    // Y SMA10 anterior estaba por encima o igual a SMA20 anterior (cruce a la baja)
+            currentPrice < currentSMA10 &&               // El precio actual está por debajo de SMA10 (confirmación de debilidad)
+            currentMACDLine < currentSignalLine &&       // MACD Line cruza por debajo de Signal Line
+            prevMACDLine >= prevSignalLine &&            // Y MACD Line anterior estaba por debajo o igual a Signal Line anterior (cruce a la baja)
+            currentMACDHistogram < 0 &&                  // Y el histograma es negativo (confirmación de impulso bajista)
+            currentRSI > 65 &&                           // RSI por encima de sobrecompra
+            currentPrice >= currentUpperBB * 0.99        // Precio está en o muy cerca de la banda superior (1% tolerancia)
+        ) {
+            action = 'sell';
+            log("Señal de Venta fuerte detectada: Cruce de SMA/MACD bajista, RSI sobrecomprado y precio en banda superior de Bollinger.");
+        }
+
+        if (action === 'sell') {
+            let quantityToSell = botOpenPosition.amount;
+
+            // Asegurarse de que la cantidad a vender cumple con la precisión y el paso (stepSize) del mercado
+            const stepSizeNum = selectedMarketRules.lotSize.stepSize;
+            quantityToSell = Math.floor(quantityToSell / stepSizeNum) * stepSizeNum;
+            quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarket.precision.amount));
+
+            if (quantityToSell <= 0 || quantityToSell < selectedMarketRules.lotSize.minQty) {
+                log(`HOLD: Cantidad a vender (${quantityToSell}) es cero, negativa o menor que la cantidad mínima de lotSize (${selectedMarketRules.lotSize.minQty}). No se puede vender.`, { quantityToSell });
+                return { action: 'hold' };
+            }
+            tradeQuantity = quantityToSell;
+
+        } else {
+            log("HOLD: Posición abierta. Esperando condiciones de venta de la estrategia.");
+            return { action: 'hold' };
+        }
+    }
+    // ======================================================================================================
+    // Lógica de Compra (Si el bot NO tiene una posición abierta)
+    // ======================================================================================================
+    else { // botOpenPosition es null
+        // Condición de Compra:
+        // 1. Cruce de SMA10 sobre SMA20 al alza (Golden Cross).
+        // 2. El precio actual está por encima de la SMA10 (confirmación).
+        // 3. MACD Line cruza por encima de Signal Line Y MACD Histogram es positivo.
+        // 4. RSI está por debajo de un umbral de sobreventa (ej. 35).
+        // 5. El precio está cerca o por debajo de la banda inferior de Bollinger (potencial reversión alcista).
+        if (
+            currentSMA10 > currentSMA20 &&               // SMA10 actual está por encima de SMA20 actual
+            prevSMA10 <= prevSMA20 &&                    // Y SMA10 anterior estaba por debajo o igual a SMA20 anterior (cruce al alza)
+            currentPrice > currentSMA10 &&               // El precio actual está por encima de SMA10 (confirmación de fuerza)
+            currentMACDLine > currentSignalLine &&       // MACD Line cruza por encima de Signal Line
+            prevMACDLine <= prevSignalLine &&            // Y MACD Line anterior estaba por debajo o igual a Signal Line anterior (cruce al alza)
+            currentMACDHistogram > 0 &&                  // Y el histograma es positivo (confirmación de impulso alcista)
+            currentRSI < 35 &&                           // RSI por debajo de sobreventa
+            currentPrice <= currentLowerBB * 1.01        // Precio está en o muy cerca de la banda inferior (1% tolerancia)
+        ) {
+            action = 'buy';
+            log("Señal de Compra fuerte detectada: Cruce de SMA/MACD alcista, RSI sobrevendido y precio en banda inferior de Bollinger.");
+        }
+
+        if (action === 'buy') {
+            const percentageToSpend = 0.05; // Ejemplo: 5% del balance de la divisa cotizada (USDT)
+            let quoteAmountToSpend = quoteAssetBalance * percentageToSpend;
+
+            // Asegurarse de que hay suficiente balance para la compra
+            if (quoteAmountToSpend <= 0) {
+                log(`HOLD: No hay suficiente balance de ${selectedMarket.quoteAsset} para comprar. Balance: ${quoteAssetBalance.toFixed(selectedMarket.precision.quote)}. Acción cambiada a 'hold'.`, { quoteAssetBalance, percentageToSpend });
+                return { action: 'hold' };
+            }
+
+            // Calcular la cantidad del activo base a comprar
+            let calculatedQuantity = quoteAmountToSpend / currentPrice;
+
+            // Redondear la cantidad a la precisión y stepSize del mercado
+            const stepSizeNum = selectedMarketRules.lotSize.stepSize;
+            calculatedQuantity = Math.floor(calculatedQuantity / stepSizeNum) * stepSizeNum;
+            calculatedQuantity = parseFloat(calculatedQuantity.toFixed(selectedMarket.precision.amount));
+
+            // Validar minNotional (valor mínimo de la orden en la divisa de cotización)
+            const minNotionalNum = selectedMarketRules.minNotional.minNotional;
+            const currentNotional = calculatedQuantity * currentPrice;
+
+            if (currentNotional < minNotionalNum) {
+                log(`La cantidad calculada (${calculatedQuantity} ${selectedMarket.baseAsset}, valor ${currentNotional.toFixed(selectedMarket.pricePrecision)} ${selectedMarket.quoteAsset}) no cumple con minNotional (${minNotionalNum} ${selectedMarket.quoteAsset}). Intentando ajustar...`, { currentNotional, minNotional: minNotionalNum });
+
+                // Ajustar la cantidad para cumplir con minNotional
+                let adjustedQuantity = (minNotionalNum / currentPrice);
+                adjustedQuantity = Math.ceil(adjustedQuantity / stepSizeNum) * stepSizeNum; // Redondea hacia arriba para asegurar cumplir el mínimo
+                adjustedQuantity = parseFloat(adjustedQuantity.toFixed(selectedMarket.precision.amount));
+
+                // Verificar si el balance es suficiente para el minNotional ajustado
+                if (adjustedQuantity * currentPrice > quoteAssetBalance) {
+                    log(`HOLD: No se puede ajustar al minNotional (${(adjustedQuantity * currentPrice).toFixed(selectedMarket.pricePrecision)}) sin exceder el balance disponible (${quoteAssetBalance.toFixed(selectedMarket.precision.quote)}). Acción cambiada a 'hold'.`, { adjustedQuantity, quoteAssetBalance });
+                    return { action: 'hold' };
+                }
+                calculatedQuantity = adjustedQuantity;
+                log(`Cantidad ajustada al minNotional: ${calculatedQuantity} ${selectedMarket.baseAsset}.`);
+            }
+
+            if (calculatedQuantity <= 0) {
+                log("HOLD: La cantidad de compra calculada es cero o negativa después de ajustes. Acción cambiada a 'hold'.", { calculatedQuantity });
+                return { action: 'hold' };
+            }
+            tradeQuantity = calculatedQuantity;
+        } else {
+            log("HOLD: No hay posición abierta y no se cumplen las condiciones de compra de la estrategia.");
+            return { action: 'hold' };
+        }
+    }
+
+    // --- Devolver la Decisión Final ---
+    // FIXED: La condición se hace explícita para evitar el error de TypeScript 2367.
+    if ((action === 'buy' || action === 'sell') && tradeQuantity > 0) { 
+        const orderData: OrderFormData = {
+            symbol: selectedMarket.symbol,
+            side: action.toUpperCase() as 'BUY' | 'SELL', // 'buy' -> 'BUY', 'sell' -> 'SELL'
+            orderType: 'MARKET', // Siempre usamos orden de mercado para ejecución instantánea
+            quantity: tradeQuantity,
+            price: currentPrice, // Precio de referencia (será ignorado para MARKET, pero es bueno tenerlo)
+        };
+        log(`Decisión final de la estrategia: ${action.toUpperCase()} ${tradeQuantity} ${selectedMarket.baseAsset}.`, { orderData });
+        return { action, orderData };
+    } else {
+        // Por si alguna validación anterior cambió la acción a 'hold' o la cantidad se volvió 0
+        log("HOLD: La estrategia decidió no tomar ninguna acción en este ciclo.");
+        return { action: 'hold' };
+    }
+};

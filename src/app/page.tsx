@@ -1,612 +1,658 @@
+"use client"; // Marca este componente como un Client Component en Next.js
 
-// src/app/page.tsx
-"use client";
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useTradingBot } from '@/hooks/useTradingBot'; // Importa tu hook de trading
+import { useToast } from '@/hooks/use-toast'; // Asegúrate de que la ruta sea correcta para useToast
+import {
+    Market,
+    BinanceBalance,
+    MarketPriceDataPoint,
+    MarketRules,
+    BotOpenPosition
+} from '@/lib/types'; // Importa tus tipos
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+// Importaciones de Shadcn/ui
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge"; // Para mostrar el estado del bot
+import { ScrollArea } from "@/components/ui/scroll-area"; // Para el área de historial de precios
 
-// Importaciones de TIPOS (usa 'type')
-import type {
-  AISignalData,
-  Market,
-  OrderFormData,
-  Trade,
-  MarketPriceDataPoint,
-  SignalEvent,
-  SimulatedPosition,
-  ParsedSignals,
-  SignalItem,
-  SmaCrossoverEvent,
-  AppHeaderProps,
-  MarketPriceChartProps,
-  TradeFormProps,
-  BalanceCardProps,
-  Balance
-} from "@/lib/types";
+// IMPORTACIÓN ÚNICA DE GRÁFICA: SOLO MarketChart encapsula toda la lógica de Recharts.
+import { getChartLegendItems, CHART_COLORS, MarketChart } from '@/components/MarketChart';
+import clsx from 'clsx';
 
-// Importaciones de VALORES (NO uses 'type')
-import { PRICE_HISTORY_POINTS_TO_KEEP } from "@/lib/types";
+// --- MOCK DE MERCADOS (se usará con datos reales de Binance) ---
 
-// Componentes UI
-import { BinanceBalancesDisplay } from '@/components/dashboard/binance-balances-display';
-import { AppHeader } from "@/components/dashboard/header";
-import { BalanceCard } from "@/components/dashboard/balance-card";
-import { TradeHistoryTable } from "@/components/dashboard/trade-history-table";
-import { BotControls } from "@/components/dashboard/bot-controls";
-import { SignalDisplay } from "@/components/dashboard/signal-display";
-import { PerformanceChart } from "@/components/dashboard/performance-chart";
-import { MarketSelector } from "@/components/trading/market-selector";
-import { MarketPriceChart } from "@/components/trading/market-price-chart";
-import TradeForm from '@/components/trading/TradeForm';
 
-// Componentes Shadcn UI
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-// Switch y Label eliminados ya que el toggle de Testnet se va.
-import { LineChart, PackageSearch, TrendingUp, TrendingDown, WalletCards, BotIcon, BookOpen, Wallet, DollarSign } from "lucide-react";
-// Hooks
-import { useToast } from "@/hooks/use-toast";
-import { useBinanceMarketData } from "@/hooks/useBinanceMarketData";
+const MOCK_MARKETS: Market[] = [
+    {
+        id: "BTCUSDT",
+        symbol: "BTCUSDT",
+        baseAsset: "BTC",
+        quoteAsset: "USDT",
+        active: true,
+        precision: { amount: 5, price: 2, base: 8, quote: 8 },
+        limits: { amount: { min: 0.00001, max: 100 }, price: { min: 0.01, max: 1000000 } , cost: { min: 10 } },
+        info: {},
+        pricePrecision: 2,
+        latestPrice: null,
+        change24h: null,
+    },
+    {
+        id: "ETHUSDT",
+        symbol: "ETHUSDT",
+        baseAsset: "ETH",
+        quoteAsset: "USDT",
+        active: true,
+        precision: { amount: 4, price: 2, base: 8, quote: 8 },
+        limits: { amount: { min: 0.0001, max: 1000 }, price: { min: 0.01, max: 10000 } , cost: { min: 10 } },
+        info: {},
+        pricePrecision: 2,
+        latestPrice: null,
+        change24h: null,
+    },
+];
 
-// NUEVA IMPORTACIÓN DEL HOOK DEL BOT
-import { useTradingBot } from '@/hooks/useTradingBot';
-import useBinanceBalances from "@/hooks/useBinanceBalances";
-import useBinanceTradeHistory from "@/hooks/useBinanceTradeHistory";
+// FUNCIÓN AUXILIAR ÚNICA: Para validar si un valor es un número válido (no null, undefined, o NaN).
+// Esta función debe estar declarada solo una vez.
+const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
-interface OrderBook {
-  bids: [number, number][];
-  asks: [number, number][];
-  timestamp: number;
-  datetime: string;
-}
+export default function TradingBotControlPanel() {
+    const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null);
+    const selectedMarket = useMemo(() => {
+        return MOCK_MARKETS.find(m => m.id === selectedMarketId) || null;
+    }, [selectedMarketId]);
 
-const MAX_AI_SIGNAL_EVENTS_ON_CHART = 5;
-const AI_TRADE_CONFIDENCE_THRESHOLD = 0.01;
-const BOT_AUTO_SIGNAL_INTERVAL_MS = 30000; // Reducido para pruebas más rápidas
+    const [currentBalances, setCurrentBalances] = useState<BinanceBalance[]>([]);
+    const [balancesLoading, setBalancesLoading] = useState(false);
+    const [balancesError, setBalancesError] = useState<string | null>(null);
 
-const isValidSignalItem = (item: any): item is SignalItem => {
-  return typeof item === 'object' && item !== null &&
-    typeof item.signal === 'string' && ['BUY', 'SELL', 'HOLD'].includes(item.signal) &&
-    typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1;
-};
+    // Estado para los logs detallados de la estrategia
+    const [strategyLogs, setStrategyLogs] = useState<{ timestamp: number; message: string; details?: any; }[]>([]);
 
-function SimulatedPnLDisplay({ position, currentPrice, market }: { position: SimulatedPosition | null; currentPrice: number | null; market: Market | null }) {
-  if (!position || currentPrice === null || !market) {
-    return (
-      <Card className="mt-4">
-        <CardHeader className="pb-2 pt-3">
-          <CardTitle className="text-sm flex items-center">
-            <WalletCards className="w-4 h-4 mr-2 text-muted-foreground" />
-            P&L Posición Abierta (Sim.)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-xs text-muted-foreground pb-3">
-          No hay posición abierta simulada o datos de precio insuficientes.
-        </CardContent>
-      </Card>
-    );
-  }
+    // Estado para conteo de señales
+    const [signalCount, setSignalCount] = useState({
+        buy: 0,
+        sell: 0,
+        hold: 0,
+    });
 
-  let pnl = 0;
-  let pnlPercentage = 0;
-  const quoteAsset = market.quoteAsset;
+    // Estado: Para mostrar errores del gráfico en la UI
+    const [chartDisplayError, setChartDisplayError] = useState<string | null>(null);
 
-  if (position.type === 'buy') {
-    pnl = (currentPrice - position.entryPrice) * position.amount;
-  } else {
-    pnl = (position.entryPrice - currentPrice) * position.amount;
-  }
+    const { toast } = useToast();
 
-  const costOfPosition = position.entryPrice * position.amount;
-  if (costOfPosition !== 0) {
-    pnlPercentage = (pnl / costOfPosition) * 100;
-  }
-
-  const pnlColor = pnl >= 0 ? 'text-green-500' : 'text-red-500';
-
-  return (
-    <Card className="mt-4 shadow-md">
-      <CardHeader className="pb-2 pt-3">
-        <CardTitle className="text-sm flex items-center">
-          {position.type === 'buy' ? <TrendingUp className="w-4 h-4 mr-2 text-green-500" /> : <TrendingDown className="w-4 h-4 mr-2 text-red-500" />}
-          P&L Posición {market.baseAsset} (Sim.)
-        </CardTitle>
-        <CardDescription className="text-xs">
-          Entrada: ${position.entryPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 })} | Cant.: {position.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="text-sm space-y-1 pb-3">
-        <p className={`font-semibold text-lg ${pnlColor}`}>
-          {pnl.toLocaleString('en-US', { style: 'currency', currency: quoteAsset, minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          <span className={`ml-2 text-xs ${pnlColor}`}>({pnlPercentage.toFixed(2)}%)</span>
-        </p>
-        <p className="text-xs text-muted-foreground">Precio Actual: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 })}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-export default function TradingPlatformPage() {
-  const [selectedMarket, setSelectedMarket] = useState<Market>({
-    id: "BTCUSDT",
-    symbol: "BTC/USDT", // CCXT usa este formato
-    name: "BTC/USDT", baseAsset: "BTC", quoteAsset: "USDT", latestPrice: null, change24h: null, pricePrecision: 2
-  });
-  const [botSignalData, setBotSignalData] = useState<AISignalData | null>(null);
-  const [botError, setBotError] = useState<string | null>(null);
-  const [isLoadingBotSignals, setIsLoadingBotSignals] = useState(false);
-  const [botSignalEvents, setBotSignalEvents] = useState<SignalEvent[]>([]);
-
-  const [smaCrossoverEvents, setSmaCrossoverEvents] = useState<SmaCrossoverEvent[]>([]);
-  const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>([]);
-  const [currentSimulatedPosition, setCurrentSimulatedPosition] = useState<SimulatedPosition | null>(null);
-
-  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
-  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
-
-  const [isBotRunningState, setIsBotRunningState] = useState<boolean>(false);
-  const [isLoadingTrade, setIsLoadingTrade] = useState(false);
-
-  const [orderBookData, setOrderBookData] = useState<OrderBook | null>(null);
-  const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
-  const [isLoadingOrderBook, setIsLoadingOrderBook] = useState(false);
-  const [isLoadingRecentTrades, setIsLoadingRecentTrades] = useState(false);
-  const [orderBookError, setOrderBookError] = useState<string | null>(null);
-  const [recentTradesError, setRecentTradesError] = useState<string | null>(null);
-  
-  // const [useTestnet, setUseTestnet] = useState<boolean>(false); // ELIMINADO
-
-  const { toast } = useToast();
-
-  const {
-    marketPrice: currentMarketPrice,
-    marketHistory: currentMarketHistoryFromHook,
-    availableMarkets,
-    isLoading: isMarketDataLoading,
-    error: marketDataError, // Añadido para manejar errores del hook de datos de mercado
-    // Las props timeframe y limit se gestionan internamente por el hook o se pasan si es necesario
-  } = useBinanceMarketData({ // Eliminada la prop useTestnet
-    symbol: selectedMarket?.id, // El hook usará este símbolo para las klines
-    initialFetch: true,
-  });
-
-  const {
-    balances: allBinanceBalances,
-    isLoadingBalances: isBinanceBalancesLoading,
-    balancesError: binanceBalancesError,
-    fetchBalances: fetchBinanceBalancesFromHook,
-  } = useBinanceBalances({ initialFetch: true }); // Eliminada la prop useTestnet
-
-  const {
-    tradeHistory,
-    isLoadingTradeHistory,
-    tradeHistoryError,
-    fetchTradeHistory: fetchTradeHistoryFromHook,
-  } = useBinanceTradeHistory({ // Eliminada la prop useTestnet
-    initialFetch: true,
-    symbol: selectedMarket?.symbol, // Pasar el símbolo CCXT
-    limit: 50,
-  });
-
-  const handlePlaceOrder = useCallback(async (orderData: OrderFormData): Promise<boolean> => {
-    console.log(`[handlePlaceOrder] Intentando ejecutar orden REAL (Mainnet): ${orderData.type} ${orderData.amount} de ${orderData.marketId}`);
-    setIsLoadingTrade(true);
-    let success = false;
-
-    try {
-        // El payload ya no necesita isTestnet, el backend /api/binance/trade opera en Mainnet por defecto ahora.
-        const tradePayload = {
-            symbol: selectedMarket?.symbol, // Asegurar que es el símbolo CCXT: BTC/USDT
-            type: orderData.orderType,
-            side: orderData.type,
-            amount: orderData.amount,
-            price: orderData.price, // Será undefined para órdenes de mercado
+    // Efecto para cargar balances de Binance y actualizarlos periódicamente
+    useEffect(() => {
+        const fetchBalances = async () => {
+            setBalancesLoading(true);
+            setBalancesError(null);
+            try {
+                const response = await fetch('/api/binance/trade?balance=true');
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                if (data.success && data.balance) {
+                    const fetchedBalances: BinanceBalance[] = Object.keys(data.balance.free).map(asset => ({
+                        asset: asset,
+                        free: parseFloat(data.balance.free[asset]),
+                        locked: parseFloat(data.balance.used[asset]),
+                    })).filter(b => b.free > 0 || b.locked > 0);
+                    setCurrentBalances(fetchedBalances);
+                    toast({
+                        title: "Balances Actualizados",
+                        description: "Balances de Binance cargados con éxito.",
+                        variant: "default",
+                        className: "bg-green-500 text-white",
+                    });
+                } else {
+                    throw new Error(data.message || "Error al cargar balances de Binance.");
+                }
+            } catch (error: any) {
+                console.error("Error al cargar balances:", error);
+                setBalancesError(error.message);
+                toast({
+                    title: "Error al cargar balances",
+                    description: error.message,
+                    variant: "destructive",
+                });
+            } finally {
+                setBalancesLoading(false);
+            }
         };
 
-        console.log("[handlePlaceOrder] Enviando payload al backend:", tradePayload);
-        
-        const endpoint = '/api/binance/trade'; // Siempre Mainnet
+        fetchBalances();
+        const balanceInterval = setInterval(fetchBalances, 10000); // Actualiza balances cada 10 segundos
+        return () => clearInterval(balanceInterval);
+    }, [toast]);
 
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(tradePayload),
+    // Callback para manejar las acciones del bot y actualizar los logs de estrategia
+    const onBotAction = useCallback((details: {
+        type: string;
+        message?: string;
+        data?: {
+            action?: string;
+            [key: string]: any;
+        };
+        details?: any;
+    }) => {
+        console.log("LOG: onBotAction - Recibiendo detalles del bot:", JSON.stringify(details, null, 2));
+        if (details.type === 'strategyExecuted') {
+            const decisionAction = details.data?.action || 'hold';
+            
+            // Log que muestra la acción de decisión REAL que se está procesando
+            console.log(`LOG: onBotAction - Decisión de estrategia procesada: "${decisionAction.toUpperCase()}"`);
+
+
+            const displayMessage = details.message || `Decisión de estrategia: ${decisionAction.toUpperCase()}`;
+
+            setStrategyLogs(prevLogs => [
+                {
+                    timestamp: Date.now(),
+                    message: displayMessage,
+                    details: { action: decisionAction, ...details.details }
+                },
+                ...prevLogs.slice(0, 99) // Mantiene un historial limitado de logs
+            ]);
+            
+            // Actualización de signalCount (el contador inconsistente)
+            setSignalCount(prev => ({
+                ...prev,
+                [decisionAction]: prev[decisionAction as 'buy' | 'sell' | 'hold'] + 1
+            }));
+        }
+    }, []);
+
+
+    // Usa el hook de trading
+    const {
+        isBotRunning,
+        toggleBotStatus,
+        botOpenPosition,
+        botLastActionTimestamp,
+        isPlacingOrder,
+        placeOrderError,
+        selectedMarketRules,
+        rulesLoading,
+        rulesError,
+        currentPrice,
+        currentMarketPriceHistory, // <-- Este es el historial de precios "crudo" del bot
+    } = useTradingBot({
+        selectedMarket: selectedMarket,
+        allBinanceBalances: currentBalances,
+        onBotAction: onBotAction,
+    });
+    const requiredCandles = 35; // Mínimo de velas necesarias para la estrategia
+
+    // LOG DEPURACIÓN Y ACTUALIZACIÓN DE ERROR EN UI: Inspeccionar el historial de precios directamente desde useTradingBot
+    useEffect(() => {
+        console.log("DEBUG: currentMarketPriceHistory (RAW):", currentMarketPriceHistory);
+        if (currentMarketPriceHistory.some(dp => !isValidNumber(dp.timestamp) || !isValidNumber(dp.closePrice))) {
+            const errorMessage = "ERROR: currentMarketPriceHistory contiene valores no numéricos en timestamp o closePrice. El gráfico podría fallar.";
+            console.error(errorMessage);
+            setChartDisplayError(errorMessage); // Muestra el error en la UI
+        } else if (chartDisplayError) {
+            setChartDisplayError(null); // Limpia el error si los datos vuelven a ser válidos
+        }
+    }, [currentMarketPriceHistory, chartDisplayError]);
+
+
+    // DECLARACIÓN ÚNICA Y FINAL de annotatedHistory: Garantiza datos limpios para MarketChart.
+    // Esta es la fuente de datos limpia para el gráfico y la lista de historial.
+    const annotatedHistory = useMemo(() => {
+        // Primer filtro: Asegurarse de que `currentMarketPriceHistory` exista y contenga objetos válidos,
+        // y que `timestamp` y `closePrice` sean números válidos.
+        const validPriceHistory = (currentMarketPriceHistory || []).filter(dp =>
+            dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
+        );
+
+        // Si no hay historial de precios válido, retorna un array vacío.
+        if (validPriceHistory.length === 0) {
+            console.warn("DEBUG: annotatedHistory es un array vacío después del filtro de validez.");
+            // No establecemos error aquí ya que un array vacío puede ser un estado normal (ej. al inicio).
+            return [];
+        }
+
+        // Anotar cada punto de datos de precio válido con su señal de estrategia.
+        const annotated = validPriceHistory.map((dp) => {
+            // Asegurarse de que `strategyLogs` sea un array válido antes de buscar.
+            const safeStrategyLogs = Array.isArray(strategyLogs) ? strategyLogs : [];
+
+            // Buscar un log de estrategia que coincida con el timestamp del punto de precio actual.
+            const matchingLog = safeStrategyLogs.find(log =>
+                log && typeof log === 'object' && isValidNumber(log.timestamp) && Math.abs(log.timestamp - dp.timestamp) < 2000
+            );
+
+            // Inicializar la señal como indefinida.
+            let validSignal: 'buy' | 'sell' | 'hold' | undefined = undefined;
+
+            // Si se encontró un log coincidente y tiene un detalle de acción válido (un string)
+            if (matchingLog?.details && typeof matchingLog.details.action === 'string') {
+                const rawSignal = matchingLog.details.action;
+                // Si la acción es una de las señales esperadas, asígnala.
+                if (rawSignal === 'buy' || rawSignal === 'sell' || rawSignal === 'hold') {
+                    validSignal = rawSignal;
+                }
+            }
+
+            return {
+                ...dp, // Incluye todas las propiedades originales del data point (timestamp, closePrice, etc.)
+                strategySignal: validSignal, // Añade la señal validada al punto de datos.
+            };
         });
 
-        const result = await response.json();
-
-        if (response.ok && result.success) {
-            toast({
-                title: `Orden de ${orderData.type === 'buy' ? 'Compra' : 'Venta'} Exitosa (Mainnet)`,
-                description: `Orden ${result.orderId || ''} para ${orderData.amount} ${selectedMarket?.baseAsset || ''} @ ${orderData.price || 'Mercado'} en ${orderData.marketId}. Estado: ${result.status}.`,
-                variant: "default",
-            });
-            success = true;
-            fetchBinanceBalancesFromHook();
-            if (selectedMarket?.symbol) {
-              fetchTradeHistoryFromHook({ symbol: selectedMarket.symbol });
-            }
-        } else {
-            console.error("[handlePlaceOrder] Error del backend:", result.message || result.details || 'Error desconocido');
-            toast({
-                title: `Error al Ejecutar Orden (Mainnet)`,
-                description: result.message || result.details || 'Error reportado por el backend.',
-                variant: "destructive",
-            });
+        // LOG DEPURACIÓN Y ACTUALIZACIÓN DE ERROR EN UI: Inspeccionar el historial de precios ANOTADO antes de pasarlo al gráfico
+        console.log("DEBUG: annotatedHistory (CLEANED & ANNOTATED):", annotated);
+        if (annotated.some(dp => !isValidNumber(dp.timestamp) || !isValidNumber(dp.closePrice))) {
+             const errorMessage = "ERROR: annotatedHistory contiene valores no numéricos después de la anotación. El gráfico podría fallar.";
+             console.error(errorMessage);
+             setChartDisplayError(errorMessage); // Muestra el error en la UI
+        } else if (chartDisplayError) {
+             setChartDisplayError(null); // Limpia el error si los datos vuelven a ser válidos
         }
-    } catch (error: any) {
-        console.error("[handlePlaceOrder] Error en la llamada fetch:", error);
-        toast({
-            title: "Error de Conexión",
-            description: `No se pudo completar la solicitud de orden: ${error.message || 'Error desconocido.'}`,
-            variant: "destructive",
-        });
-    } finally {
-        setIsLoadingTrade(false);
-    }
-    return success;
-  }, [
-    selectedMarket,
-    toast,
-    fetchBinanceBalancesFromHook,
-    fetchTradeHistoryFromHook,
-  ]);
+        return annotated;
+    }, [currentMarketPriceHistory, strategyLogs, chartDisplayError]); // Dependencias para el useMemo
 
-  const {
-    isBotRunning,
-    toggleBotStatus,
-    botOpenPosition,
-    botLastActionTimestamp,
-    isPlacingOrder: isBotPlacingOrder,
-    placeOrderError: botPlaceOrderError,
-    selectedMarketRules,
-    marketRulesError,
-  } = useTradingBot({ // Eliminada la prop useTestnet
-    selectedMarket,
-    currentMarketPriceHistory,
-    currentPrice: currentMarketPrice,
-    allBinanceBalances,
-    botIntervalMs: BOT_AUTO_SIGNAL_INTERVAL_MS,
-    isBotRunning: isBotRunningState, // Pasar el estado
-    setIsBotRunning: setIsBotRunningState, // Pasar la función para actualizar el estado
-    onBotAction: async (result) => {
-        if (result.type === 'orderPlaced' && result.success) {
-            console.log("[Page - onBotAction] Orden del bot colocada con éxito, refrescando balances e historial.");
-            fetchBinanceBalancesFromHook();
-            if (selectedMarket?.symbol) {
-              fetchTradeHistoryFromHook({ symbol: selectedMarket.symbol });
-            }
+
+    // Función para formatear y mostrar los puntos de datos del historial en la lista lateral.
+    const formatDataPoint = (dataPoint: MarketPriceDataPoint, pricePrecision: number, amountPrecision: number) => {
+        // Asegurarse de que dataPoint no sea null/undefined y tenga las propiedades esperadas
+        if (!dataPoint || !isValidNumber(dataPoint.timestamp)) {
+            console.error("formatDataPoint: dataPoint o timestamp inválido", dataPoint);
+            return null; // Retorna null si el punto de dato es inválido, para que no se renderice
         }
-    }
-  });
 
-  const clearSignalData = useCallback(() => {
-    setBotSignalData(null);
-    setBotError(null);
-    setBotSignalEvents([]);
-    setSmaCrossoverEvents([]);
-  }, []);
+        const timestamp = new Date(dataPoint.timestamp).toLocaleTimeString();
 
-  const handleGenerationError = useCallback((errorMsg: string, isAutoCall: boolean = false) => {
-    setBotSignalData(null);
-    setBotError(errorMsg);
-    if (!isAutoCall) {
-      toast({ title: "Error al Generar Señales del Bot", description: errorMsg, variant: "destructive" });
-    } else {
-      console.error("Error en ciclo automático del Bot:", errorMsg);
-      toast({ title: "Error en Ciclo del Bot", description: `Fallo al analizar ${selectedMarket?.name}. Revise la consola.`, variant: "destructive", duration: 3000 });
-    }
-  }, [toast, selectedMarket?.name]);
+        // Validar y formatear precios.
+        const openPrice = isValidNumber(dataPoint.openPrice) ? dataPoint.openPrice.toFixed(pricePrecision) : 'N/A';
+        const highPrice = isValidNumber(dataPoint.highPrice) ? dataPoint.highPrice.toFixed(pricePrecision) : 'N/A';
+        const lowPrice = isValidNumber(dataPoint.lowPrice) ? dataPoint.lowPrice.toFixed(pricePrecision) : 'N/A';
+        const closePrice = isValidNumber(dataPoint.closePrice) ? dataPoint.closePrice.toFixed(pricePrecision) : 'N/A';
+        const volume = isValidNumber(dataPoint.volume) ? dataPoint.volume.toFixed(amountPrecision) : 'N/A';
 
-  const latestPriceForPnl = useMemo(() => {
-    if (currentMarketPrice !== null) return currentMarketPrice;
-    if (currentMarketPriceHistory.length > 0) {
-      return currentMarketPriceHistory[currentMarketPriceHistory.length - 1]?.price || null;
-    }
-    return null;
-  }, [currentMarketPrice, currentMarketPriceHistory]);
- 
-  const toggleLeftSidebar = useCallback(() => setIsLeftSidebarOpen(prev => !prev), []);
-  const toggleRightSidebar = useCallback(() => setIsRightSidebarOpen(prev => !prev), []);
+        // Validar y formatear indicadores.
+        const sma10 = isValidNumber(dataPoint.sma10) ? dataPoint.sma10.toFixed(pricePrecision) : 'N/A';
+        const sma20 = isValidNumber(dataPoint.sma20) ? dataPoint.sma20.toFixed(pricePrecision) : 'N/A';
+        const macdLine = isValidNumber(dataPoint.macdLine) ? dataPoint.macdLine.toFixed(4) : 'N/A';
+        const signalLine = isValidNumber(dataPoint.signalLine) ? dataPoint.signalLine.toFixed(4) : 'N/A';
+        const macdHistogram = isValidNumber(dataPoint.macdHistogram) ? dataPoint.macdHistogram.toFixed(4) : 'N/A';
+        const rsi = isValidNumber(dataPoint.rsi) ? dataPoint.rsi.toFixed(2) : 'N/A';
+        const sma50 = isValidNumber(dataPoint.sma50) ? dataPoint.sma50.toFixed(pricePrecision) : 'N/A';
+        const upperBB = isValidNumber(dataPoint.upperBollingerBand) ? dataPoint.upperBollingerBand.toFixed(pricePrecision) : 'N/A';
+        const middleBB = isValidNumber(dataPoint.middleBollingerBand) ? dataPoint.middleBollingerBand.toFixed(pricePrecision) : 'N/A';
+        const lowerBB = isValidNumber(dataPoint.lowerBollingerBand) ? dataPoint.lowerBollingerBand.toFixed(pricePrecision) : 'N/A';
 
-  const handleMarketChange = useCallback((marketIdBinance: string) => {
-    const newMarket = availableMarkets.find((m: Market) => m.id === marketIdBinance);
-    if (newMarket) {
-      console.log(`[handleMarketChange] Cambiando a mercado: ${newMarket.name} (ID Binance: ${newMarket.id}, Símbolo CCXT: ${newMarket.symbol})`);
-      setSelectedMarket(newMarket);
-      clearSignalData();
-    } else {
-        console.warn(`[handleMarketChange] Mercado con ID de Binance ${marketIdBinance} no encontrado en availableMarkets.`);
-    }
-  }, [availableMarkets, clearSignalData]);
 
-  useEffect(() => {
-    fetchBinanceBalancesFromHook();
-  }, [fetchBinanceBalancesFromHook]);
-
-  useEffect(() => {
-    if (selectedMarket?.symbol) {
-      fetchTradeHistoryFromHook({ symbol: selectedMarket.symbol, limit: 50 });
-    }
-  }, [selectedMarket?.symbol, fetchTradeHistoryFromHook]);
-
-  useEffect(() => {
-    if (currentMarketHistoryFromHook && currentMarketHistoryFromHook.length > 0) {
-      setCurrentMarketPriceHistory(currentMarketHistoryFromHook);
-    } else if (!isMarketDataLoading && !marketDataError) {
-      setCurrentMarketPriceHistory([]);
-    }
-  }, [currentMarketHistoryFromHook, isMarketDataLoading, marketDataError]);
-
-  useEffect(() => {
-    const fetchMarketDetails = async () => {
-      if (!selectedMarket?.id) {
-         setOrderBookData(null);
-        setRecentTrades([]);
-        return;
-      }
-     };
-    fetchMarketDetails();
-  }, [selectedMarket?.id]);
-
-  const currentBaseAssetBalance = useMemo<number>(() => {
-    if (allBinanceBalances && selectedMarket && allBinanceBalances[selectedMarket.baseAsset]) {
-      return allBinanceBalances[selectedMarket.baseAsset].available || 0;
-    }
-    return 0;
-  }, [allBinanceBalances, selectedMarket]);
-
-  const currentQuoteAssetBalance = useMemo(() => {
-    if (allBinanceBalances && selectedMarket && allBinanceBalances[selectedMarket.quoteAsset]) {
-      return allBinanceBalances[selectedMarket.quoteAsset].available || 0;
-    }
-    return 0;
-  }, [allBinanceBalances, selectedMarket]);
-
-  const totalPortfolioValue = useMemo(() => {
-    if (allBinanceBalances && selectedMarket && currentMarketPrice) {
-      let totalValue = 0;
-      Object.entries(allBinanceBalances).forEach(([asset, balance]) => {
-        if (asset === selectedMarket.quoteAsset) {
-          totalValue += balance.available;
-        } else if (asset === selectedMarket.baseAsset && currentMarketPrice) {
-          totalValue += balance.available * currentMarketPrice;
-        }
-      });
-      return totalValue;
-    }
-    return null;
-  }, [allBinanceBalances, selectedMarket, currentMarketPrice]);
-
-  const usdtBalanceForHeader = useMemo(() => {
-    if (allBinanceBalances && allBinanceBalances['USDT']) {
-      return allBinanceBalances['USDT'].available;
-    }
-    return null;
-  }, [allBinanceBalances]);
-
-  // Calcular las clases del grid central dinámicamente
-  const centralColSpan = useMemo(() => {
-    if (isLeftSidebarOpen && isRightSidebarOpen) return "md:col-span-6";
-    if (isLeftSidebarOpen || isRightSidebarOpen) return "md:col-span-9";
-    return "md:col-span-12";
-  }, [isLeftSidebarOpen, isRightSidebarOpen]);
-
-  return (
-    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
-       <AppHeader
-        toggleLeftSidebar={toggleLeftSidebar}
-        isLeftSidebarOpen={isLeftSidebarOpen}
-        toggleRightSidebar={toggleRightSidebar}
-        isRightSidebarOpen={isRightSidebarOpen}
-        portfolioBalance={usdtBalanceForHeader}
-        isBotRunning={isBotRunning} // Usar el estado del hook useTradingBot
-        toggleBotStatus={toggleBotStatus} // Usar la función del hook useTradingBot
-        isBinanceBalancesLoading={isBinanceBalancesLoading}
-        binanceBalancesError={binanceBalancesError}
-      />
-      <main className="flex-1 overflow-hidden">
-        <div className="grid grid-cols-12 gap-0 md:gap-2 h-[calc(100vh-4rem-2rem)]"> {/* Ajuste de altura para footer */}
-           <aside className={`col-span-12 ${isLeftSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-1 md:p-2 flex flex-col gap-2 border-r border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out custom-scrollbar`}>
-             <Card>
-               <CardHeader>
-                 <CardTitle className="text-base flex items-center"><PackageSearch className="w-4 h-4 mr-2" />Libro de Órdenes</CardTitle>
-                 <CardDescription className="text-xs">Profundidad del mercado ({selectedMarket?.name})</CardDescription>
-               </CardHeader>
-               <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                 {isLoadingOrderBook ? (
-                   <p>Cargando Libro de Órdenes...</p>
-                 ) : orderBookError ? (
-                   <p className="text-red-500">Error: {orderBookError}</p>
-                 ) : orderBookData ? (
-                   <p>Libro de Órdenes (Datos Cargados - Implementar Display)</p>
-                 ) : (
-                   <p>(Libro de Órdenes No Disponible)</p>
-                 )}
-               </CardContent>
-             </Card>
-             <Separator className="my-2" />
-             <Card>
-               <CardHeader>
-                 <CardTitle className="text-base flex items-center"><LineChart className="w-4 h-4 mr-2" />Trades del Mercado</CardTitle>
-                 <CardDescription className="text-xs">Últimas transacciones ({selectedMarket?.name}).</CardDescription>
-               </CardHeader>
-               <CardContent className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                  {isLoadingRecentTrades ? (
-                     <p>Cargando Trades Recientes...</p>
-                  ) : recentTradesError ? (
-                      <p className="text-red-500">Error: {recentTradesError}</p>
-                  ) : recentTrades && recentTrades.length > 0 ? (
-                     <p>Trades del Mercado (Datos Cargados - Implementar Display)</p>
-                  ) : (
-                      <p>(Trades Recientes No Disponibles)</p>
-                  )}
-               </CardContent>
-             </Card>
-             <Separator className="my-2" />
-             <TradeHistoryTable trades={tradeHistory || []} isLoading={isLoadingTradeHistory} error={tradeHistoryError} />
-          </aside>
-
-          <section className={`col-span-12 ${centralColSpan} p-1 md:p-2 flex flex-col gap-2 transition-all duration-300 ease-in-out`}>
-            <div className="flex-grow-[3] min-h-[300px] md:min-h-0">
-              <MarketPriceChart
-                key={selectedMarket?.id}
-                marketId={selectedMarket?.id || "BTCUSDT"}
-                marketName={selectedMarket?.name || "BTC/USDT"}
-                priceHistory={currentMarketPriceHistory}
-                smaCrossoverEvents={smaCrossoverEvents}
-                aiSignalEvents={botSignalEvents}
-                isBotActive={isBotRunning} // Usar el estado del hook
-              />
+        return (
+            <div key={dataPoint.timestamp} className="text-xs text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 py-1 last:border-b-0">
+                <p><strong>Time:</strong> {timestamp}</p>
+                <p><strong>O:</strong> {openPrice} | <strong>H:</strong> {highPrice} | <strong>L:</strong> {lowPrice} | <strong>C:</strong> {closePrice} | <strong>V:</strong> {volume}</p>
+                <p><strong>SMA10:</strong> {sma10} | <strong>SMA20:</strong> {sma20}</p>
+                <p><strong>MACD:</strong> {macdLine} | <strong>Signal:</strong> {signalLine} | <strong>Hist:</strong> {macdHistogram}</p>
+                <p><strong>RSI:</strong> {rsi}</p>
             </div>
-            <div className="flex-grow-[2] min-h-[280px] md:min-h-0">
-              <Card className="col-span-1 shadow-lg h-full">
-                 <CardHeader>
-                   <CardTitle className="flex items-center"><DollarSign className="w-5 h-5 mr-2" />Órdenes de Mercado (Mainnet)</CardTitle>
-                  <CardDescription>Realiza órdenes de compra/venta directamente en Binance.</CardDescription>
-                 </CardHeader>
-                <CardContent className="h-[calc(100%-6.5rem)] flex items-center justify-center">
-                  {selectedMarket && (
-                    <TradeForm
-                      market={selectedMarket}
-                      currentPrice={currentMarketPrice}
-                      availableQuoteBalance={currentQuoteAssetBalance}
-                      availableBaseBalance={currentBaseAssetBalance}
-                      onPlaceOrder={handlePlaceOrder}
-                      isLoadingTrade={isLoadingTrade}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </section>
+        );
+    };
 
-          <aside className={`col-span-12 ${isRightSidebarOpen ? 'md:col-span-3' : 'md:hidden'} p-2 flex flex-col gap-2 border-l border-border bg-card/30 overflow-y-auto transition-all duration-300 ease-in-out`}>
-              <MarketSelector
-                 markets={availableMarkets}
-                selectedMarketId={selectedMarket?.id || "BTCUSDT"}
-                onMarketChange={handleMarketChange}
-              />
-             <Separator className="my-2" />
-              {/* Card para el Switch de Testnet ELIMINADO */}
-              <Tabs defaultValue="bot-controls" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 mb-2">
-                  <TabsTrigger value="bot-controls"><BotIcon className="w-4 h-4 mr-1" />Control Bot</TabsTrigger>
-                  <TabsTrigger value="balance"><Wallet className="w-4 h-4 mr-1" />Portafolio</TabsTrigger>
-                  <TabsTrigger value="metric-guide"><BookOpen className="w-4 h-4 mr-1" />Guía</TabsTrigger>
-                </TabsList>
+    const StrategyDashboard = ({
+        latest,
+        decision,
+        selectedMarket
+    }: {
+        latest: MarketPriceDataPoint | null;
+        decision: string;
+        selectedMarket: Market | null;
+    }) => {
+        if (!latest || !selectedMarket) return null;
 
-                <TabsContent value="bot-controls">
-                    <BotControls
-                        isBotRunning={isBotRunning} // Usar el estado del hook
-                        onToggleBot={toggleBotStatus} // Usar la función del hook
-                        // onGenerateSignals ya no se necesita aquí si el bot es automático
-                        isLoadingAiSignals={isLoadingBotSignals} // Mantener si se usa para mostrar carga de señales AI (si es una feature separada)
-                        aiSignalError={botError} // Mantener
-                        selectedMarketSymbol={selectedMarket?.symbol}
-                        marketRulesError={marketRulesError}
-                        areMarketRulesLoaded={!!selectedMarketRules}
-                    />
-                    <SignalDisplay
-                        signalData={botSignalData}
-                        isLoading={isLoadingBotSignals}
-                        error={botError}
-                    />
-                </TabsContent>
+        const pricePrecision = selectedMarket.pricePrecision;
+        // Validar que los valores sean números antes de llamar a toFixed.
+        const rsi = isValidNumber(latest.rsi) ? latest.rsi.toFixed(2) : 'N/A';
+        const macdLine = isValidNumber(latest.macdLine) ? latest.macdLine.toFixed(4) : 'N/A';
+        const signalLine = isValidNumber(latest.signalLine) ? latest.signalLine.toFixed(4) : 'N/A';
+        const macdHist = isValidNumber(latest.macdHistogram) ? latest.macdHistogram.toFixed(4) : 'N/A';
+        const sma10 = isValidNumber(latest.sma10) ? latest.sma10.toFixed(pricePrecision) : 'N/A';
+        const sma20 = isValidNumber(latest.sma20) ? latest.sma20.toFixed(pricePrecision) : 'N/A';
+        const volume = isValidNumber(latest.volume) ? latest.volume.toFixed(3) : 'N/A';
 
-                <TabsContent value="balance">
-                  <BalanceCard
-                    title={`Balance ${selectedMarket?.quoteAsset || "Quote"} (Binance)`}
-                    description={`Tu saldo disponible en ${selectedMarket?.quoteAsset || "Quote"} en Binance (Mainnet).`}
-                    balance={currentQuoteAssetBalance}
-                    asset={selectedMarket?.quoteAsset || "USD"}
-                    isLoading={isBinanceBalancesLoading}
-                    error={binanceBalancesError}
-                  />
-                   <PerformanceChart portfolioValue={totalPortfolioValue} />
-                   <BinanceBalancesDisplay
-                    balances={allBinanceBalances || {}}
-                    isLoading={isBinanceBalancesLoading}
-                    error={binanceBalancesError}
-                  />
-                  {selectedMarket && (
-                    <Card className="mt-4">
-                       <CardHeader className="pb-2 pt-3">
-                         <CardTitle className="text-sm">Activo: {selectedMarket.baseAsset}</CardTitle>
-                         <CardDescription className="text-xs">Información del Activo (Mainnet)</CardDescription>
-                       </CardHeader>
-                       <CardContent className="text-xs space-y-1">
-                        <p>Balance {selectedMarket.baseAsset}: <span className="font-semibold">{currentBaseAssetBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: selectedMarket.baseAsset === 'BTC' ? 8 : 6 })}</span></p>
-                        <p>Precio Actual: <span className="font-semibold text-primary">${(latestPriceForPnl)?.toLocaleString('en-US', { minimumFractionDigits: selectedMarket.pricePrecision || 2, maximumFractionDigits: selectedMarket.pricePrecision || 5 }) || 'N/A'}</span></p>
-                        <p>Cambio 24h: <span className={(selectedMarket.change24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{selectedMarket.change24h?.toFixed(2) || 'N/A'}%</span></p>
-                      </CardContent>
-                    </Card>
-                  )}
-                   <SimulatedPnLDisplay position={currentSimulatedPosition} currentPrice={latestPriceForPnl} market={selectedMarket} />
-                </TabsContent>
-                <TabsContent value="metric-guide">
-                  <Card>
-                    <CardHeader className="pb-2 pt-3">
-                      <CardTitle className="text-base flex items-center"><BookOpen className="w-4 h-4 mr-2 text-primary" />Guía de Métricas del Gráfico</CardTitle>
-                      <CardDescription className="text-xs">Explicación de los indicadores visualizados.</CardDescription>
+
+        const indicatorStatus = (condition: boolean) =>
+            condition ? "bg-green-200 text-green-900" : "bg-red-200 text-red-900";
+
+        return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 my-4">
+                <Card className={clsx("shadow-lg", decision === 'buy' ? "border-green-500" : decision === 'sell' ? "border-red-500" : "border-gray-300")}>
+                    <CardHeader>
+                        <CardTitle className="text-lg">Señal Actual</CardTitle>
+                        <CardDescription>{new Date(latest.timestamp).toLocaleTimeString()}</CardDescription>
                     </CardHeader>
-                    <CardContent className="text-sm">
-                      <Accordion type="single" collapsible className="w-full">
-                        <AccordionItem value="price-line">
-                            <AccordionTrigger>Línea de Precio (Gráfico Principal)</AccordionTrigger>
-                            <AccordionContent>
-                                <p>Representa el precio de cierre del activo ({selectedMarket?.name}) para cada intervalo de tiempo (ej. 1 minuto) en el período visualizado.</p>
-                            </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="sma-lines">
-                            <AccordionTrigger>Medias Móviles Simples (SMA)</AccordionTrigger>
-                            <AccordionContent>
-                                <p className="mb-1">Las SMAs suavizan los datos de precios para mostrar la tendencia general del mercado durante un período específico.</p>
-                                <ul className="list-disc pl-5 space-y-1 text-xs">
-                                    <li><span className="font-semibold text-[hsl(var(--chart-5))]">SMA 10 (Corta):</span> Media de los últimos 10 precios de cierre. Reacciona más rápido a los cambios.</li>
-                                    <li><span className="font-semibold text-[hsl(var(--chart-2))]">SMA 20 (Media):</span> Media de los últimos 20 precios de cierre.</li>
-                                    <li><span className="font-semibold text-[hsl(var(--chart-4))]">SMA 50 (Larga):</span> Media de los últimos 50 precios de cierre. Indica la tendencia a más largo plazo. Usada por el bot como referencia.</li>
-                                </ul>
-                                <p className="mt-2 text-xs">Los cruces entre estas medias pueden indicar posibles puntos de compra o venta.</p>
-                            </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="macd-indicator">
-                            <AccordionTrigger>Indicador MACD (Convergencia/Divergencia de Medias Móviles)</AccordionTrigger>
-                            <AccordionContent>
-                                <p className="mb-1">El MACD es un indicador de momentum que sigue tendencias. Muestra la relación entre dos medias móviles exponenciales (EMAs) del precio.</p>
-                                <ul className="list-disc pl-5 space-y-1 text-xs">
-                                    <li><span className="font-semibold text-[hsl(var(--chart-6))]">Línea MACD:</span> Diferencia entre la EMA de 12 períodos y la EMA de 26 períodos.</li>
-                                    <li><span className="font-semibold text-[hsl(var(--chart-7))]">Línea de Señal:</span> EMA de 9 períodos de la Línea MACD.</li>
-                                    <li><span className="font-semibold">Histograma MACD:</span> Diferencia entre la Línea MACD y la Línea de Señal. Barras verdes indican momentum alcista, rojas indican momentum bajista.</li>
-                                </ul>
-                                <p className="mt-2 text-xs">Los cruces de la Línea MACD sobre la Línea de Señal, o los cambios en el histograma, pueden generar señales de trading.</p>
-                            </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="bot-signals">
-                          <AccordionTrigger>Señales del Bot (Puntos Sólidos)</AccordionTrigger>
-                          <AccordionContent>
-                            <p className="mb-2">Los puntos <span className="font-semibold text-green-400">verdes sólidos</span> (COMPRA) y <span className="font-semibold text-red-400">rojos sólidos</span> (VENTA) en el gráfico representan las señales generadas por la <span className="font-semibold">estrategia actual de tu bot</span> (basada en SMA/MACD u otras que configures) que han desencadenado una <span className="font-semibold">operación REAL por el bot</span> (si está "iniciado").</p>
-                            <p className="mb-2 text-xs">El bot evalúa los indicadores y, si se cumplen las condiciones de la estrategia, ejecuta una orden en Binance.</p>
-                          </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="sma-crossover-signals">
-                          <AccordionTrigger>Señales de Cruce SMA (Puntos Claros)</AccordionTrigger>
-                          <AccordionContent>
-                            <p className="mb-2">Los puntos <span className="font-semibold text-green-600">verdes claros</span> y <span className="font-semibold text-red-600">rojos claros</span> indican cruces técnicos de las medias móviles (SMA10 vs SMA20) que se calculan visualmente en el gráfico. Pueden o no coincidir con las decisiones finales del bot, ya que el bot podría usar más factores o diferentes umbrales.</p>
-                          </AccordionContent>
-                        </AccordionItem>
-                      </Accordion>
+                    <CardContent>
+                        <p className={clsx("text-xl font-bold", {
+                            'text-green-600': decision === 'buy',
+                            'text-red-600': decision === 'sell',
+                            'text-gray-600': decision === 'hold'
+                        })}>
+                            {decision.toUpperCase()}
+                        </p>
+                        <p className="text-sm text-muted-foreground">Precio: {isValidNumber(latest.closePrice) ? latest.closePrice.toFixed(pricePrecision) : 'N/A'} {selectedMarket.quoteAsset}</p>
                     </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-           </aside>
-         </div>
-      </main>
-      <footer className="py-2 text-center text-xs text-muted-foreground border-t border-border">
-         © {new Date().getFullYear()} CryptoPilot. Operando en Binance Mainnet. Las operaciones son reales.
-     </footer>
-    </div>
-  );
+                </Card>
+
+                <Card>
+                    <CardHeader><CardTitle>Indicadores Principales</CardTitle></CardHeader>
+                    <CardContent>
+                        <ul className="text-sm space-y-1">
+                            <li><strong>RSI:</strong> <span className={indicatorStatus(isValidNumber(latest.rsi) && latest.rsi < 75 && latest.rsi > 30)}>{rsi}</span></li>
+                            <li><strong>SMA10:</strong> {sma10} | <strong>SMA20:</strong> {sma20}</li>
+                            <li><strong>MACD:</strong> <span className="font-mono">{macdLine}</span></li>
+                            <li><strong>Signal:</strong> <span className="font-mono">{signalLine}</span></li>
+                            <li><strong>Hist:</strong> <span className={indicatorStatus(isValidNumber(latest.macdHistogram) && latest.macdHistogram > 0)}>{macdHist}</span></li>
+                            <li><strong>Volumen:</strong> {volume}</li>
+                        </ul>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    };
+
+    // Función para obtener los últimos cálculos de indicadores de la vela más reciente
+    const latestCalculations = useMemo(() => {
+        if (currentMarketPriceHistory.length === 0) return null;
+        const latest = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
+
+        // Se valida el último punto de dato antes de usarlo.
+        if (!latest || !isValidNumber(latest.timestamp) || !isValidNumber(latest.closePrice)) {
+            return null;
+        }
+
+        const pricePrecision = selectedMarket?.pricePrecision || 2;
+
+        return {
+            price: isValidNumber(latest.closePrice) ? latest.closePrice.toFixed(pricePrecision) : 'N/A',
+            sma10: isValidNumber(latest.sma10) ? latest.sma10.toFixed(pricePrecision) : 'N/A',
+            sma20: isValidNumber(latest.sma20) ? latest.sma20.toFixed(pricePrecision) : 'N/A',
+            sma50: isValidNumber(latest.sma50) ? latest.sma50.toFixed(pricePrecision) : 'N/A',
+            macdLine: isValidNumber(latest.macdLine) ? latest.macdLine.toFixed(4) : 'N/A',
+            signalLine: isValidNumber(latest.signalLine) ? latest.signalLine.toFixed(4) : 'N/A',
+            macdHistogram: isValidNumber(latest.macdHistogram) ? latest.macdHistogram.toFixed(4) : 'N/A',
+            rsi: isValidNumber(latest.rsi) ? latest.rsi.toFixed(2) : 'N/A',
+            upperBB: isValidNumber(latest.upperBollingerBand) ? latest.upperBollingerBand.toFixed(pricePrecision) : 'N/A',
+            middleBB: isValidNumber(latest.middleBollingerBand) ? latest.middleBollingerBand.toFixed(pricePrecision) : 'N/A',
+            lowerBB: isValidNumber(latest.lowerBollingerBand) ? latest.lowerBollingerBand.toFixed(pricePrecision) : 'N/A',
+        };
+    }, [currentMarketPriceHistory, selectedMarket?.pricePrecision]);
+
+
+    return (
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 sm:p-6 lg:p-8 flex flex-col items-center">
+            <h1 className="text-3xl sm:text-4xl font-bold mb-6 text-center">CryptoPilot Bot Control Panel</h1>
+
+            <Card className="w-full mb-6 shadow-lg rounded-xl">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-2xl font-medium">Estado del Bot</CardTitle>
+                    <Badge className={`px-3 py-1 text-sm rounded-full ${isBotRunning ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+                        {isBotRunning ? 'ACTIVO' : 'DETENIDO'}
+                    </Badge>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex items-center space-x-4">
+                        <span className="font-semibold">Seleccionar Mercado:</span>
+                        <Select onValueChange={setSelectedMarketId} value={selectedMarketId || ""}>
+                            <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Selecciona un mercado" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {MOCK_MARKETS.map(market => (
+                                    <SelectItem key={market.id} value={market.id}>
+                                        {market.symbol}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            onClick={toggleBotStatus}
+                            // Deshabilitar el botón si no hay mercado seleccionado, reglas cargando, o error en reglas.
+                            disabled={!selectedMarket || rulesLoading || rulesError !== null || currentMarketPriceHistory.length < requiredCandles}
+                            className={`px-6 py-3 rounded-lg font-semibold ${isBotRunning ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white transition-colors duration-200`}
+                        >
+                            {isBotRunning ? 'Detener Bot' : 'Iniciar Bot'}
+                        </Button>
+                    </div>
+
+                    {selectedMarket && (
+                        <p className="text-sm">
+                            **Mercado:** {selectedMarket.symbol} | **Precio de Cierre Actual:** {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}
+                        </p>
+                    )}
+                    {currentMarketPriceHistory.length < requiredCandles && selectedMarket && (
+                            <p className="text-orange-500 text-sm">
+                                El bot requiere al menos {requiredCandles} velas históricas reales para iniciar. Actual: {currentMarketPriceHistory.length}.
+                            </p>
+                        )}
+                    {isPlacingOrder && (
+                        <p className="text-orange-500 font-semibold">Colocando orden...</p>
+                    )}
+                    {placeOrderError && (
+                        <p className="text-red-500 font-semibold">Error de Orden: {placeOrderError}</p>
+                    )}
+                    {(rulesLoading || balancesLoading) && (
+                            <p className="text-blue-500 text-sm">Cargando reglas y balances iniciales...</p>
+                        )}
+                    {rulesError && (
+                            <p className="text-red-500 text-sm">Error al cargar reglas: {rulesError}</p>
+                        )}
+                    {balancesError && (
+                            <p className="text-red-500 text-sm">Error al cargar balances: {balancesError}</p>
+                        )}
+                </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+                
+                {/* Panel de Reglas del Mercado (columna izquierda) */}
+                <Card className="shadow-lg rounded-xl">
+                    <CardHeader>
+                        <CardTitle>Reglas del Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle>
+                        <CardDescription>Reglas de Binance para el mercado seleccionado.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {rulesLoading && <p>Cargando reglas...</p>}
+                        {rulesError && <p className="text-red-500">Error al cargar reglas: {rulesError}</p>}
+                        {selectedMarketRules ? (
+                            <div className="text-sm space-y-1">
+                                <p><strong>Estado:</strong> {selectedMarketRules.status}</p>
+                                <p><strong>Activo Base:</strong> {selectedMarketRules.baseAsset}</p>
+                                <p><strong>Activo de Cotización:</strong> {selectedMarketRules.quoteAsset}</p>
+                                <p><strong>Cantidad Mínima:</strong> {selectedMarketRules.lotSize?.minQty || 'N/A'}</p>
+                                <p><strong>Tamaño de Paso:</strong> {selectedMarketRules.lotSize?.stepSize || 'N/A'}</p>
+                                <p><strong>Nocional Mínimo:</strong> {selectedMarketRules.minNotional?.minNotional || 'N/A'} USDT</p>
+                                <p><strong>Precisión del Precio:</strong> {selectedMarketRules.priceFilter?.tickSize || 'N/A'}</p>
+                            </div>
+                        ) : (
+                            !rulesLoading && !rulesError && <p>No hay reglas de mercado cargadas.</p>
+                        )}
+                    </CardContent>
+                </Card>
+
+
+                {/* GRÁFICA PRINCIPAL: MarketChart (se renderiza aquí para una estructura clara) */}
+                {/* Solo se renderiza si hay datos anotados para el historial */}
+                {annotatedHistory.length > 0 && (
+                    <Card className="lg:col-span-2 shadow-lg rounded-xl">
+                        <CardHeader>
+                            <CardTitle>Gráfica Unificada de Mercado</CardTitle>
+                            <CardDescription>
+                                Visualización combinada de Velas Japonesas, SMA, RSI, MACD y Señales en tiempo real.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <MarketChart
+                                data={annotatedHistory} // Los datos del historial ya anotados y limpios
+                                selectedMarket={selectedMarket}
+                                strategyLogs={strategyLogs}
+                                chartColors={CHART_COLORS}
+                            />
+                        </CardContent>
+                    </Card>
+                )}
+                 {/* Panel para mostrar errores del gráfico */}
+                {chartDisplayError && (
+                    <Card className="lg:col-span-2 shadow-lg rounded-xl border-red-500 bg-red-50 dark:bg-red-950">
+                        <CardHeader>
+                            <CardTitle className="text-red-700 dark:text-red-200">Error en el Gráfico</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-red-600 dark:text-red-100 text-sm">
+                                {chartDisplayError}
+                            </p>
+                            <p className="text-red-600 dark:text-red-100 text-xs mt-2">
+                                Por favor, revisa la consola del navegador para más detalles (F12 o Clic derecho &gt; Inspeccionar &gt; Consola).
+                            </p>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Panel de Balances (columna derecha) */}
+                <Card className="shadow-lg rounded-xl">
+                    <CardHeader>
+                        <CardTitle>Balances de Binance</CardTitle>
+                        <CardDescription>Tus balances actuales en Binance Mainnet.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {balancesLoading && <p>Cargando balances...</p>}
+                        {balancesError && <p className="text-red-500">Error al cargar balances: {balancesError}</p>}
+                        {currentBalances.length > 0 ? (
+                            <ul className="text-sm space-y-1">
+                                {currentBalances.map(bal => (
+                                    <li key={bal.asset}>
+                                        <strong>{bal.asset}:</strong> Disponible: {bal.free.toFixed(4)}{' '}
+                                        | En Orden: {bal.locked.toFixed(4)}{' '}
+                                        | Total: {(bal.free + bal.locked).toFixed(4)}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            !balancesLoading && !balancesError && <p>No se encontraron balances o no se han cargado.</p>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Panel de Posición Abierta del Bot (ancho completo) */}
+                <Card className="lg:col-span-2 shadow-lg rounded-xl">
+                    <CardHeader>
+                        <CardTitle>Posición Abierta del Bot</CardTitle>
+                        <CardDescription>Detalles de la posición actual gestionada por el bot.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {botOpenPosition ? (
+                            <div className="text-sm space-y-1">
+                                <p><strong>Mercado:</strong> {botOpenPosition.marketId}</p>
+                                <p><strong>Tipo:</strong> <Badge className={`${botOpenPosition.type === 'buy' ? 'bg-blue-500' : 'bg-red-500'} text-white`}>{botOpenPosition.type.toUpperCase()}</Badge></p>
+                                <p><strong>Cantidad:</strong> {botOpenPosition.amount.toFixed(selectedMarket?.precision.amount || 4)} {selectedMarket?.baseAsset}</p>
+                                <p><strong>Precio de Entrada:</strong> {botOpenPosition.entryPrice.toFixed(selectedMarket?.pricePrecision || 2)} {selectedMarket?.quoteAsset}</p>
+                                <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket?.pricePrecision || 2) : 'N/A'}</p>
+                                <p><strong>Stop Loss:</strong> {botOpenPosition.stopLossPrice?.toFixed(selectedMarket?.pricePrecision || 2) || 'N/A'}</p>
+                                <p><strong>Take Profit:</strong> {botOpenPosition.takeProfitPrice?.toFixed(selectedMarket?.pricePrecision || 2) || 'N/A'}</p>
+                                {currentPrice && (
+                                    <p>
+                                        <strong>PnL (Flotante):</strong>{" "}
+                                        {((currentPrice - botOpenPosition.entryPrice) * botOpenPosition.amount).toFixed(2)}{' '}
+                                        {selectedMarket?.quoteAsset}{' '}
+                                        <span className={`font-semibold ${((currentPrice - botOpenPosition.entryPrice) * botOpenPosition.amount) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                            ({(((currentPrice - botOpenPosition.entryPrice) / botOpenPosition.entryPrice) * 100).toFixed(2)}%)
+                                        </span>
+                                    </p>
+                                )}
+                                <p><strong>Abierta Desde:</strong> {new Date(botOpenPosition.timestamp).toLocaleString()}</p>
+                            </div>
+                        ) : (
+                            <p>No hay posición abierta actualmente.</p>
+                        )}
+                        {botLastActionTimestamp && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                Última acción del bot: {new Date(botLastActionTimestamp).toLocaleString()}
+                            </p>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Panel de Cálculos de Indicadores Recientes (TEXTO) - REUBICADO */}
+                <Card className="shadow-lg rounded-xl">
+                    <CardHeader>
+                        <CardTitle>Cálculos de Indicadores Recientes</CardTitle>
+                        <CardDescription>Valores de indicadores de la última vela procesada.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {latestCalculations ? (
+                            <div className="text-sm space-y-1">
+                                <p><strong>Precio Cierre:</strong> {latestCalculations.price}</p>
+                                <p><strong>SMA10:</strong> {latestCalculations.sma10}</p>
+                                <p><strong>SMA20:</strong> {latestCalculations.sma20}</p>
+                                <p><strong>SMA50:</strong> {latestCalculations.sma50}</p>
+                                <p><strong>MACD Line:</strong> {latestCalculations.macdLine}</p>
+                                <p><strong>Signal Line:</strong> {latestCalculations.signalLine}</p>
+                                <p><strong>Histograma MACD:</strong> {latestCalculations.macdHistogram}</p>
+                                <p><strong>RSI:</strong> {latestCalculations.rsi}</p>
+                                <p><strong>BB Superior:</strong> {latestCalculations.upperBB}</p>
+                                <p><strong>BB Media:</strong> {latestCalculations.middleBB}</p>
+                                <p><strong>BB Inferior:</strong> {latestCalculations.lowerBB}</p>
+                            </div>
+                        ) : (
+                            <p>Cargando datos de indicadores...</p>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Contadores de Señales */}
+                <Card className="shadow-lg border-blue-500">
+                    <CardHeader>
+                        <CardTitle className="text-lg">Conteo de Señales</CardTitle>
+                        <CardDescription>Señales ejecutadas desde el inicio</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <ul className="text-sm space-y-1">
+                            <li><strong>Buy:</strong> <span className="text-green-600 font-bold">{signalCount.buy}</span></li>
+                            <li><strong>Sell:</strong> <span className="text-red-600 font-bold">{signalCount.sell}</span></li>
+                            <li><strong>Hold:</strong> <span className="text-gray-600 font-bold">{signalCount.hold}</span></li>
+                        </ul>
+                    </CardContent>
+                </Card>
+
+                {/* Contenido de la ScrollArea para el historial de precios y logs del bot */}
+                <Card className="w-full max-w-7xl mt-4 shadow-lg rounded-xl">
+                    <CardHeader>
+                        <CardTitle>Historial de Precios y Logs</CardTitle>
+                        <CardDescription>Datos de velas e indicadores de {selectedMarket?.symbol || 'N/A'}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <ScrollArea className="h-[400px] w-full pr-4">
+                            {/* Renderiza los puntos de historial (velas), asegurando que el timestamp sea válido para la key */}
+                            {annotatedHistory.slice().reverse().map(dp =>
+                                isValidNumber(dp.timestamp) ? formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2) : null
+                            )}
+                            {/* Renderiza los logs de estrategia */}
+                            {strategyLogs.slice().reverse().map((log, index) => (
+                                <div key={`log-${index}`} className="text-xs text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-gray-700 py-1 last:border-b-0">
+                                    <p><strong>LOG [{new Date(log.timestamp).toLocaleTimeString()}]:</strong> {log.message}</p>
+                                    {log.details && <pre className="text-[10px] text-blue-500 dark:text-blue-200 overflow-x-auto">{JSON.stringify(log.details, null, 2)}</pre>}
+                                </div>
+                            ))}
+                        </ScrollArea>
+                    </CardContent>
+                </Card>
+
+            </div> {/* Cierre del grid principal */}
+
+        </div> // Cierre del div principal min-h-screen
+    );
 }
