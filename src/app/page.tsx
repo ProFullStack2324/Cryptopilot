@@ -62,6 +62,23 @@ const MOCK_MARKETS: Market[] = [
 // FUNCIÓN AUXILIAR ÚNICA: Para validar si un valor es un número válido (no null, undefined, o NaN).
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
+// FUNCIÓN AUXILIAR PARA PARSEAR MENSAJES DE ERROR
+const parseErrorMessage = (error: string | null): string => {
+    if (!error) return "";
+    try {
+        // Intenta encontrar un objeto JSON dentro del string del error
+        const jsonMatch = error.match(/\{.*\}/);
+        if (jsonMatch) {
+            const errorObj = JSON.parse(jsonMatch[0]);
+            return errorObj.message || error;
+        }
+    } catch (e) {
+        // Si el parseo falla, devuelve el error original
+    }
+    return error;
+};
+
+
 export default function TradingBotControlPanel() {
     const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null);
     const selectedMarket = useMemo(() => {
@@ -318,10 +335,10 @@ export default function TradingBotControlPanel() {
                         <p className="text-orange-500 text-sm">El bot requiere al menos {requiredCandles} velas para iniciar. Actual: {currentMarketPriceHistory.length}.</p>
                     )}
                     {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
-                    {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {placeOrderError}</p>}
+                    {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
                     {(rulesLoading || balancesLoading) && <p className="text-blue-500 text-sm">Cargando datos iniciales...</p>}
-                    {rulesError && <p className="text-red-500 text-sm">Error de Reglas: {rulesError}</p>}
-                    {balancesError && <p className="text-red-500 text-sm">Error de Balances: {balancesError}</p>}
+                    {rulesError && <p className="text-red-500 text-sm">Error de Reglas: {parseErrorMessage(rulesError)}</p>}
+                    {balancesError && <p className="text-red-500 text-sm">Error de Balances: {parseErrorMessage(balancesError)}</p>}
                 </CardContent>
             </Card>
 
@@ -332,7 +349,7 @@ export default function TradingBotControlPanel() {
                     </CardHeader>
                     <CardContent>
                         {rulesLoading && <p>Cargando reglas...</p>}
-                        {rulesError && <p className="text-red-500">{rulesError}</p>}
+                        {rulesError && <p className="text-red-500">{parseErrorMessage(rulesError)}</p>}
                         {selectedMarketRules ? (
                             <div className="text-sm space-y-1">
                                 <p><strong>Activo Base:</strong> {selectedMarketRules.baseAsset}</p>
@@ -369,7 +386,7 @@ export default function TradingBotControlPanel() {
                     <CardHeader><CardTitle>Balances de Binance</CardTitle></CardHeader>
                     <CardContent>
                         {balancesLoading && <p>Cargando balances...</p>}
-                        {balancesError && <p className="text-red-500">{balancesError}</p>}
+                        {balancesError && <p className="text-red-500">{parseErrorMessage(balancesError)}</p>}
                         {currentBalances.length > 0 ? (
                             <ul>
                                 {currentBalances.map(bal => (
