@@ -1,250 +1,79 @@
 // src/app/api/binance/balance/route.ts
-import { NextResponse } from 'next/server'; // Solo una importación
-import ccxt from 'ccxt'; // Solo una importación
+import { NextResponse } from 'next/server';
+import { exchange } from '@/lib/binance-client'; // Importar cliente centralizado
+import ccxt from 'ccxt';
 
-// Definir una interfaz para la estructura de la solicitud (request body)
-// Mantenemos la interfaz aunque ya no leeremos isTestnet de aquí,
-// por si otros endpoints de la API de Binance la usan o como documentación.
-interface BalanceRequest {
-  isTestnet?: boolean; // Opcional: Bandera para indicar si usar la red de prueba (ya no se leerá del body aquí)
-  // Podrías añadir parámetros para filtrar activos si fuera necesario
-  // assets?: string[]; // Ejemplo: ['BTC', 'USDT']
-}
-
-// --- Configuración de CCXT para Mainnet y Testnet ---
-// Asegúrate de tener las claves API configuradas en tus variables de entorno (.env.local)
-// BINANCE_API_KEY, BINANCE_SECRET_KEY (para Mainnet)
-// BINANCE_TESTNET_API_KEY, BINANCE_TESTNET_SECRET_KEY (para Testnet)
-
-// Solo una definición para Mainnet
-const exchangeMainnet = new ccxt.binance({
-  apiKey: process.env.BINANCE_API_KEY,
-  secret: process.env.BINANCE_SECRET_KEY,
-  options: {
-    // Configura el tipo por defecto (spot o future) si es necesario para Mainnet
-    'defaultType': 'spot', // Por defecto para balances de Spot
-    // 'defaultType': 'future', // Si necesitas balances de Futuros
-  },
-  // Por defecto usa la API de producción (Mainnet)
-});
-
-// Solo una definición para Testnet
-const exchangeTestnet = new ccxt.binance({
-    apiKey: process.env.BINANCE_TESTNET_API_KEY,
-    secret: process.env.BINANCE_TESTNET_SECRET_KEY,
-    options: {
-        // Configura el tipo por defecto (spot o future) para Testnet
-        'defaultType': 'spot', // Por defecto para balances de Spot Testnet
-        // 'defaultType': 'future', // Si necesitas balances de Futuros Testnet
-    },
-    urls: {
-        // --- URLs de la API de Testnet ---
-        // Es CRUCIAL que configures las URLs correctas para la Testnet de Binance que estés utilizando (Spot o Futures).
-        // Consulta la documentación de Binance para las URLs exactas.
-
-        // Ejemplo para Spot Testnet:
-         'api': {
-           'public': 'https://testnet.binance.vision/api/',
-           'private': 'https://testnet.binance.vision/api/',
-         },
-        // Ejemplo para Futures USD-M Testnet:
-        // 'api': {
-        //   'public': 'https://testnet.binancefuture.com/fapi/v1',
-        //   'private': 'https://testnet.binancefuture.com/fapi/v1',
-        // },
-    },
-});
-// --- Fin Configuración CCXT ---
-
-
-// Usaremos POST para mayor consistencia y para poder enviar parámetros como isTestnet
-// Usaremos POST para mayor consistencia y para poder enviar parámetros como isTestnet
 export async function POST(req: Request) {
-  // --- INICIO SECCIÓN CORREGIDA ---
-  // Eliminamos el bloque try...catch que intentaba leer el cuerpo JSON,
-  // ya que el frontend ya no lo envía.
-  // Forzamos isTestnet a false para asegurar que siempre se use Mainnet en este endpoint.
-
-  const isTestnet = false; // <-- Forzamos a Mainnet para este endpoint de balances
-
-  // Eliminamos la lógica original que leía isTestnet del body:
-  /*
-  let isTestnetOriginal = false; // Declaración original comentada
-  try {
-      const requestBody: BalanceRequest = await req.json(); // Lógica de lectura original comentada
-      ({ isTestnet: isTestnetOriginal = false } = requestBody); // Desestructuración original comentada
-      console.log(`[API/Binance/Balance] Recibida solicitud de balances en ${isTestnetOriginal ? 'Testnet' : 'Mainnet'}`); // Log original comentado
-
-  } catch (jsonError: any) {
-      // Modificación: Eliminar la lógica para manejar solicitudes GET aquí.
-      // Si hay un error al parsear el JSON, asumimos que la solicitud POST no tiene un cuerpo JSON válido.
-      console.error("[API/Binance/Balance] Error al parsear el cuerpo de la solicitud POST (esto puede ocurrir si el frontend no envía body, lo cual ahora es esperado):", jsonError); // Log de error de parseo ajustado
-      // Podrías decidir si quieres retornar un error 400 aquí o simplemente ignorar el error si esperas no recibir body.
-      // Para asegurar compatibilidad con el frontend que no envía body, removemos el return de error 400 aquí.
-      // return NextResponse.json({
-      //     success: false,
-      //     message: "Error al procesar la solicitud POST. Formato JSON inválido."
-      // }, { status: 400 });
-      // Fin de la modificación
-  }
-  */
-
-  // La variable isTestnet ahora siempre es 'false', definida al principio de la sección corregida.
-
-  // La lógica para verificar parámetros de query (comentada) se puede dejar comentada o eliminar si nunca se usa.
-  /*
-   if (req.method === 'GET' && req.url) {
-       const { searchParams } = new URL(req.url);
-       // Permitir isTestnet como parámetro de query para solicitudes GET
-       if (searchParams.has('isTestnet') && searchParams.get('isTestnet')?.toLowerCase() === 'true') {
-           // Ya que forzamos isTestnet a false arriba, esta lógica ya no afectaría el exchangeToUse
-           // pero si la dejas descomentada y isTestnetOriginal existiera, podría haber confusión.
-           // Mejor mantenerla comentada o eliminarla si no planeas usar GET.
-           // isTestnetOriginal = true; // Lógica original comentada
-           console.log("[API/Binance/Balance] isTestnet=true detectado en parámetros de query (GET)."); // Log original comentado
-       }
-   }
-   */
-  // Fin de la modificación
-
-  // Usamos la variable isTestnet (que es false) para seleccionar la instancia de exchange
-  const exchangeToUse = exchangeMainnet; // <-- Siempre usamos la instancia de Mainnet
-  const networkType = 'Mainnet'; // <-- Siempre indicará 'Mainnet'
-
-  // Ajustamos los logs para reflejar que siempre usamos Mainnet
+  const networkType = 'Futures Testnet';
   console.log(`[API/Binance/Balance] Usando configuración para la red: ${networkType}`);
-  // --- FIN SECCIÓN CORREGIDA ---
-
 
   // --- Validación de Credenciales ---
-  // Esta sección se mantiene sin cambios, utilizando exchangeToUse y networkType definidos arriba
-  if (exchangeToUse.apiKey === undefined || exchangeToUse.secret === undefined) {
+  if (!exchange.apiKey || !exchange.secret) {
     console.error(`[API/Binance/Balance] Error: Las credenciales de ${networkType} no están configuradas.`);
     return NextResponse.json({
       success: false,
-      message: `Las credenciales de Binance ${networkType} no están configuradas en las variables de entorno (.env.local).`
+      message: `Las credenciales de Binance ${networkType} no están configuradas en .env.local.`
     }, { status: 500 });
   }
-    console.log(`[API/Binance/Balance] Credenciales de ${networkType} cargadas correctamente.`);
-
+  console.log(`[API/Binance/Balance] Credenciales de ${networkType} cargadas correctamente.`);
 
   // --- Obtener Balances usando CCXT ---
   try {
     console.log(`[API/Binance/Balance] Solicitando balances a CCXT en ${networkType}...`);
 
-    // ccxt.fetchBalance() obtiene los balances de la cuenta Spot por defecto
-    // Si necesitas balances de Futuros, configura 'defaultType' en la instancia de exchange
-    const accountBalance = await exchangeToUse.fetchBalance();
+    const accountBalance = await exchange.fetchBalance();
 
     console.log(`[API/Binance/Balance] Balances obtenidos de CCXT en ${networkType}.`);
-    // console.log(JSON.stringify(accountBalance, null, 2)); // Log detallado si es necesario para depurar
-
-    // ccxt.fetchBalance() devuelve un objeto con la estructura { 'asset': { free: ..., used: ..., total: ... }, ... }
-    // accountBalance.total: { 'USDT': 1000, 'BTC': 0.5, ... }
-    // accountBalance.free: { 'USDT': 900, 'BTC': 0.5, ... } // Saldo disponible
-    // accountBalance.used: { 'USDT': 100, 'BTC': 0, ... } // Saldo en órdenes abiertas
-    // --- LOGGING ADICIONAL PARA DEPURACIÓN ---
-    console.log(`[API/Binance/Balance] Respuesta cruda de fetchBalance:`, accountBalance); // Log de la respuesta antes de formatear
-    // --- FIN LOGGING ADICIONAL ---
 
     const balancesFormatted: Record<string, { available: number; onOrder: number; total: number }> = {};
-
-    // Iterar sobre todos los activos reportados por ccxt
-    // CORRECCIÓN APLICADA: Usar aserción a unknown primero para permitir indexación por strings de forma segura
-    if (accountBalance && accountBalance.total) {
-        // Aserción a unknown primero, luego a Record<string, number>
-        const totalBalances = accountBalance.total as unknown as Record<string, number>;
-        const freeBalances = accountBalance.free as unknown as Record<string, number>;
-        const usedBalances = accountBalance.used as unknown as Record<string, number>;
-
-
-        for (const asset in totalBalances) { // Iterar sobre totalBalances que ahora tiene la firma de índice
-            // Usamos Object.prototype.hasOwnProperty.call para una verificación segura de la propiedad
-            if (Object.prototype.hasOwnProperty.call(totalBalances, asset)) {
-                 // Ahora TypeScript permite acceder usando 'asset' porque totalBalances tiene la firma de índice
-                 const total = totalBalances[asset];
-                 const free = freeBalances[asset];
-                 const used = usedBalances[asset];
-
-                 // Opcional: Filtrar activos con saldo insignificante si deseas una respuesta más limpia
-                 // Incluimos activos con saldo total mayor a 0
-                 if (total > 0) { // Puedes ajustar el umbral (ej: 0.00000001) si es necesario
-                     balancesFormatted[asset] = {
-                         available: free,
-                         onOrder: used, // ccxt uses 'used' for funds tied in orders
-                         total: total,
-                     };
-                 }
+    
+    // En futuros, el balance se reporta de forma diferente. El activo principal suele ser USDT o BUSD.
+    if (accountBalance && accountBalance.info && Array.isArray(accountBalance.info.assets)) {
+        accountBalance.info.assets.forEach((asset: any) => {
+            const total = parseFloat(asset.walletBalance);
+            const available = parseFloat(asset.availableBalance);
+            if (total > 0) {
+                balancesFormatted[asset.asset] = {
+                    available: available,
+                    onOrder: total - available,
+                    total: total,
+                };
             }
-        }
+        });
     }
 
-
     console.log(`[API/Binance/Balance] ${Object.keys(balancesFormatted).length} activos con saldo > 0 formateados.`);
-    // console.log(JSON.stringify(balancesFormatted, null, 2)); // Log de balances formateados
 
-    // --- Respuesta Exitosa ---
     return NextResponse.json({
       success: true,
       message: `Balances de cuenta obtenidos con éxito de Binance ${networkType}.`,
-      balances: balancesFormatted, // Devolvemos todos los balances > 0
-      timestamp: accountBalance.timestamp, // Timestamp de la respuesta de Binance
-      datetime: accountBalance.datetime, // Fecha y hora legible
+      balances: balancesFormatted,
+      timestamp: accountBalance.timestamp,
+      datetime: accountBalance.datetime,
     });
 
   } catch (error: any) {
     console.error(`[API/Binance/Balance] Error al obtener balances con CCXT en ${networkType}:`, error);
 
-    // --- Manejo de Errores Específicos de Binance/CCXT ---
     let userMessage = `Error al obtener los balances de la cuenta en Binance ${networkType}.`;
     let details = error.message || 'Error desconocido';
-    let statusCode = 500; // Por defecto, un error interno del servidor
-    let binanceErrorCode = undefined;
+    let statusCode = 500;
 
-    // ccxt encapsula errores de la API de Binance
-    if (error instanceof ccxt.NetworkError) {
-        console.error(`[API/Binance/Balance] Error de Red al intentar conectar con Binance ${networkType}.`);
-        userMessage = "Error de conexión con la API de Binance. Intenta de nuevo más tarde.";
-        details = error.message;
-        statusCode = 503; // Servicio no disponible temporalmente
-
-    } else if (error instanceof ccxt.AuthenticationError) {
-         console.error(`[API/Binance/Balance] Error de Autenticación en ${networkType}.`);
-         userMessage = "Error de autenticación con la API de Binance. Verifica tus claves API.";
-         details = error.message;
-         statusCode = 401; // No autorizado
-
+    if (error instanceof ccxt.AuthenticationError) {
+        userMessage = "Error de autenticación. Verifica tus claves API de Testnet.";
+        statusCode = 401;
+    } else if (error instanceof ccxt.NetworkError) {
+        userMessage = "Error de conexión con la API de Binance Testnet.";
+        statusCode = 503;
     } else if (error instanceof ccxt.ExchangeError) {
-         console.error(`[API/Binance/Balance] Error genérico del Exchange en ${networkType}.`);
-         userMessage = "Ocurrió un error en el exchange de Binance al obtener balances.";
-         details = error.message;
-         // Intentar obtener código de error específico de Binance si está disponible
-         if (error.message.includes('code=')) {
-              const codeMatch = error.message.match(/code=(-?\d+)/);
-              if (codeMatch && codeMatch[1]) {
-                  binanceErrorCode = parseInt(codeMatch[1], 10);
-                  console.warn(`[API/Binance/Balance] Código de error de Binance extraído: ${binanceErrorCode}`);
-              }
-          }
-         // Puedes asignar un statusCode diferente si hay errores de Exchange específicos conocidos
-
-    } else {
-        // Otros tipos de error no capturados específicamente
-        console.error(`[API/Binance/Balance] Error inesperado en ${networkType}:`, error);
-        userMessage = "Ocurrió un error inesperado al obtener los balances.";
-        details = error.message || JSON.stringify(error);
-        statusCode = 500;
+        userMessage = "Ocurrió un error en el exchange de Binance al obtener balances.";
+        details = error.message;
     }
 
-
-    // --- Respuesta de Error ---
     return NextResponse.json({
       success: false,
-      message: userMessage, // Mensaje amigable para el usuario
-      details: details,     // Detalles técnicos del error (para depuración)
-      binanceErrorCode: binanceErrorCode, // Código de error específico de Binance si se pudo extraer
-      // Puedes añadir otros campos de error si son útiles
-    }, { status: statusCode }); // Código de estado HTTP apropiado
-
+      message: userMessage,
+      details: details,
+    }, { status: statusCode });
   }
 }
