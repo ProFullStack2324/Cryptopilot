@@ -1,7 +1,16 @@
 // src/app/api/binance/klines/route.ts
 import { NextResponse } from 'next/server';
-import { exchange } from '@/lib/binance-client'; // Importar cliente centralizado
 import ccxt from 'ccxt';
+
+const exchangeMainnet = new ccxt.binance({
+  apiKey: process.env.BINANCE_API_KEY,
+  secret: process.env.BINANCE_SECRET_KEY,
+  options: {
+    'defaultType': 'spot',
+    'adjustForTimeDifference': true,
+  },
+  enableRateLimit: true,
+});
 
 export async function GET(request: Request) {
     try {
@@ -15,21 +24,13 @@ export async function GET(request: Request) {
             return NextResponse.json({ success: false, message: 'Falta el parámetro "symbol".' }, { status: 400 });
         }
 
-        console.log(`[API/Binance/Klines] Obteniendo ${limit} velas de ${intervalParam} para ${symbolParam} desde Futures Testnet...`);
-
-        if (!exchange.apiKey || !exchange.secret) {
-            console.error('[API/Binance/Klines] Credenciales de Testnet no configuradas.');
-            return NextResponse.json({
-                success: false,
-                message: 'Credenciales de Binance Testnet no configuradas en variables de entorno.',
-            }, { status: 500 });
-        }
+        console.log(`[API/Binance/Klines] Obteniendo ${limit} velas de ${intervalParam} para ${symbolParam} desde Mainnet...`);
 
         try {
-            await exchange.loadMarkets();
+            await exchangeMainnet.loadMarkets();
             const ccxtSymbol = symbolParam.includes('/') ? symbolParam : `${symbolParam.replace(/USDT$/i, '')}/USDT`;
 
-            const ohlcv = await exchange.fetchOHLCV(ccxtSymbol, intervalParam, undefined, limit);
+            const ohlcv = await exchangeMainnet.fetchOHLCV(ccxtSymbol, intervalParam, undefined, limit);
 
             if (!ohlcv || ohlcv.length === 0) {
                 console.warn(`[API/Binance/Klines] No se encontraron velas para ${ccxtSymbol} con intervalo ${intervalParam}.`);
@@ -42,10 +43,13 @@ export async function GET(request: Request) {
         } catch (err: any) {
             console.error('[API/Binance/Klines] Error al obtener velas:', err);
              if (err instanceof ccxt.AuthenticationError) {
-                return NextResponse.json({ success: false, message: 'Error de autenticación al obtener velas. Verifica tus claves API de Testnet.' }, { status: 401 });
+                return NextResponse.json({ success: false, message: 'Error de autenticación al obtener velas. Verifica tus claves API de Mainnet.' }, { status: 401 });
             } else if (err instanceof ccxt.NetworkError) {
-                return NextResponse.json({ success: false, message: 'Error de red al conectar con Binance Testnet.' }, { status: 503 });
+                return NextResponse.json({ success: false, message: 'Error de red al conectar con Binance Mainnet.' }, { status: 503 });
             } else if (err instanceof ccxt.ExchangeError) {
+                if (err.message.includes('Service unavailable from a restricted location')) {
+                    return NextResponse.json({ success: false, message: 'Servicio no disponible desde una ubicación restringida.', details: 'La API de Binance Spot está restringiendo el acceso desde la ubicación del servidor.' }, { status: 403 });
+                }
                 return NextResponse.json({ success: false, message: 'Error del exchange al solicitar velas.', details: err.message }, { status: 400 });
             }
             return NextResponse.json({ success: false, message: 'Error interno al obtener velas.', details: err.message }, { status: 500 });

@@ -1,7 +1,16 @@
 // src/app/api/binance/trade/route.ts
 import { NextResponse } from 'next/server';
-import { exchange } from '@/lib/binance-client'; // Importar cliente centralizado
 import ccxt from 'ccxt';
+
+const exchangeMainnet = new ccxt.binance({
+  apiKey: process.env.BINANCE_API_KEY,
+  secret: process.env.BINANCE_SECRET_KEY,
+  options: {
+    'defaultType': 'spot',
+    'adjustForTimeDifference': true,
+  },
+  enableRateLimit: true,
+});
 
 interface TradeRequest {
   symbol: string;
@@ -12,7 +21,7 @@ interface TradeRequest {
 }
 
 export async function POST(req: Request) {
-  const networkType = 'Futures Testnet';
+  const networkType = 'Mainnet';
   let ccxtSymbol: string = '';
 
   try {
@@ -20,7 +29,7 @@ export async function POST(req: Request) {
     const { symbol, type, side, amount, price } = body;
     console.log(`[API/Binance/Trade/${networkType}] Recibida solicitud POST: ${JSON.stringify(body)}`);
 
-    if (!exchange.apiKey || !exchange.secret) {
+    if (!exchangeMainnet.apiKey || !exchangeMainnet.secret) {
       console.error(`[API/Binance/Trade/${networkType}] Credenciales no configuradas.`);
       return NextResponse.json({ success: false, message: `Credenciales de Binance ${networkType} no configuradas.` }, { status: 500 });
     }
@@ -32,9 +41,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'El precio es requerido para órdenes límite.'}, { status: 400 });
     }
 
-    await exchange.loadMarkets();
+    await exchangeMainnet.loadMarkets();
     ccxtSymbol = symbol.includes('/') ? symbol : `${symbol.replace(/USDT$/i, '')}/USDT`;
-    const market = exchange.markets[ccxtSymbol];
+    const market = exchangeMainnet.markets[ccxtSymbol];
     if (!market) {
       return NextResponse.json({ success: false, message: `Símbolo no soportado: ${ccxtSymbol}`}, { status: 400 });
     }
@@ -42,9 +51,9 @@ export async function POST(req: Request) {
     console.log(`[API/Binance/Trade/${networkType}] Creando orden: ${side.toUpperCase()} ${amount} ${ccxtSymbol} (${type.toUpperCase()})`);
     let order;
     if (type === 'market') {
-      order = await exchange.createMarketOrder(ccxtSymbol, side, amount);
+      order = await exchangeMainnet.createMarketOrder(ccxtSymbol, side, amount);
     } else {
-      order = await exchange.createLimitOrder(ccxtSymbol, side, amount, price!);
+      order = await exchangeMainnet.createLimitOrder(ccxtSymbol, side, amount, price!);
     }
     console.log(`[API/Binance/Trade/${networkType}] Orden procesada: ID=${order.id}, status=${order.status}`);
     
@@ -53,7 +62,7 @@ export async function POST(req: Request) {
       message: `Orden ${side} creada en ${networkType}.`,
       orderId: order.id,
       status: order.status,
-      data: order, // Devolvemos el objeto de orden completo en 'data'
+      data: order,
     }, { status: 200 });
 
   } catch (err: any) {
@@ -61,14 +70,17 @@ export async function POST(req: Request) {
     let userMessage = `Error al procesar la orden en ${networkType}.`;
     let statusCode = 500;
 
-    if (err instanceof ccxt.InsufficientFunds) {
+    if (err instanceof ccxt.ExchangeError && err.message.includes('Service unavailable from a restricted location')) {
+        userMessage = "Servicio no disponible desde una ubicación restringida.";
+        statusCode = 403; // Forbidden
+    } else if (err instanceof ccxt.InsufficientFunds) {
         userMessage = `Fondos insuficientes en ${networkType}.`;
         statusCode = 400;
     } else if (err instanceof ccxt.InvalidOrder) {
         userMessage = `Orden inválida según las reglas de ${networkType}. Detalles: ${err.message}`;
         statusCode = 400;
     } else if (err instanceof ccxt.AuthenticationError) {
-        userMessage = `Error de autenticación en ${networkType}. Verifica tus claves API de Testnet.`;
+        userMessage = `Error de autenticación en ${networkType}. Verifica tus claves API.`;
         statusCode = 401;
     } else if (err instanceof ccxt.NetworkError) {
         userMessage = `Error de conexión con Binance ${networkType}.`;

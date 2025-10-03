@@ -1,7 +1,16 @@
 // src/app/api/binance/trade-history/route.ts
 import { NextResponse } from 'next/server';
-import { exchange } from '@/lib/binance-client'; // Importar cliente centralizado
 import ccxt from 'ccxt';
+
+const exchangeMainnet = new ccxt.binance({
+  apiKey: process.env.BINANCE_API_KEY,
+  secret: process.env.BINANCE_SECRET_KEY,
+  options: {
+    'defaultType': 'spot',
+    'adjustForTimeDifference': true,
+  },
+  enableRateLimit: true,
+});
 
 interface TradeHistoryRequest {
   symbol?: string;
@@ -10,14 +19,14 @@ interface TradeHistoryRequest {
 }
 
 export async function POST(req: Request) {
-  const networkType = 'Futures Testnet';
+  const networkType = 'Mainnet';
   console.log(`[API/Binance/TradeHistory] Solicitud POST recibida para ${networkType}.`);
 
   try {
       const { symbol, since, limit }: TradeHistoryRequest = await req.json();
       console.log(`[API/Binance/TradeHistory] Parámetros: Símbolo='${symbol || 'TODOS'}', Since=${since}, Limit=${limit}`);
 
-      if (!exchange.apiKey || !exchange.secret) {
+      if (!exchangeMainnet.apiKey || !exchangeMainnet.secret) {
         console.error(`[API/Binance/TradeHistory] Error: Credenciales de ${networkType} no configuradas.`);
         return NextResponse.json({
           success: false,
@@ -25,7 +34,7 @@ export async function POST(req: Request) {
         }, { status: 500 });
       }
 
-    const trades = await exchange.fetchMyTrades(symbol, since, limit);
+    const trades = await exchangeMainnet.fetchMyTrades(symbol, since, limit);
     console.log(`[API/Binance/TradeHistory] Historial de trades obtenido. Cantidad: ${trades ? trades.length : 0}`);
 
     return NextResponse.json({
@@ -40,7 +49,10 @@ export async function POST(req: Request) {
     let details = error.message || 'Error desconocido';
     let statusCode = 500;
 
-    if (error instanceof ccxt.NetworkError) {
+    if (error instanceof ccxt.ExchangeError && error.message.includes('Service unavailable from a restricted location')) {
+        userMessage = "Servicio no disponible desde una ubicación restringida.";
+        statusCode = 403;
+    } else if (error instanceof ccxt.NetworkError) {
         userMessage = "Error de conexión con la API de Binance.";
         statusCode = 503;
     } else if (error instanceof ccxt.AuthenticationError) {

@@ -1,41 +1,45 @@
 // src/app/api/binance/exchange-info/route.ts
 import { NextResponse } from 'next/server';
-import { exchange } from '@/lib/binance-client'; // Importar cliente centralizado
 import ccxt from 'ccxt';
+
+const exchangeMainnet = new ccxt.binance({
+  apiKey: process.env.BINANCE_API_KEY,
+  secret: process.env.BINANCE_SECRET_KEY,
+  options: {
+    'defaultType': 'spot',
+    'adjustForTimeDifference': true,
+  },
+  enableRateLimit: true,
+});
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const symbolParam = searchParams.get('symbol');
-  const networkType = 'Futures Testnet';
+  const networkType = 'Mainnet';
 
   console.log(`[API/Binance/ExchangeInfo] Recibida solicitud de info en ${networkType}${symbolParam ? ` para ${symbolParam}` : ''}.`);
 
   try {
-    if (!exchange.apiKey || !exchange.secret) {
-        console.error(`[API/Binance/ExchangeInfo] Error: Las credenciales de ${networkType} no están configuradas.`);
-        return NextResponse.json({
-          success: false,
-          message: `Las credenciales de Binance ${networkType} no están configuradas.`
-        }, { status: 500 });
-    }
-
-    await exchange.loadMarkets();
+    // No se necesitan credenciales para exchangeInfo, pero es buena práctica tener el cliente configurado
+    
+    await exchangeMainnet.loadMarkets();
     console.log(`[API/Binance/ExchangeInfo] Info del exchange obtenida.`);
 
     let responseData = null;
     if (symbolParam) {
-        const marketInfo = exchange.market(symbolParam);
+        const ccxtSymbol = symbolParam.includes('/') ? symbolParam : `${symbolParam.replace(/USDT$/i, '')}/USDT`;
+        const marketInfo = exchangeMainnet.market(ccxtSymbol);
         if (marketInfo) {
              responseData = marketInfo;
-             console.log(`[API/Binance/ExchangeInfo] Encontrada información detallada para el símbolo ${symbolParam}.`);
+             console.log(`[API/Binance/ExchangeInfo] Encontrada información detallada para el símbolo ${ccxtSymbol}.`);
         } else {
              return NextResponse.json({
                   success: false,
-                  message: `Información no encontrada para ${symbolParam}.`
+                  message: `Información no encontrada para ${ccxtSymbol}.`
               }, { status: 404 });
         }
     } else {
-        responseData = exchange.markets;
+        responseData = exchangeMainnet.markets;
         console.log(`[API/Binance/ExchangeInfo] Devolviendo información para ${Object.keys(responseData).length} mercados.`);
     }
 

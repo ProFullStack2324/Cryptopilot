@@ -1,22 +1,31 @@
 // src/app/api/binance/symbols/route.ts
 import { NextResponse } from 'next/server';
-import { exchange } from '@/lib/binance-client'; // Importar cliente centralizado
 import ccxt from 'ccxt';
 
+const exchangeMainnet = new ccxt.binance({
+  apiKey: process.env.BINANCE_API_KEY,
+  secret: process.env.BINANCE_SECRET_KEY,
+  options: {
+    'defaultType': 'spot',
+    'adjustForTimeDifference': true,
+  },
+  enableRateLimit: true,
+});
+
 export async function POST(req: Request) {
-  const networkType = 'Futures Testnet';
+  const networkType = 'Mainnet';
   console.log(`[API/Binance/Symbols] Solicitud POST recibida. Usando ${networkType}.`);
 
   try {
-    await exchange.loadMarkets();
-    const markets = exchange.markets;
+    await exchangeMainnet.loadMarkets();
+    const markets = exchangeMainnet.markets;
     console.log(`[API/Binance/Symbols] Lista de mercados obtenida. Cantidad: ${markets ? Object.keys(markets).length : 0}`);
 
     const filteredAndFormattedSymbols = Object.values(markets)
         .filter((market: any) =>
             market?.active === true &&
-            market?.quote === 'USDT' && // Solo pares con USDT
-            market?.type === 'future' // Asegurar que son mercados de futuros
+            market?.quote === 'USDT' &&
+            market?.type === 'spot' // Asegurar que son mercados spot
         )
         .map((market: any) => {
              const lotSizeFilter = market.info?.filters?.find((f: any) => f.filterType === 'LOT_SIZE');

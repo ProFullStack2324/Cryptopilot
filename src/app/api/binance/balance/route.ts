@@ -1,14 +1,23 @@
 // src/app/api/binance/balance/route.ts
 import { NextResponse } from 'next/server';
-import { exchange } from '@/lib/binance-client'; // Importar cliente centralizado
 import ccxt from 'ccxt';
 
+const exchangeMainnet = new ccxt.binance({
+  apiKey: process.env.BINANCE_API_KEY,
+  secret: process.env.BINANCE_SECRET_KEY,
+  options: {
+    'defaultType': 'spot',
+    'adjustForTimeDifference': true,
+  },
+  enableRateLimit: true,
+});
+
 export async function POST(req: Request) {
-  const networkType = 'Futures Testnet';
+  const networkType = 'Mainnet';
   console.log(`[API/Binance/Balance] Usando configuración para la red: ${networkType}`);
 
   // --- Validación de Credenciales ---
-  if (!exchange.apiKey || !exchange.secret) {
+  if (!exchangeMainnet.apiKey || !exchangeMainnet.secret) {
     console.error(`[API/Binance/Balance] Error: Las credenciales de ${networkType} no están configuradas.`);
     return NextResponse.json({
       success: false,
@@ -21,26 +30,26 @@ export async function POST(req: Request) {
   try {
     console.log(`[API/Binance/Balance] Solicitando balances a CCXT en ${networkType}...`);
 
-    const accountBalance = await exchange.fetchBalance();
+    const accountBalance = await exchangeMainnet.fetchBalance();
 
     console.log(`[API/Binance/Balance] Balances obtenidos de CCXT en ${networkType}.`);
 
     const balancesFormatted: Record<string, { available: number; onOrder: number; total: number }> = {};
     
-    // En futuros, el balance se reporta de forma diferente. El activo principal suele ser USDT o BUSD.
-    if (accountBalance && accountBalance.info && Array.isArray(accountBalance.info.assets)) {
-        accountBalance.info.assets.forEach((asset: any) => {
-            const total = parseFloat(asset.walletBalance);
-            const available = parseFloat(asset.availableBalance);
+    // En spot, el balance se reporta en 'total', 'used', 'free' por cada activo.
+    if (accountBalance && accountBalance.total) {
+        Object.keys(accountBalance.total).forEach(asset => {
+            const total = accountBalance.total[asset] || 0;
             if (total > 0) {
-                balancesFormatted[asset.asset] = {
-                    available: available,
-                    onOrder: total - available,
+                 balancesFormatted[asset] = {
+                    available: accountBalance.free[asset] || 0,
+                    onOrder: accountBalance.used[asset] || 0,
                     total: total,
                 };
             }
         });
     }
+
 
     console.log(`[API/Binance/Balance] ${Object.keys(balancesFormatted).length} activos con saldo > 0 formateados.`);
 
@@ -60,14 +69,21 @@ export async function POST(req: Request) {
     let statusCode = 500;
 
     if (error instanceof ccxt.AuthenticationError) {
-        userMessage = "Error de autenticación. Verifica tus claves API de Testnet.";
+        userMessage = "Error de autenticación. Verifica tus claves API de Mainnet.";
         statusCode = 401;
     } else if (error instanceof ccxt.NetworkError) {
-        userMessage = "Error de conexión con la API de Binance Testnet.";
+        userMessage = "Error de conexión con la API de Binance Mainnet.";
         statusCode = 503;
     } else if (error instanceof ccxt.ExchangeError) {
-        userMessage = "Ocurrió un error en el exchange de Binance al obtener balances.";
-        details = error.message;
+        // Capturar específicamente el error de restricción geográfica
+        if (error.message.includes('Service unavailable from a restricted location')) {
+            userMessage = "Servicio no disponible desde una ubicación restringida.";
+            details = "La API de Binance Spot está restringiendo el acceso desde la ubicación del servidor. Este es un bloqueo geográfico de Binance.";
+            statusCode = 403; // Forbidden
+        } else {
+            userMessage = "Ocurrió un error en el exchange de Binance al obtener balances.";
+            details = error.message;
+        }
     }
 
     return NextResponse.json({
