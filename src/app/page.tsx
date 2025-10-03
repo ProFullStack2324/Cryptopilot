@@ -191,7 +191,7 @@ export default function TradingBotControlPanel() {
         allBinanceBalances: currentBalances,
         onBotAction: onBotAction,
     });
-    const requiredCandles = 35; // Mínimo de velas necesarias para la estrategia
+    const requiredCandles = 51; // Mínimo de velas necesarias para la estrategia
 
     // LOG DEPURACIÓN Y ACTUALIZACIÓN DE ERROR EN UI: Inspeccionar el historial de precios directamente desde useTradingBot
     useEffect(() => {

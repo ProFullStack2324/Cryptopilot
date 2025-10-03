@@ -14,7 +14,7 @@ import {
     PRICE_HISTORY_POINTS_TO_KEEP,
     ApiResult,
     KLine, // Importado como KLine (con L mayúscula)
-    TradeEndpointResponse // <-- ¡AGREGA ESTA LÍNEA AQUÍ!
+    TradeEndpointResponse
 } from '@/lib/types';
 
 import { decideTradeActionAndAmount } from '@/lib/strategies/tradingStrategy';
@@ -52,7 +52,7 @@ export const useTradingBot = (props: {
     const [currentPrice, setCurrentPrice] = useState<number | null>(null);
 
     const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false); 
-    const [botIntervalMs, setBotIntervalMs] = useState(5000); // Frecuencia de ejecución de la estrategia (5 segundos por defecto)
+    const [botIntervalMs, setBotIntervalMs] = useState(1000); // Frecuencia de ejecución de la estrategia (5 segundos por defecto)
     const [signalCounts, setSignalCounts] = useState({ buy: 0, sell: 0, hold: 0 });
 
     const { toast } = useToast();
@@ -546,6 +546,24 @@ export const useTradingBot = (props: {
         };
     }, []);
 
+    const toggleBotStatus = useCallback(() => {
+        setIsBotRunning(prev => {
+            const newIsRunning = !prev;
+            const status = newIsRunning ? 'iniciado' : 'detenido';
+            const networkName = 'Mainnet';
+    
+            // Mostrar un toast y loguear el cambio de estado
+            toast({
+                title: `Bot ${status}`,
+                description: `El bot de trading para ${selectedMarket?.symbol || 'el mercado'} en ${networkName} ha sido ${status}.`,
+                variant: newIsRunning ? 'default' : 'destructive',
+            });
+            console.log(`[useTradingBot] Bot ${status} en la red ${networkName}.`);
+    
+            return newIsRunning;
+        });
+    }, [selectedMarket?.symbol, toast]);
+    
     // ======================================================================================================
     // Efecto para la Carga Inicial de Reglas del Mercado y el Historial de Velas (OHLCV).
     // ======================================================================================================
@@ -812,7 +830,7 @@ export const useTradingBot = (props: {
     // ======================================================================================================
     return {
         isBotRunning,
-        toggleBotStatus: () => setIsBotRunning(prev => !prev),
+        toggleBotStatus,
         botOpenPosition,
         botLastActionTimestamp,
         isPlacingOrder,

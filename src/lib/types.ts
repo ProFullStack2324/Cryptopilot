@@ -3,7 +3,7 @@
 
 import type { ChartConfig } from "@/components/ui/chart";
 
-export const PRICE_HISTORY_POINTS_TO_KEEP = 200; // Número de puntos de historial a mantener
+export const PRICE_HISTORY_POINTS_TO_KEEP = 51; // Número de puntos de historial a mantener
 
 // INTERFAZ DE TRADE
 export interface Trade {
