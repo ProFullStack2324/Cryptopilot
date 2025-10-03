@@ -7,7 +7,6 @@ import {
     Market,
     BinanceBalance,
     MarketPriceDataPoint,
-    MarketRules,
     BotOpenPosition
 } from '@/lib/types'; // Importa tus tipos
 
@@ -28,6 +27,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"; // Para el área de hi
 import { getChartLegendItems, CHART_COLORS, MarketChart } from '@/components/MarketChart';
 import clsx from 'clsx';
 import { Globe } from 'lucide-react'; // Importar el icono
+import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
 
 // --- MOCK DE MERCADOS (se usará con datos reales de Binance) ---
 const MOCK_MARKETS: Market[] = [
@@ -166,7 +166,7 @@ export default function TradingBotControlPanel() {
         return () => clearInterval(balanceInterval);
     }, [toast]);
 
-    const onBotAction = useCallback((details: BotActionDetails) => {
+    const onBotAction = useCallback((details: any) => {
         console.log("LOG: onBotAction - Recibiendo detalles del bot:", JSON.stringify(details, null, 2));
         if (details.type === 'strategyExecuted') {
             const decisionAction = details.data?.action || 'hold';
@@ -370,6 +370,14 @@ export default function TradingBotControlPanel() {
                                 strategyLogs={strategyLogs}
                                 chartColors={CHART_COLORS}
                             />
+                        </CardContent>
+                    </Card>
+                )}
+                 {annotatedHistory.length > 0 && (
+                    <Card className="lg:col-span-2 shadow-lg rounded-xl">
+                        <CardHeader><CardTitle>Historial de Condiciones de Estrategia</CardTitle></CardHeader>
+                        <CardContent>
+                            <StrategyConditionChart data={annotatedHistory} />
                         </CardContent>
                     </Card>
                 )}

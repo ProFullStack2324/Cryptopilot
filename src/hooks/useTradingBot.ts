@@ -52,7 +52,7 @@ export const useTradingBot = (props: {
     const [currentPrice, setCurrentPrice] = useState<number | null>(null);
 
     const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false); 
-    const [botIntervalMs, setBotIntervalMs] = useState(1000); // Frecuencia de ejecución de la estrategia (5 segundos por defecto)
+    const [botIntervalMs, setBotIntervalMs] = useState(1000); // Frecuencia de ejecución de la estrategia (1 segundos por defecto)
     const [signalCounts, setSignalCounts] = useState({ buy: 0, sell: 0, hold: 0 });
 
     const { toast } = useToast();
@@ -526,7 +526,6 @@ export const useTradingBot = (props: {
         toast,
         onBotAction,
         log,
-        botLastActionTimestamp, 
         setBotOpenPosition,
         setBotLastActionTimestamp,
         setPlaceOrderError,
@@ -650,8 +649,8 @@ export const useTradingBot = (props: {
                                 maxQty: parseFloat(lotSizeFilter?.maxQty || '0'),
                                 stepSize: parseFloat(lotSizeFilter?.stepSize || '0'),
                             },
-                            minNotional: {
-                                minNotional: parseFloat(minNotionalFilter?.minNotional || '0'),
+                            minNotional: { 
+                                minNotional: parseFloat(minNotionalFilter?.minNotional || '0'), 
                             },
                             priceFilter: {
                                 minPrice: parseFloat(priceFilter?.minPrice || '0'),
