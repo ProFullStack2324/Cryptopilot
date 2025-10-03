@@ -42,15 +42,14 @@ export async function GET(request: Request) {
 
         } catch (err: any) {
             console.error('[API/Binance/Klines] Error al obtener velas:', err);
-             if (err instanceof ccxt.AuthenticationError) {
+             if (err.message.includes('Service unavailable from a restricted location')) {
+                return NextResponse.json({ success: false, message: 'Servicio no disponible: La API de Binance está restringiendo el acceso desde la ubicación del servidor.', details: 'Bloqueo geográfico de Binance.' }, { status: 403 });
+            } else if (err instanceof ccxt.AuthenticationError) {
                 return NextResponse.json({ success: false, message: 'Error de autenticación al obtener velas. Verifica tus claves API de Mainnet.' }, { status: 401 });
             } else if (err instanceof ccxt.NetworkError) {
                 return NextResponse.json({ success: false, message: 'Error de red al conectar con Binance Mainnet.' }, { status: 503 });
             } else if (err instanceof ccxt.ExchangeError) {
-                if (err.message.includes('Service unavailable from a restricted location')) {
-                    return NextResponse.json({ success: false, message: 'Servicio no disponible desde una ubicación restringida.', details: 'La API de Binance Spot está restringiendo el acceso desde la ubicación del servidor.' }, { status: 403 });
-                }
-                return NextResponse.json({ success: false, message: 'Error del exchange al solicitar velas.', details: err.message }, { status: 400 });
+                return NextResponse.json({ success: false, message: `Error del exchange: ${err.message}` }, { status: 400 });
             }
             return NextResponse.json({ success: false, message: 'Error interno al obtener velas.', details: err.message }, { status: 500 });
         }

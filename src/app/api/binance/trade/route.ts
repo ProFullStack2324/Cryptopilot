@@ -21,17 +21,16 @@ interface TradeRequest {
 }
 
 export async function POST(req: Request) {
-  const networkType = 'Mainnet';
   let ccxtSymbol: string = '';
 
   try {
     const body: TradeRequest = await req.json();
     const { symbol, type, side, amount, price } = body;
-    console.log(`[API/Binance/Trade/${networkType}] Recibida solicitud POST: ${JSON.stringify(body)}`);
+    console.log(`[API/Binance/Trade/Mainnet] Recibida solicitud POST: ${JSON.stringify(body)}`);
 
     if (!exchangeMainnet.apiKey || !exchangeMainnet.secret) {
-      console.error(`[API/Binance/Trade/${networkType}] Credenciales no configuradas.`);
-      return NextResponse.json({ success: false, message: `Credenciales de Binance ${networkType} no configuradas.` }, { status: 500 });
+      console.error(`[API/Binance/Trade/Mainnet] Credenciales no configuradas.`);
+      return NextResponse.json({ success: false, message: `Credenciales de Binance Mainnet no configuradas.` }, { status: 500 });
     }
     
     if (!symbol || !type || !side || amount <= 0) {
@@ -48,43 +47,46 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: `Símbolo no soportado: ${ccxtSymbol}`}, { status: 400 });
     }
 
-    console.log(`[API/Binance/Trade/${networkType}] Creando orden: ${side.toUpperCase()} ${amount} ${ccxtSymbol} (${type.toUpperCase()})`);
+    console.log(`[API/Binance/Trade/Mainnet] Creando orden: ${side.toUpperCase()} ${amount} ${ccxtSymbol} (${type.toUpperCase()})`);
     let order;
     if (type === 'market') {
       order = await exchangeMainnet.createMarketOrder(ccxtSymbol, side, amount);
     } else {
       order = await exchangeMainnet.createLimitOrder(ccxtSymbol, side, amount, price!);
     }
-    console.log(`[API/Binance/Trade/${networkType}] Orden procesada: ID=${order.id}, status=${order.status}`);
+    console.log(`[API/Binance/Trade/Mainnet] Orden procesada: ID=${order.id}, status=${order.status}`);
     
     return NextResponse.json({
       success: true,
-      message: `Orden ${side} creada en ${networkType}.`,
+      message: `Orden ${side} creada en Mainnet.`,
       orderId: order.id,
       status: order.status,
       data: order,
     }, { status: 200 });
 
   } catch (err: any) {
-    console.error(`[API/Binance/Trade/${networkType}] Error al ejecutar orden:`, err);
-    let userMessage = `Error al procesar la orden en ${networkType}.`;
+    console.error(`[API/Binance/Trade/Mainnet] Error al ejecutar orden:`, err);
+    let userMessage = `Error al procesar la orden en Mainnet.`;
     let statusCode = 500;
 
-    if (err instanceof ccxt.ExchangeError && err.message.includes('Service unavailable from a restricted location')) {
-        userMessage = "Servicio no disponible desde una ubicación restringida.";
+    if (err.message.includes('Service unavailable from a restricted location')) {
+        userMessage = "Servicio no disponible: La API de Binance está restringiendo el acceso desde la ubicación del servidor.";
         statusCode = 403; // Forbidden
     } else if (err instanceof ccxt.InsufficientFunds) {
-        userMessage = `Fondos insuficientes en ${networkType}.`;
+        userMessage = `Fondos insuficientes en Mainnet.`;
         statusCode = 400;
     } else if (err instanceof ccxt.InvalidOrder) {
-        userMessage = `Orden inválida según las reglas de ${networkType}. Detalles: ${err.message}`;
+        userMessage = `Orden inválida según las reglas de Mainnet. Detalles: ${err.message}`;
         statusCode = 400;
     } else if (err instanceof ccxt.AuthenticationError) {
-        userMessage = `Error de autenticación en ${networkType}. Verifica tus claves API.`;
+        userMessage = `Error de autenticación en Mainnet. Verifica tus claves API.`;
         statusCode = 401;
     } else if (err instanceof ccxt.NetworkError) {
-        userMessage = `Error de conexión con Binance ${networkType}.`;
+        userMessage = `Error de conexión con Binance Mainnet.`;
         statusCode = 503;
+    } else if (err instanceof ccxt.ExchangeError) {
+        userMessage = `Error del exchange: ${err.message}`;
+        statusCode = 502;
     }
 
     return NextResponse.json({

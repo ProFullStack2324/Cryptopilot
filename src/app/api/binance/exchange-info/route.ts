@@ -15,15 +15,9 @@ const exchangeMainnet = new ccxt.binance({
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const symbolParam = searchParams.get('symbol');
-  const networkType = 'Mainnet';
-
-  console.log(`[API/Binance/ExchangeInfo] Recibida solicitud de info en ${networkType}${symbolParam ? ` para ${symbolParam}` : ''}.`);
 
   try {
-    // No se necesitan credenciales para exchangeInfo, pero es buena práctica tener el cliente configurado
-    
     await exchangeMainnet.loadMarkets();
-    console.log(`[API/Binance/ExchangeInfo] Info del exchange obtenida.`);
 
     let responseData = null;
     if (symbolParam) {
@@ -31,7 +25,6 @@ export async function GET(req: Request) {
         const marketInfo = exchangeMainnet.market(ccxtSymbol);
         if (marketInfo) {
              responseData = marketInfo;
-             console.log(`[API/Binance/ExchangeInfo] Encontrada información detallada para el símbolo ${ccxtSymbol}.`);
         } else {
              return NextResponse.json({
                   success: false,
@@ -40,30 +33,32 @@ export async function GET(req: Request) {
         }
     } else {
         responseData = exchangeMainnet.markets;
-        console.log(`[API/Binance/ExchangeInfo] Devolviendo información para ${Object.keys(responseData).length} mercados.`);
     }
 
     return NextResponse.json({
       success: true,
-      message: `Información del exchange de ${networkType} obtenida con éxito.`,
+      message: `Información del exchange de Mainnet obtenida con éxito.`,
       data: responseData,
     });
 
   } catch (error: any) {
-    console.error(`[API/Binance/ExchangeInfo] Error al obtener info del exchange con CCXT en ${networkType}:`, error);
-    let userMessage = `Error al obtener la información del exchange de ${networkType}.`;
+    console.error(`[API/Binance/ExchangeInfo] Error al obtener info del exchange con CCXT en Mainnet:`, error);
+    let userMessage = `Error al obtener la información del exchange de Mainnet.`;
     let details = error.message || 'Error desconocido';
     let statusCode = 500;
 
-    if (error instanceof ccxt.NetworkError) {
+    if (error.message.includes('Service unavailable from a restricted location')) {
+        userMessage = "Servicio no disponible: La API de Binance está restringiendo el acceso desde la ubicación del servidor.";
+        details = "Bloqueo geográfico de Binance.";
+        statusCode = 403;
+    } else if (error instanceof ccxt.NetworkError) {
         userMessage = "Error de conexión con la API de Binance.";
         statusCode = 503;
     } else if (error instanceof ccxt.AuthenticationError) {
          userMessage = "Error de autenticación. Verifica tus claves API.";
          statusCode = 401;
     } else if (error instanceof ccxt.ExchangeError) {
-         userMessage = "Ocurrió un error en el exchange al obtener la información del mercado.";
-         details = error.message;
+         userMessage = `Ocurrió un error en el exchange: ${error.message}`;
     }
 
     return NextResponse.json({
