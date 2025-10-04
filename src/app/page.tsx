@@ -145,14 +145,17 @@ export default function TradingBotControlPanel() {
     }, [toast]);
 
     const onBotAction = useCallback((details: any) => {
-        console.log("LOG: onBotAction - Recibiendo detalles del bot:", JSON.stringify(details, null, 2));
+        // Corrección del error 'warnOnInvalidKey': Asegurarse de que cada log tenga un timestamp único.
+        // Si múltiples acciones ocurren en el mismo milisegundo, se añade un pequeño offset aleatorio.
+        const uniqueTimestamp = Date.now() + Math.random();
+
         if (details.type === 'strategyExecuted') {
             const decisionAction = details.data?.action || 'hold';
             const displayMessage = details.message || `Decisión de estrategia: ${decisionAction.toUpperCase()}`;
 
             setStrategyLogs(prevLogs => [
                 {
-                    timestamp: Date.now(),
+                    timestamp: uniqueTimestamp,
                     message: displayMessage,
                     details: { action: decisionAction, ...details.details }
                 },
@@ -372,8 +375,7 @@ export default function TradingBotControlPanel() {
 
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-2 shadow-lg rounded-xl">
-                        <CardHeader><CardTitle>Historial de Condiciones de Estrategia</CardTitle></CardHeader>
-                        <CardContent>
+                        <CardContent className="pt-6">
                             <StrategyConditionChart data={annotatedHistory} />
                         </CardContent>
                     </Card>
@@ -457,11 +459,11 @@ export default function TradingBotControlPanel() {
                     <CardHeader><CardTitle>Historial y Logs</CardTitle></CardHeader>
                     <CardContent>
                         <ScrollArea className="h-[400px] w-full pr-4">
-                            {annotatedHistory.slice().reverse().map(dp =>
-                                isValidNumber(dp.timestamp) ? formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2) : null
-                            ).filter(Boolean)}
+                            {annotatedHistory.slice().reverse().filter(dp => isValidNumber(dp.timestamp)).map(dp =>
+                                formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2)
+                            )}
                             {strategyLogs.slice().reverse().map((log, index) => (
-                                <div key={`log-${index}-${log.timestamp}`} className="text-xs text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-gray-700 py-1">
+                                <div key={`log-${log.timestamp}-${index}`} className="text-xs text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-gray-700 py-1">
                                     <p><strong>LOG [{new Date(log.timestamp).toLocaleTimeString()}]:</strong> {log.message}</p>
                                     {log.details && <pre className="text-[10px]">{JSON.stringify(log.details, null, 2)}</pre>}
                                 </div>
