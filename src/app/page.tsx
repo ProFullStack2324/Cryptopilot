@@ -231,7 +231,7 @@ export default function TradingBotControlPanel() {
         const rsi = isValidNumber(dataPoint.rsi) ? dataPoint.rsi.toFixed(2) : 'N/A';
 
         return (
-            <div key={dataPoint.timestamp} className="text-xs text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 py-1 last:border-b-0">
+            <div key={`datapoint-${dataPoint.timestamp}`} className="text-xs text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 py-1 last:border-b-0">
                 <p><strong>Time:</strong> {timestamp}</p>
                 <p><strong>O:</strong> {openPrice} | <strong>H:</strong> {highPrice} | <strong>L:</strong> {lowPrice} | <strong>C:</strong> {closePrice} | <strong>V:</strong> {volume}</p>
                 <p><strong>SMA10:</strong> {sma10} | <strong>SMA20:</strong> {sma20}</p>
@@ -459,9 +459,9 @@ export default function TradingBotControlPanel() {
                         <ScrollArea className="h-[400px] w-full pr-4">
                             {annotatedHistory.slice().reverse().map(dp =>
                                 isValidNumber(dp.timestamp) ? formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2) : null
-                            )}
+                            ).filter(Boolean)}
                             {strategyLogs.slice().reverse().map((log, index) => (
-                                <div key={`log-${index}`} className="text-xs text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-gray-700 py-1">
+                                <div key={`log-${index}-${log.timestamp}`} className="text-xs text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-gray-700 py-1">
                                     <p><strong>LOG [{new Date(log.timestamp).toLocaleTimeString()}]:</strong> {log.message}</p>
                                     {log.details && <pre className="text-[10px]">{JSON.stringify(log.details, null, 2)}</pre>}
                                 </div>

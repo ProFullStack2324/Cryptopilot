@@ -20,9 +20,10 @@ export interface StrategyDecision {
 // Objetivo: Ser más agresivo y reactivo a las condiciones del mercado.
 //
 // Lógica de Compra:
-// 1. El precio toca o cruza la Banda de Bollinger INFERIOR.
-// 2. Y el RSI está en zona de SOBREVENTA (<= 35).
-//    = Las dos condiciones principales para una potencial reversión alcista.
+// 1. Se deben cumplir 2 de 3 de las siguientes condiciones:
+//    a) El precio toca o cruza la Banda de Bollinger INFERIOR.
+//    b) El RSI está en zona de SOBREVENTA (<= 35).
+//    c) El histograma MACD cruza de negativo a positivo (señal de cambio de momento).
 //
 // Lógica de Venta (Toma de Ganancias / Cierre):
 // 1. El precio toca o cruza la Banda de Bollinger SUPERIOR.
@@ -108,7 +109,7 @@ export const decideTradeActionAndAmount = (params: {
     else {
         const priceCondition = currentPrice <= lowerBollingerBand;
         const rsiCondition = rsi <= 35;
-        // Condición MACD: el histograma acaba de cruzar a positivo o está creciendo.
+        // Condición MACD: el histograma acaba de cruzar a positivo.
         const macdCondition = macdHistogram > 0 && prevMacdHistogram <= 0;
 
         // Estrategia más agresiva: Se requieren 2 de 3 condiciones.
