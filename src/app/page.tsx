@@ -6,8 +6,7 @@ import { useToast } from '@/hooks/use-toast'; // Asegúrate de que la ruta sea c
 import {
     Market,
     BinanceBalance,
-    MarketPriceDataPoint,
-    BotOpenPosition
+    MarketPriceDataPoint
 } from '@/lib/types'; // Importa tus tipos
 
 // Importaciones de Shadcn/ui
@@ -28,6 +27,7 @@ import { getChartLegendItems, CHART_COLORS, MarketChart } from '@/components/Mar
 import clsx from 'clsx';
 import { Globe } from 'lucide-react'; // Importar el icono
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
+import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
 
 // --- MOCK DE MERCADOS (se usará con datos reales de Binance) ---
 const MOCK_MARKETS: Market[] = [
@@ -284,6 +284,15 @@ export default function TradingBotControlPanel() {
         };
     }, [currentMarketPriceHistory, selectedMarket?.pricePrecision]);
 
+    const latestDataPointForStrategy = useMemo(() => {
+        return annotatedHistory.length > 0 ? annotatedHistory[annotatedHistory.length - 1] : null;
+    }, [annotatedHistory]);
+
+    const lastStrategyDecision = useMemo(() => {
+        const lastLog = strategyLogs.find(log => log.details?.action);
+        return lastLog?.details?.action || 'hold';
+    }, [strategyLogs]);
+
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 sm:p-6 lg:p-8 flex flex-col items-center">
             <h1 className="text-3xl sm:text-4xl font-bold mb-6 text-center">CryptoPilot Bot Control Panel</h1>
@@ -373,6 +382,20 @@ export default function TradingBotControlPanel() {
                         </CardContent>
                     </Card>
                 )}
+
+                 {annotatedHistory.length > 0 && (
+                    <Card className="lg:col-span-2 shadow-lg rounded-xl">
+                        <CardHeader><CardTitle>Diagnóstico de Estrategia en Tiempo Real</CardTitle></CardHeader>
+                        <CardContent>
+                             <StrategyDashboard 
+                                latest={latestDataPointForStrategy}
+                                decision={lastStrategyDecision}
+                                selectedMarket={selectedMarket}
+                             />
+                        </CardContent>
+                    </Card>
+                )}
+
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-2 shadow-lg rounded-xl">
                         <CardHeader><CardTitle>Historial de Condiciones de Estrategia</CardTitle></CardHeader>
