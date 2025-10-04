@@ -21,6 +21,7 @@ export async function GET(request: Request) {
             await exchangeMainnet.loadMarkets();
             const ccxtSymbol = symbolParam.includes('/') ? symbolParam : `${symbolParam.replace(/USDT$/i, '')}/USDT`;
 
+            // fetchOHLCV es un endpoint público, no debería fallar por autenticación
             const ohlcv = await exchangeMainnet.fetchOHLCV(ccxtSymbol, intervalParam, undefined, limit);
 
             if (!ohlcv || ohlcv.length === 0) {

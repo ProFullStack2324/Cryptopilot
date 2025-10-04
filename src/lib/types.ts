@@ -282,7 +282,7 @@ export interface ApiResult<T> {
 
 // Tipo de dato para una vela (Kline) según el formato raw de Binance/CCXT
 // [timestamp, open, high, low, close, volume, closeTime, quoteAssetVolume, numberOfTrades, takerBuyBaseAssetVolume, takerBuyQuoteAssetVolume, ignore]
-export type KLine = number[]; // ✅ AJUSTE CRÍTICO: Asegura que KLine es exportado y definido.
+export type KLine = [number, number, number, number, number, number, ...any[]];
 
 
 

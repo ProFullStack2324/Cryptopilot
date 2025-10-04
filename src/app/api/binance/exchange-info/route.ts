@@ -8,6 +8,7 @@ export async function GET(req: Request) {
   const symbolParam = searchParams.get('symbol');
 
   try {
+    // Es público, pero requiere inicialización
     await exchangeMainnet.loadMarkets();
 
     let responseData = null;

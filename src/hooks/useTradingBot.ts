@@ -289,7 +289,7 @@ export const useTradingBot = (props: {
             if (!selectedMarketRules) console.warn("   - Reglas del mercado no cargadas.");
             if (isPlacingOrder) console.warn("   - Ya hay una orden en proceso de colocación.");
             console.groupEnd(); 
-            return;
+            return; 
         }
 
         console.log(`[Bot Cycle] Todas las condiciones iniciales CUMPLIDAS para ${selectedMarket.symbol}.`);
@@ -548,8 +548,9 @@ export const useTradingBot = (props: {
     const toggleBotStatus = useCallback(() => {
         setIsBotRunning(prev => {
             const nextState = !prev;
-            // Usamos un efecto para el toast para evitar el error de renderizado
+            // Usar un efecto para el toast para evitar el error de renderizado
             if (selectedMarket) {
+                // Este setTimeout(..., 0) soluciona el error "Cannot update a component while rendering a different component"
                 setTimeout(() => {
                     toast({
                         title: `Bot ${nextState ? 'iniciado' : 'detenido'}`,
@@ -615,9 +616,9 @@ export const useTradingBot = (props: {
                 console.log(`LOG: [useTradingBot - Init] Fetching exchange-info for ${selectedMarket.symbol}`);
                 const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
                 if (!rulesResponse.ok) {
-                    const errorText = await rulesResponse.text(); 
-                    console.error(`ERROR: [useTradingBot - Init] Fallo HTTP en la carga de reglas: ${rulesResponse.status} - ${errorText}`);
-                    throw new Error(`Error HTTP! status: ${rulesResponse.status} - ${errorText}`);
+                    const errorData = await rulesResponse.json(); 
+                    console.error(`ERROR: [useTradingBot - Init] Fallo HTTP en la carga de reglas: ${rulesResponse.status}`, errorData);
+                    throw new Error(errorData.message || `Error HTTP ${rulesResponse.status}`);
                 }
                 const rulesData: ApiResult<any> = await rulesResponse.json(); 
                 console.log(`LOG: [useTradingBot - Init] Raw rulesData received:`, rulesData);
@@ -678,9 +679,9 @@ export const useTradingBot = (props: {
                     const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
                     
                     if (!klinesResponse.ok) {
-                        const errorText = await klinesResponse.text();
-                        console.error(`ERROR: [useTradingBot - Init] Fallo HTTP en la carga de klines: ${klinesResponse.status} - ${errorText}`);
-                        throw new Error(`Error HTTP! status: ${klinesResponse.status} en la obtención de klines - ${errorText}`);
+                        const errorData = await klinesResponse.json();
+                        console.error(`ERROR: [useTradingBot - Init] Fallo HTTP en la carga de klines: ${klinesResponse.status}`, errorData);
+                        throw new Error(errorData.message || `Error HTTP ${klinesResponse.status}`);
                     }
                     const klinesData: ApiResult<KLine[]> = await klinesResponse.json(); // Usar KLine aquí
                     console.log("LOG: [useTradingBot - Init] Raw KLines data received:", klinesData);

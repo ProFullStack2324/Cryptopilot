@@ -62,31 +62,22 @@ const MOCK_MARKETS: Market[] = [
 // FUNCIÓN AUXILIAR ÚNICA: Para validar si un valor es un número válido (no null, undefined, o NaN).
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
-// FUNCIÓN AUXILIAR PARA PARSEAR MENSAJES DE ERROR
+// FUNCIÓN AUXILIAR PARA PARSEAR MENSAJES DE ERROR (mejorada)
 const parseErrorMessage = (error: string | null): string => {
-    if (!error) return "";
-    try {
-        // Intenta encontrar un objeto JSON dentro del string del error
-        const jsonMatch = error.match(/\{.*\}/);
-        if (jsonMatch) {
-            const errorObj = JSON.parse(jsonMatch[0]);
-            return errorObj.message || error;
-        }
-    } catch (e) {
-        // Si el parseo falla, devuelve el error original
-    }
+    if (!error) return "Error desconocido.";
+    // No parsear JSON, simplemente devolver el mensaje de error de texto plano que ahora envía la API
     return error;
 };
 
 
 export default function TradingBotControlPanel() {
-    const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null);
+    const [selectedMarketId, setSelectedMarketId] = useState<string | null>("BTCUSDT");
     const selectedMarket = useMemo(() => {
         return MOCK_MARKETS.find(m => m.id === selectedMarketId) || null;
     }, [selectedMarketId]);
 
     const [currentBalances, setCurrentBalances] = useState<BinanceBalance[]>([]);
-    const [balancesLoading, setBalancesLoading] = useState(false);
+    const [balancesLoading, setBalancesLoading] = useState(true);
     const [balancesError, setBalancesError] = useState<string | null>(null);
 
     // Estado para los logs detallados de la estrategia
@@ -111,12 +102,13 @@ export default function TradingBotControlPanel() {
             setBalancesError(null);
             try {
                 const response = await fetch('/api/binance/balance');
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-                }
                 const data = await response.json();
-                if (data.success && data.balances) {
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || `Error HTTP ${response.status}`);
+                }
+
+                if (data.balances) {
                     const fetchedBalances: BinanceBalance[] = Object.entries(data.balances).map(([asset, balanceData]: [string, any]) => ({
                         asset: asset,
                         free: balanceData.available,
@@ -124,16 +116,11 @@ export default function TradingBotControlPanel() {
                     })).filter(b => b.free > 0 || b.locked > 0);
                     setCurrentBalances(fetchedBalances);
                 } else {
-                    throw new Error(data.message || "Error al cargar balances de Binance.");
+                     setCurrentBalances([]);
                 }
             } catch (error: any) {
                 console.error("Error al cargar balances:", error);
                 setBalancesError(error.message);
-                toast({
-                    title: "Error al cargar balances",
-                    description: parseErrorMessage(error.message),
-                    variant: "destructive",
-                });
             } finally {
                 setBalancesLoading(false);
             }
@@ -145,8 +132,6 @@ export default function TradingBotControlPanel() {
     }, [toast]);
 
     const onBotAction = useCallback((details: any) => {
-        // Corrección del error 'warnOnInvalidKey': Asegurarse de que cada log tenga un timestamp único.
-        // Si múltiples acciones ocurren en el mismo milisegundo, se añade un pequeño offset aleatorio.
         const uniqueTimestamp = Date.now() + Math.random();
 
         if (details.type === 'strategyExecuted') {
@@ -312,7 +297,7 @@ export default function TradingBotControlPanel() {
                     </div>
 
                     {selectedMarket && (
-                        <p className="text-sm">
+                        <p className="text-sm text-muted-foreground">
                             **Mercado:** {selectedMarket.symbol} | **Precio Actual:** {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}
                         </p>
                     )}
@@ -321,9 +306,9 @@ export default function TradingBotControlPanel() {
                     )}
                     {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
                     {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
-                    {(rulesLoading || balancesLoading) && <p className="text-blue-500 text-sm">Cargando datos iniciales...</p>}
-                    {rulesError && <p className="text-red-500 text-sm">Error de Reglas: {parseErrorMessage(rulesError)}</p>}
-                    {balancesError && <p className="text-red-500 text-sm">Error de Balances: {parseErrorMessage(balancesError)}</p>}
+                    {(rulesLoading) && <p className="text-blue-500 text-sm">Cargando reglas del mercado...</p>}
+                    {rulesError && <p className="text-red-500 text-sm">Error al cargar reglas: {parseErrorMessage(rulesError)}</p>}
+                    {balancesError && <p className="text-red-500 text-sm">Error al cargar balances: {parseErrorMessage(balancesError)}</p>}
                 </CardContent>
             </Card>
 
@@ -400,7 +385,7 @@ export default function TradingBotControlPanel() {
                                     <li key={bal.asset}><strong>{bal.asset}:</strong> {(bal.free + bal.locked).toFixed(4)}</li>
                                 ))}
                             </ul>
-                        ) : (!balancesLoading && !balancesError && <p>No se encontraron balances.</p>)}
+                        ) : (!balancesLoading && !balancesError && <p>No se encontraron balances significativos.</p>)}
                     </CardContent>
                 </Card>
 
@@ -459,8 +444,8 @@ export default function TradingBotControlPanel() {
                     <CardHeader><CardTitle>Historial y Logs</CardTitle></CardHeader>
                     <CardContent>
                         <ScrollArea className="h-[400px] w-full pr-4">
-                            {annotatedHistory.slice().reverse().filter(dp => isValidNumber(dp.timestamp)).map(dp =>
-                                formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2)
+                            {annotatedHistory.slice().reverse().filter(dp => isValidNumber(dp.timestamp)).map((dp, index) =>
+                                <div key={`datapoint-${dp.timestamp}-${index}`}>{formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2)}</div>
                             )}
                             {strategyLogs.slice().reverse().map((log, index) => (
                                 <div key={`log-${log.timestamp}-${index}`} className="text-xs text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-gray-700 py-1">
