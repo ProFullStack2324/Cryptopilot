@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     } else if (err instanceof ccxt.InsufficientFunds) {
         userMessage = `Fondos insuficientes en Mainnet.`;
         statusCode = 400;
-    } else if (err instanceof cc_xt.InvalidOrder) {
+    } else if (err instanceof ccxt.InvalidOrder) {
         userMessage = `Orden inválida según las reglas de Mainnet. Detalles: ${err.message}`;
         statusCode = 400;
     } else if (err instanceof ccxt.AuthenticationError) {

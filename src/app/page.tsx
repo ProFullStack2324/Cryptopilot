@@ -131,7 +131,7 @@ export default function TradingBotControlPanel() {
                 setBalancesError(error.message);
                 toast({
                     title: "Error al cargar balances",
-                    description: error.message,
+                    description: parseErrorMessage(error.message),
                     variant: "destructive",
                 });
             } finally {
