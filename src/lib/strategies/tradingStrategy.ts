@@ -15,24 +15,23 @@ export interface StrategyDecision {
 }
 
 // ----------------------------------------------------------------------------
-// ESTRATEGIA DE SCALPING BASADA EN BANDAS DE BOLLINGER (BB) Y RSI
+// ESTRATEGIA DE SCALPING BASADA EN BANDAS DE BOLLINGER (BB) Y RSI (MODIFICADA)
 // ----------------------------------------------------------------------------
-// Objetivo: Realizar operaciones rápidas basadas en la reversión a la media.
+// Objetivo: Ser más agresivo y reactivo a las condiciones del mercado.
 //
 // Lógica de Compra:
 // 1. El precio toca o cruza la Banda de Bollinger INFERIOR.
-// 2. El RSI está en zona de SOBREVENTA (<= 35).
-//    = Esto sugiere que el precio ha caído demasiado rápido y es probable un rebote.
+// 2. Y el RSI está en zona de SOBREVENTA (<= 35).
+//    = Las dos condiciones principales para una potencial reversión alcista.
 //
-// Lógica de Venta (Toma de Ganancias):
+// Lógica de Venta (Toma de Ganancias / Cierre):
 // 1. El precio toca o cruza la Banda de Bollinger SUPERIOR.
-// 2. Opcional: El RSI entra en zona de SOBRECOMPRA (>= 65).
-//    = Esto sugiere que el precio ha subido demasiado rápido y es un buen momento para tomar ganancias.
+// 2. O el RSI entra en zona de SOBRECOMPRA (>= 65).
+//    = Cualquiera de estas dos condiciones es suficiente para cerrar la posición y asegurar ganancias.
 //
 // Gestión de Capital:
-// - Se usa un porcentaje fijo del capital disponible en USDT para cada compra.
-// - Se asegura de que la orden CUMPLA con el `minNotional` (valor mínimo de la orden) de Binance.
-//   Si el balance no es suficiente para la orden mínima, no se opera.
+// - Se usa un porcentaje del capital disponible para cada compra.
+// - Se asegura de que la orden CUMPLA con el `minNotional` de Binance.
 // ----------------------------------------------------------------------------
 
 export const decideTradeActionAndAmount = (params: {
@@ -54,36 +53,37 @@ export const decideTradeActionAndAmount = (params: {
         logStrategyMessage: log
     } = params;
     
-    const MIN_REQUIRED_HISTORY = 30; // Suficiente para BB(20) y RSI(14)
+    const MIN_REQUIRED_HISTORY = 30;
 
-    // --- Guardias Iniciales ---
     if (currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY) {
         log(`HOLD: Historial de velas insuficiente (${currentMarketPriceHistory.length}/${MIN_REQUIRED_HISTORY}).`);
         return { action: 'hold' };
     }
 
     const latest = currentMarketPriceHistory.at(-1)!;
-    const { rsi, upperBollingerBand, lowerBollingerBand } = latest;
+    const prev = currentMarketPriceHistory.at(-2);
+    
+    const { rsi, upperBollingerBand, lowerBollingerBand, macdHistogram } = latest;
+    const prevMacdHistogram = prev?.macdHistogram;
 
-    if (rsi === undefined || upperBollingerBand === undefined || lowerBollingerBand === undefined) {
-        log("HOLD: Indicadores (RSI, Bollinger Bands) no están disponibles en la última vela.");
+    if (rsi === undefined || upperBollingerBand === undefined || lowerBollingerBand === undefined || macdHistogram === undefined || prevMacdHistogram === undefined) {
+        log("HOLD: Indicadores clave no disponibles en las últimas velas.");
         return { action: 'hold' };
     }
 
-    log(`[SCALPING CHECK] P: ${currentPrice.toFixed(2)} | RSI: ${rsi.toFixed(2)} | BB Lower: ${lowerBollingerBand.toFixed(2)} | BB Upper: ${upperBollingerBand.toFixed(2)}`);
+    log(`[SCALPING CHECK] P: ${currentPrice.toFixed(2)} | RSI: ${rsi.toFixed(2)} | BB Lower: ${lowerBollingerBand.toFixed(2)} | BB Upper: ${upperBollingerBand.toFixed(2)} | MACD Hist: ${macdHistogram.toFixed(4)}`);
 
     const quoteAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.quoteAsset)?.free || 0;
 
     // --- LÓGICA DE VENTA (Si tenemos una posición abierta) ---
     if (botOpenPosition) {
-        const takeProfitCondition = currentPrice >= upperBollingerBand;
-        const rsiExitCondition = rsi >= 65;
+        const takeProfitPriceCondition = currentPrice >= upperBollingerBand;
+        const takeProfitRsiCondition = rsi >= 65;
 
-        if (takeProfitCondition || rsiExitCondition) {
-            log(`✅ VENTA: Condiciones de toma de ganancias cumplidas.`, { priceAtUpperBand: takeProfitCondition, rsiOverbought: rsiExitCondition });
+        if (takeProfitPriceCondition || takeProfitRsiCondition) {
+            log(`✅ VENTA: Condiciones de toma de ganancias cumplidas.`, { priceAtUpperBand: takeProfitPriceCondition, rsiOverbought: takeProfitRsiCondition });
             
             const quantityToSell = botOpenPosition.amount;
-            // Validar si la cantidad a vender cumple con los mínimos de Binance
             if (quantityToSell < selectedMarketRules.lotSize.minQty) {
                 log(`HOLD: La cantidad en posición (${quantityToSell}) es menor al mínimo vendible (${selectedMarketRules.lotSize.minQty}).`);
                 return { action: 'hold' };
@@ -106,35 +106,34 @@ export const decideTradeActionAndAmount = (params: {
 
     // --- LÓGICA DE COMPRA (Si NO tenemos posición abierta) ---
     else {
-        const buyCondition = currentPrice <= lowerBollingerBand;
+        const priceCondition = currentPrice <= lowerBollingerBand;
         const rsiCondition = rsi <= 35;
+        // Condición MACD: el histograma acaba de cruzar a positivo o está creciendo.
+        const macdCondition = macdHistogram > 0 && prevMacdHistogram <= 0;
 
-        if (buyCondition && rsiCondition) {
-            log(`✅ COMPRA: Condiciones cumplidas. Precio en BB inferior y RSI en sobreventa.`);
+        // Estrategia más agresiva: Se requieren 2 de 3 condiciones.
+        const conditionsMet = [priceCondition, rsiCondition, macdCondition].filter(Boolean).length;
 
-            // Calcular la cantidad a comprar usando un % del capital
-            const capitalToRisk = quoteAssetBalance * 0.95; // Usar el 95% del capital disponible para tener margen
+        if (conditionsMet >= 2) {
+            log(`✅ COMPRA: ${conditionsMet}/3 condiciones cumplidas.`, { priceCondition, rsiCondition, macdCondition });
+
+            const capitalToRisk = quoteAssetBalance * 0.95;
             let quantityToBuy = capitalToRisk / currentPrice;
 
-            // 1. Validar contra minNotional (valor mínimo de la orden)
             const minNotional = selectedMarketRules.minNotional.minNotional;
             if (quantityToBuy * currentPrice < minNotional) {
-                // Si nuestro capital disponible no alcanza para la orden mínima, no podemos operar.
                 if (quoteAssetBalance < minNotional) {
                     log(`HOLD: Balance de ${selectedMarket.quoteAsset} (${quoteAssetBalance.toFixed(2)}) es insuficiente para la orden mínima de ${minNotional}.`);
                     return { action: 'hold' };
                 }
-                // Si tenemos suficiente capital pero el % es muy bajo, ajustamos la cantidad para que cumpla el mínimo.
                 quantityToBuy = minNotional / currentPrice;
                 log(`Ajustando cantidad para cumplir con minNotional. Nueva cantidad: ${quantityToBuy}`);
             }
 
-            // 2. Ajustar la cantidad al `stepSize` del mercado (precisión de la cantidad)
             const stepSize = selectedMarketRules.lotSize.stepSize;
             quantityToBuy = Math.floor(quantityToBuy / stepSize) * stepSize;
             quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarket.precision.amount));
             
-            // 3. Verificación final de la cantidad
             if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
                 log(`HOLD: Cantidad a comprar (${quantityToBuy}) es menor al mínimo permitido (${selectedMarketRules.lotSize.minQty}) después de los ajustes.`);
                 return { action: 'hold' };
@@ -158,7 +157,7 @@ export const decideTradeActionAndAmount = (params: {
             };
         }
 
-        log(`HOLD: Sin señal de compra.`);
+        log(`HOLD: Sin señal de compra (${conditionsMet}/3 condiciones cumplidas).`);
         return { action: 'hold' };
     }
 };

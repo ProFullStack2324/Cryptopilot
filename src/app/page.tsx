@@ -364,6 +364,7 @@ export default function TradingBotControlPanel() {
                                 latest={latestDataPointForStrategy}
                                 decision={lastStrategyDecision}
                                 selectedMarket={selectedMarket}
+                                priceHistory={annotatedHistory}
                              />
                         </CardContent>
                     </Card>

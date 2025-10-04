@@ -546,22 +546,20 @@ export const useTradingBot = (props: {
     }, []);
 
     const toggleBotStatus = useCallback(() => {
-        setIsBotRunning(prev => {
-            const newIsRunning = !prev;
-            const status = newIsRunning ? 'iniciado' : 'detenido';
-            const networkName = 'Mainnet';
-    
-            // Mostrar un toast y loguear el cambio de estado
+        setIsBotRunning(prev => !prev);
+    }, []);
+
+    useEffect(() => {
+        if (selectedMarket) {
+            const status = isBotRunning ? 'iniciado' : 'detenido';
             toast({
                 title: `Bot ${status}`,
-                description: `El bot de trading para ${selectedMarket?.symbol || 'el mercado'} en ${networkName} ha sido ${status}.`,
-                variant: newIsRunning ? 'default' : 'destructive',
+                description: `El bot de trading para ${selectedMarket.symbol} ha sido ${status}.`,
+                variant: isBotRunning ? 'default' : 'destructive',
             });
-            console.log(`[useTradingBot] Bot ${status} en la red ${networkName}.`);
-    
-            return newIsRunning;
-        });
-    }, [selectedMarket?.symbol, toast]);
+            console.log(`[useTradingBot] Bot ${status} para ${selectedMarket.symbol}.`);
+        }
+    }, [isBotRunning, selectedMarket, toast]);
     
     // ======================================================================================================
     // Efecto para la Carga Inicial de Reglas del Mercado y el Historial de Velas (OHLCV).

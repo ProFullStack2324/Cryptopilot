@@ -14,6 +14,7 @@ interface StrategyDashboardProps {
   latest: MarketPriceDataPoint | null;
   decision: string;
   selectedMarket: Market | null;
+  priceHistory: MarketPriceDataPoint[];
 }
 
 // Componente individual para una condición de la estrategia
@@ -26,38 +27,36 @@ const ConditionStatus = ({ label, value, conditionMet }: { label: string, value:
   </li>
 );
 
-export function StrategyDashboard({ latest, decision, selectedMarket }: StrategyDashboardProps) {
-  if (!latest || !selectedMarket) {
+export function StrategyDashboard({ latest, decision, selectedMarket, priceHistory }: StrategyDashboardProps) {
+  if (!latest || !selectedMarket || priceHistory.length < 2) {
     return (
       <Card>
         <CardHeader><CardTitle>Diagnóstico de Estrategia</CardTitle></CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Esperando datos de la última vela...</p>
+          <p className="text-sm text-muted-foreground">Esperando datos suficientes de la vela...</p>
         </CardContent>
       </Card>
     );
   }
 
   const pricePrecision = selectedMarket.pricePrecision;
+  const prev = priceHistory[priceHistory.length - 2];
   
-  // Extraer valores de los indicadores
+  // Extraer valores de los indicadores de la vela actual y previa
   const rsi = latest.rsi;
-  const macdLine = latest.macdLine;
-  const signalLine = latest.signalLine;
-  const macdHist = latest.macdHistogram;
   const price = latest.closePrice;
   const lowerBB = latest.lowerBollingerBand;
   const upperBB = latest.upperBollingerBand;
-  const prevMacdHist = latest.macdHistogram; // Suponiendo que el hook puede proveer esto
+  const macdHist = latest.macdHistogram;
+  const prevMacdHist = prev.macdHistogram;
 
-  // Definir las condiciones de la estrategia (duplicando la lógica de tradingStrategy para visualización)
-  const buyConditionPrice = isValidNumber(price) && isValidNumber(lowerBB) && price <= lowerBB;
-  const buyConditionRSI = isValidNumber(rsi) && rsi <= 35;
-  const buyConditionMACD = isValidNumber(macdHist) && macdHist > 0 && isValidNumber(prevMacdHist) && macdHist > prevMacdHist;
-  
-  const sellConditionPrice = isValidNumber(price) && isValidNumber(upperBB) && price >= upperBB;
-  const sellConditionRSI = isValidNumber(rsi) && rsi >= 65;
-  const sellConditionMACD = isValidNumber(macdHist) && macdHist < 0 && isValidNumber(prevMacdHist) && macdHist < prevMacdHist;
+  // Definir las condiciones de la estrategia para visualización
+  const buyPriceCondition = isValidNumber(price) && isValidNumber(lowerBB) && price <= lowerBB;
+  const buyRsiCondition = isValidNumber(rsi) && rsi <= 35;
+  const buyMacdCondition = isValidNumber(macdHist) && isValidNumber(prevMacdHist) && macdHist > 0 && prevMacdHist <= 0;
+
+  const sellPriceCondition = isValidNumber(price) && isValidNumber(upperBB) && price >= upperBB;
+  const sellRsiCondition = isValidNumber(rsi) && rsi >= 65;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -82,24 +81,24 @@ export function StrategyDashboard({ latest, decision, selectedMarket }: Strategy
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Condiciones de Compra</CardTitle>
-          <CardDescription>Evaluación para una señal de COMPRA.</CardDescription>
+          <CardDescription>2 de 3 condiciones requeridas.</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="space-y-2">
             <ConditionStatus 
               label="Precio ≤ BB Inferior"
               value={isValidNumber(price) && isValidNumber(lowerBB) ? `${price.toFixed(pricePrecision)} ≤ ${lowerBB.toFixed(pricePrecision)}` : "N/A"}
-              conditionMet={buyConditionPrice}
+              conditionMet={buyPriceCondition}
             />
             <ConditionStatus 
               label="RSI ≤ 35"
               value={isValidNumber(rsi) ? rsi.toFixed(2) : "N/A"}
-              conditionMet={buyConditionRSI}
+              conditionMet={buyRsiCondition}
             />
             <ConditionStatus 
-              label="MACD Hist. Creciente"
+              label="MACD Hist. cruza a > 0"
               value={isValidNumber(macdHist) ? macdHist.toFixed(4) : "N/A"}
-              conditionMet={buyConditionMACD}
+              conditionMet={buyMacdCondition}
             />
           </ul>
         </CardContent>
@@ -109,24 +108,19 @@ export function StrategyDashboard({ latest, decision, selectedMarket }: Strategy
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Condiciones de Venta</CardTitle>
-          <CardDescription>Evaluación para una señal de VENTA.</CardDescription>
+          <CardDescription>1 de 2 condiciones requeridas.</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="space-y-2">
             <ConditionStatus 
               label="Precio ≥ BB Superior"
               value={isValidNumber(price) && isValidNumber(upperBB) ? `${price.toFixed(pricePrecision)} ≥ ${upperBB.toFixed(pricePrecision)}` : "N/A"}
-              conditionMet={sellConditionPrice}
+              conditionMet={sellPriceCondition}
             />
             <ConditionStatus 
               label="RSI ≥ 65"
               value={isValidNumber(rsi) ? rsi.toFixed(2) : "N/A"}
-              conditionMet={sellConditionRSI}
-            />
-             <ConditionStatus 
-              label="MACD Hist. Decreciente"
-              value={isValidNumber(macdHist) ? macdHist.toFixed(4) : "N/A"}
-              conditionMet={sellConditionMACD}
+              conditionMet={sellRsiCondition}
             />
           </ul>
         </CardContent>
