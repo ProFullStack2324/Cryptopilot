@@ -185,12 +185,15 @@ export default function TradingBotControlPanel() {
     }, [currentMarketPriceHistory, chartDisplayError]);
 
     const annotatedHistory = useMemo(() => {
-        const validPriceHistory = (currentMarketPriceHistory || []).filter(dp =>
-            dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
-        );
-
+        // Asegúrate de que `currentMarketPriceHistory` es un array antes de usar `filter`
+        const validPriceHistory = Array.isArray(currentMarketPriceHistory) 
+            ? currentMarketPriceHistory.filter(dp =>
+                dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
+              )
+            : [];
+    
         if (validPriceHistory.length === 0) return [];
-
+    
         return validPriceHistory.map((dp) => {
             const matchingLog = (strategyLogs || []).find(log =>
                 log && isValidNumber(log.timestamp) && Math.abs(log.timestamp - dp.timestamp) < 2000
@@ -230,7 +233,7 @@ export default function TradingBotControlPanel() {
     };
 
     const latestCalculations = useMemo(() => {
-        if (currentMarketPriceHistory.length === 0) return null;
+        if (!Array.isArray(currentMarketPriceHistory) || currentMarketPriceHistory.length === 0) return null;
         const latest = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
         if (!latest || !isValidNumber(latest.timestamp) || !isValidNumber(latest.closePrice)) return null;
         const pricePrecision = selectedMarket?.pricePrecision || 2;
@@ -297,9 +300,9 @@ export default function TradingBotControlPanel() {
                     </div>
 
                     {selectedMarket && (
-                        <p className="text-sm text-muted-foreground">
-                            **Mercado:** {selectedMarket.symbol} | **Precio Actual:** {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}
-                        </p>
+                         <p className="text-sm text-muted-foreground">
+                            <strong>Mercado:</strong> {selectedMarket.symbol} | <strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}
+                         </p>
                     )}
                     {currentMarketPriceHistory.length < requiredCandles && selectedMarket && (
                         <p className="text-orange-500 text-sm">El bot requiere al menos {requiredCandles} velas para iniciar. Actual: {currentMarketPriceHistory.length}.</p>
