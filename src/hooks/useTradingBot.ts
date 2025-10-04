@@ -102,7 +102,7 @@ export const useTradingBot = (props: {
         const bbSeries = calculateBollingerBandsSeries(closes, 20, 2);
     
         klines.forEach((klineItem, index) => {
-            if (!klineItem.every(isValidNumber)) {
+            if (!Array.isArray(klineItem) || klineItem.length < 6 || !klineItem.every(isValidNumber)) {
                 log(`[Annotate] Kline inválido en índice ${index}, saltando.`, klineItem);
                 return;
             }
@@ -171,7 +171,7 @@ export const useTradingBot = (props: {
             orderDataToExecute = strategyDecision.orderData;
         }
 
-        if (actionToExecute !== 'hold' && orderDataToExecute) {
+        if ((actionToExecute === 'buy' || actionToExecute === 'sell') && orderDataToExecute) {
             if (isPlacingOrder) return;
 
             setIsPlacingOrder(true); 
@@ -203,7 +203,9 @@ export const useTradingBot = (props: {
                 setPlaceOrderError(fetchError.message || "Error de conexión con la API.");
                 toast({ title: "Error de conexión", description: fetchError.message, variant: "destructive" });
             } finally {
-                setIsPlacingOrder(false);
+                if(isMounted.current) {
+                    setIsPlacingOrder(false);
+                }
             }
         }
     }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, isPlacingOrder, toast, log ]);
@@ -226,7 +228,7 @@ export const useTradingBot = (props: {
                         description: `El bot para ${selectedMarket.symbol} ha sido ${nextState ? 'iniciado' : 'detenido'}.`,
                         variant: nextState ? 'default' : 'destructive',
                     });
-                }, 0);
+                }, 100);
             }
             return nextState;
         });
@@ -253,12 +255,41 @@ export const useTradingBot = (props: {
             setRulesError(null);
             setIsDataLoaded(false);
 
+            // Fetch Klines (primero, no depende de autenticación)
             try {
-                // Fetch Rules
+                const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
+                if (!klinesResponse.ok) {
+                    const errorData = await klinesResponse.json();
+                    throw new Error(errorData.message || `Error HTTP al cargar velas: ${klinesResponse.status}`);
+                }
+                const klinesData: ApiResult<KLine[]> = await klinesResponse.json();
+
+                const klinesArray = klinesData.data || (klinesData as any).klines;
+                if (klinesData.success && Array.isArray(klinesArray) && klinesArray.length > 0) {
+                    const historyWithIndicators = annotateMarketPriceHistory(klinesArray);
+                    if (isMounted.current) {
+                        setCurrentMarketPriceHistory(historyWithIndicators);
+                        setCurrentPrice(historyWithIndicators[historyWithIndicators.length - 1]?.closePrice || null);
+                        setIsDataLoaded(true); // Marcamos los datos como cargados para que la estrategia pueda empezar
+                    }
+                } else {
+                    throw new Error("No se pudieron cargar velas históricas iniciales o el array está vacío.");
+                }
+            } catch (error: any) {
+                if (isMounted.current) {
+                    // No se establece un error fatal aquí, el gráfico simplemente podría estar vacío
+                    toast({ title: "Advertencia al Cargar Gráfico", description: error.message, variant: "destructive" });
+                    setCurrentMarketPriceHistory([]);
+                    setIsDataLoaded(false); // Los datos no se cargaron, la estrategia no debe correr
+                }
+            }
+
+            // Fetch Rules (segundo, puede fallar por autenticación sin detener el gráfico)
+            try {
                 const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
                 if (!rulesResponse.ok) {
                     const errorData = await rulesResponse.json();
-                    throw new Error(errorData.message || `Error HTTP ${rulesResponse.status}`);
+                    throw new Error(errorData.message || `Error HTTP al cargar reglas: ${rulesResponse.status}`);
                 }
                 const rulesData: ApiResult<any> = await rulesResponse.json();
                 
@@ -290,33 +321,10 @@ export const useTradingBot = (props: {
                 } else {
                     throw new Error(rulesData.message || "Error al parsear las reglas del mercado.");
                 }
-
-                // Fetch Klines
-                const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
-                if (!klinesResponse.ok) {
-                    const errorData = await klinesResponse.json();
-                    throw new Error(errorData.message || `Error HTTP ${klinesResponse.status}`);
-                }
-                const klinesData: ApiResult<KLine[]> = await klinesResponse.json();
-
-                const klinesArray = klinesData.data || (klinesData as any).klines;
-                if (klinesData.success && Array.isArray(klinesArray) && klinesArray.length > 0) {
-                    const historyWithIndicators = annotateMarketPriceHistory(klinesArray);
-                    if (isMounted.current) {
-                        setCurrentMarketPriceHistory(historyWithIndicators);
-                        setCurrentPrice(historyWithIndicators[historyWithIndicators.length - 1]?.closePrice || null);
-                        setIsDataLoaded(true);
-                    }
-                } else {
-                    throw new Error("No se pudieron cargar velas históricas iniciales.");
-                }
             } catch (error: any) {
-                if (isMounted.current) {
+                 if (isMounted.current) {
                     setRulesError(error.message);
-                    setIsDataLoaded(false);
-                    setCurrentMarketPriceHistory([]);
-                    setCurrentPrice(null);
-                    toast({ title: "Error al Cargar Datos", description: error.message, variant: "destructive" });
+                    toast({ title: "Error al Cargar Reglas del Mercado", description: error.message, variant: "destructive" });
                 }
             } finally {
                 if (isMounted.current) {

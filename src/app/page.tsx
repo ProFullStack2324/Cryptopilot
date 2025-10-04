@@ -1,3 +1,4 @@
+
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -65,13 +66,12 @@ const isValidNumber = (value: any): value is number => typeof value === 'number'
 // FUNCIÓN AUXILIAR PARA PARSEAR MENSAJES DE ERROR (mejorada)
 const parseErrorMessage = (error: string | null): string => {
     if (!error) return "Error desconocido.";
-    // No parsear JSON, simplemente devolver el mensaje de error de texto plano que ahora envía la API
     return error;
 };
 
 
 export default function TradingBotControlPanel() {
-    const [selectedMarketId, setSelectedMarketId] = useState<string | null>("BTCUSDT");
+    const [selectedMarketId, setSelectedMarketId] = useState<string>("BTCUSDT");
     const selectedMarket = useMemo(() => {
         return MOCK_MARKETS.find(m => m.id === selectedMarketId) || null;
     }, [selectedMarketId]);
@@ -185,7 +185,6 @@ export default function TradingBotControlPanel() {
     }, [currentMarketPriceHistory, chartDisplayError]);
 
     const annotatedHistory = useMemo(() => {
-        // Asegúrate de que `currentMarketPriceHistory` es un array antes de usar `filter`
         const validPriceHistory = Array.isArray(currentMarketPriceHistory) 
             ? currentMarketPriceHistory.filter(dp =>
                 dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
@@ -221,8 +220,10 @@ export default function TradingBotControlPanel() {
         const macdHistogram = isValidNumber(dataPoint.macdHistogram) ? dataPoint.macdHistogram.toFixed(4) : 'N/A';
         const rsi = isValidNumber(dataPoint.rsi) ? dataPoint.rsi.toFixed(2) : 'N/A';
 
+        const uniqueKey = `datapoint-${dataPoint.timestamp}-${Math.random()}`;
+
         return (
-            <div key={`datapoint-${dataPoint.timestamp}`} className="text-xs text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 py-1 last:border-b-0">
+            <div key={uniqueKey} className="text-xs text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 py-1 last:border-b-0">
                 <p><strong>Time:</strong> {timestamp}</p>
                 <p><strong>O:</strong> {openPrice} | <strong>H:</strong> {highPrice} | <strong>L:</strong> {lowPrice} | <strong>C:</strong> {closePrice} | <strong>V:</strong> {volume}</p>
                 <p><strong>SMA10:</strong> {sma10} | <strong>SMA20:</strong> {sma20}</p>
@@ -299,7 +300,7 @@ export default function TradingBotControlPanel() {
                         </Button>
                     </div>
 
-                    {selectedMarket && (
+                     {selectedMarket && (
                          <p className="text-sm text-muted-foreground">
                             <strong>Mercado:</strong> {selectedMarket.symbol} | <strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}
                          </p>
@@ -447,8 +448,8 @@ export default function TradingBotControlPanel() {
                     <CardHeader><CardTitle>Historial y Logs</CardTitle></CardHeader>
                     <CardContent>
                         <ScrollArea className="h-[400px] w-full pr-4">
-                            {annotatedHistory.slice().reverse().filter(dp => isValidNumber(dp.timestamp)).map((dp, index) =>
-                                <div key={`datapoint-${dp.timestamp}-${index}`}>{formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2)}</div>
+                            {annotatedHistory.slice().reverse().map((dp, index) =>
+                                <React.Fragment key={`datapoint-fragment-${dp.timestamp}-${index}`}>{formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2)}</React.Fragment>
                             )}
                             {strategyLogs.slice().reverse().map((log, index) => (
                                 <div key={`log-${log.timestamp}-${index}`} className="text-xs text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-gray-700 py-1">
@@ -463,3 +464,4 @@ export default function TradingBotControlPanel() {
         </div>
     );
 }
+
