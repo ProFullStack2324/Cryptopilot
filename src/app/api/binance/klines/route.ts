@@ -1,16 +1,7 @@
 // src/app/api/binance/klines/route.ts
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
-
-const exchangeMainnet = new ccxt.binance({
-  apiKey: process.env.BINANCE_API_KEY,
-  secret: process.env.BINANCE_SECRET_KEY,
-  options: {
-    'defaultType': 'spot',
-    'adjustForTimeDifference': true,
-  },
-  enableRateLimit: true,
-});
+import { exchangeMainnet } from '@/lib/binance-client'; // Importar la instancia centralizada
 
 export async function GET(request: Request) {
     try {
@@ -45,7 +36,7 @@ export async function GET(request: Request) {
              if (err.message.includes('Service unavailable from a restricted location')) {
                 return NextResponse.json({ success: false, message: 'Servicio no disponible: La API de Binance está restringiendo el acceso desde la ubicación del servidor.', details: 'Bloqueo geográfico de Binance.' }, { status: 403 });
             } else if (err instanceof ccxt.AuthenticationError) {
-                return NextResponse.json({ success: false, message: 'Error de autenticación al obtener velas. Verifica tus claves API de Mainnet.' }, { status: 401 });
+                return NextResponse.json({ success: false, message: 'Error de autenticación. Causa probable: La IP pública de tu red no está en la lista blanca (whitelist) de tu clave API en Binance, o la clave no tiene los permisos necesarios.' }, { status: 401 });
             } else if (err instanceof ccxt.NetworkError) {
                 return NextResponse.json({ success: false, message: 'Error de red al conectar con Binance Mainnet.' }, { status: 503 });
             } else if (err instanceof ccxt.ExchangeError) {

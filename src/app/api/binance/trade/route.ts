@@ -1,16 +1,7 @@
 // src/app/api/binance/trade/route.ts
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
-
-const exchangeMainnet = new ccxt.binance({
-  apiKey: process.env.BINANCE_API_KEY,
-  secret: process.env.BINANCE_SECRET_KEY,
-  options: {
-    'defaultType': 'spot',
-    'adjustForTimeDifference': true,
-  },
-  enableRateLimit: true,
-});
+import { exchangeMainnet } from '@/lib/binance-client'; // Importar la instancia centralizada
 
 interface TradeRequest {
   symbol: string;
@@ -75,11 +66,11 @@ export async function POST(req: Request) {
     } else if (err instanceof ccxt.InsufficientFunds) {
         userMessage = `Fondos insuficientes en Mainnet.`;
         statusCode = 400;
-    } else if (err instanceof ccxt.InvalidOrder) {
+    } else if (err instanceof cc_xt.InvalidOrder) {
         userMessage = `Orden inválida según las reglas de Mainnet. Detalles: ${err.message}`;
         statusCode = 400;
     } else if (err instanceof ccxt.AuthenticationError) {
-        userMessage = `Error de autenticación en Mainnet. Verifica tus claves API.`;
+        userMessage = "Error de autenticación. Causa probable: La IP pública de tu red no está en la lista blanca (whitelist) de tu clave API en Binance, o la clave no tiene los permisos necesarios.";
         statusCode = 401;
     } else if (err instanceof ccxt.NetworkError) {
         userMessage = `Error de conexión con Binance Mainnet.`;

@@ -1,16 +1,7 @@
 // src/app/api/binance/exchange-info/route.ts
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
-
-const exchangeMainnet = new ccxt.binance({
-  apiKey: process.env.BINANCE_API_KEY,
-  secret: process.env.BINANCE_SECRET_KEY,
-  options: {
-    'defaultType': 'spot',
-    'adjustForTimeDifference': true,
-  },
-  enableRateLimit: true,
-});
+import { exchangeMainnet } from '@/lib/binance-client'; // Importar la instancia centralizada
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -55,7 +46,7 @@ export async function GET(req: Request) {
         userMessage = "Error de conexión con la API de Binance.";
         statusCode = 503;
     } else if (error instanceof ccxt.AuthenticationError) {
-         userMessage = "Error de autenticación. Verifica tus claves API.";
+         userMessage = "Error de autenticación. Causa probable: La IP pública de tu red no está en la lista blanca (whitelist) de tu clave API en Binance, o la clave no tiene los permisos necesarios.";
          statusCode = 401;
     } else if (error instanceof ccxt.ExchangeError) {
          userMessage = `Ocurrió un error en el exchange: ${error.message}`;

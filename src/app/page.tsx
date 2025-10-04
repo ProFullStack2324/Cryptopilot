@@ -89,9 +89,6 @@ export default function TradingBotControlPanel() {
     const [balancesLoading, setBalancesLoading] = useState(false);
     const [balancesError, setBalancesError] = useState<string | null>(null);
 
-    // Estado para la IP pública del servidor
-    const [serverIp, setServerIp] = useState<string | null>(null);
-
     // Estado para los logs detallados de la estrategia
     const [strategyLogs, setStrategyLogs] = useState<{ timestamp: number; message: string; details?: any; }[]>([]);
 
@@ -106,25 +103,6 @@ export default function TradingBotControlPanel() {
     const [chartDisplayError, setChartDisplayError] = useState<string | null>(null);
 
     const { toast } = useToast();
-
-    // Efecto para obtener la IP pública del servidor al cargar la página
-    useEffect(() => {
-        const fetchServerIp = async () => {
-            try {
-                const response = await fetch('/api/ip');
-                const data = await response.json();
-                if (data.success && data.ip) {
-                    setServerIp(data.ip);
-                } else {
-                    setServerIp('No se pudo obtener');
-                }
-            } catch (error) {
-                console.error("Error al obtener la IP del servidor:", error);
-                setServerIp('Error de conexión');
-            }
-        };
-        fetchServerIp();
-    }, []);
 
     // Efecto para cargar balances de Binance y actualizarlos periódicamente
     useEffect(() => {
@@ -328,11 +306,6 @@ export default function TradingBotControlPanel() {
                         >
                             {isBotRunning ? 'Detener Bot' : 'Iniciar Bot'}
                         </Button>
-                        <div className="flex items-center text-sm text-muted-foreground gap-2 p-2 border rounded-md">
-                            <Globe className="h-4 w-4" />
-                            <span>IP del Servidor:</span>
-                            <span className="font-mono text-foreground">{serverIp || 'Obteniendo...'}</span>
-                        </div>
                     </div>
 
                     {selectedMarket && (
