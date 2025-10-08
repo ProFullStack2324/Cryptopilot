@@ -129,7 +129,7 @@ export default function TradingBotControlPanel() {
         fetchBalances();
         const balanceInterval = setInterval(fetchBalances, 60000); // Actualiza balances cada 60 segundos
         return () => clearInterval(balanceInterval);
-    }, [toast]);
+    }, []);
 
     const onBotAction = useCallback((details: any) => {
         const uniqueTimestamp = Date.now() + Math.random();
@@ -300,7 +300,7 @@ export default function TradingBotControlPanel() {
                         </Button>
                     </div>
 
-                     {selectedMarket && (
+                     {selectedMarket && !rulesError && (
                          <p className="text-sm text-muted-foreground">
                             <strong>Mercado:</strong> {selectedMarket.symbol} | <strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}
                          </p>
@@ -327,10 +327,11 @@ export default function TradingBotControlPanel() {
                         {selectedMarketRules ? (
                             <div className="text-sm space-y-1">
                                 <p><strong>Activo Base:</strong> {selectedMarketRules.baseAsset}</p>
-                                {/* CORRECCIÓN: Se usa `minQty` para la cantidad mínima */}
                                 <p><strong>Cantidad Mínima:</strong> {isValidNumber(selectedMarketRules.lotSize?.minQty) ? selectedMarketRules.lotSize.minQty : 'N/A'}</p>
-                                {/* CORRECCIÓN: Se usa `minNotional` para el nocional mínimo y se valida */}
                                 <p><strong>Nocional Mínimo:</strong> {isValidNumber(selectedMarketRules.minNotional?.minNotional) ? `${selectedMarketRules.minNotional.minNotional} USDT` : 'N/A'}</p>
+                                <pre className="text-xs bg-muted p-2 rounded-md mt-2 overflow-auto">
+                                    {JSON.stringify(selectedMarketRules, null, 2)}
+                                </pre>
                             </div>
                         ) : (!rulesLoading && !rulesError && <p>Selecciona un mercado para ver las reglas.</p>)}
                     </CardContent>

@@ -219,21 +219,19 @@ export const useTradingBot = (props: {
     }, []);
 
     const toggleBotStatus = useCallback(() => {
-        setIsBotRunning(prev => {
-            const nextState = !prev;
-            if(selectedMarket){
-                setTimeout(() => {
-                    toast({
-                        title: `Bot ${nextState ? 'iniciado' : 'detenido'}`,
-                        description: `El bot para ${selectedMarket.symbol} ha sido ${nextState ? 'iniciado' : 'detenido'}.`,
-                        variant: nextState ? 'default' : 'destructive',
-                    });
-                }, 100);
-            }
-            return nextState;
-        });
-    }, [selectedMarket, toast]);
+        setIsBotRunning(prev => !prev);
+    }, []);
     
+    useEffect(() => {
+        if(selectedMarket){
+            toast({
+                title: `Bot ${isBotRunning ? 'iniciado' : 'detenido'}`,
+                description: `El bot para ${selectedMarket.symbol} ha sido ${isBotRunning ? 'iniciado' : 'detenido'}.`,
+                variant: isBotRunning ? 'default' : 'destructive',
+            });
+        }
+    }, [isBotRunning]);
+
     // ======================================================================================================
     // Efecto para la Carga Inicial de Reglas del Mercado y el Historial de Velas (OHLCV).
     // ======================================================================================================
@@ -270,53 +268,70 @@ export const useTradingBot = (props: {
                     if (isMounted.current) {
                         setCurrentMarketPriceHistory(historyWithIndicators);
                         setCurrentPrice(historyWithIndicators[historyWithIndicators.length - 1]?.closePrice || null);
-                        setIsDataLoaded(true); // Marcamos los datos como cargados para que la estrategia pueda empezar
+                        setIsDataLoaded(true); 
                     }
                 } else {
                     throw new Error("No se pudieron cargar velas históricas iniciales o el array está vacío.");
                 }
             } catch (error: any) {
                 if (isMounted.current) {
-                    // No se establece un error fatal aquí, el gráfico simplemente podría estar vacío
                     toast({ title: "Advertencia al Cargar Gráfico", description: error.message, variant: "destructive" });
                     setCurrentMarketPriceHistory([]);
-                    setIsDataLoaded(false); // Los datos no se cargaron, la estrategia no debe correr
+                    setIsDataLoaded(false);
                 }
             }
 
             // Fetch Rules (segundo, puede fallar por autenticación sin detener el gráfico)
             try {
                 const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
-                if (!rulesResponse.ok) {
-                    const errorData = await rulesResponse.json();
-                    throw new Error(errorData.message || `Error HTTP al cargar reglas: ${rulesResponse.status}`);
-                }
                 const rulesData: ApiResult<any> = await rulesResponse.json();
+
+                // --- INICIO DEPURACIÓN ---
+                console.log("Respuesta cruda de /api/binance/exchange-info:", rulesData);
+                // --- FIN DEPURACIÓN ---
+
+                if (!rulesResponse.ok) {
+                    throw new Error(rulesData.message || `Error HTTP al cargar reglas: ${rulesResponse.status}`);
+                }
                 
                 if (rulesData.success && rulesData.data) {
-                    const ccxtMarketInfo = rulesData.data;
-                    const lotSizeFilter = ccxtMarketInfo.info.filters.find((f: any) => f.filterType === 'LOT_SIZE');
-                    const minNotionalFilter = ccxtMarketInfo.info.filters.find((f: any) => f.filterType === 'MIN_NOTIONAL');
-                    const priceFilter = ccxtMarketInfo.info.filters.find((f: any) => f.filterType === 'PRICE_FILTER');
-
+                    const marketInfo = rulesData.data;
+                    
+                    // --- CORRECCIÓN: Parseo robusto de las reglas ---
                     const parsedRules: MarketRules = {
-                        symbol: ccxtMarketInfo.symbol,
-                        status: ccxtMarketInfo.active ? 'TRADING' : 'BREAK',
-                        baseAsset: ccxtMarketInfo.base,
-                        quoteAsset: ccxtMarketInfo.quote,
-                        lotSize: { minQty: parseFloat(lotSizeFilter?.minQty || '0'), stepSize: parseFloat(lotSizeFilter?.stepSize || '0'), maxQty: parseFloat(lotSizeFilter?.maxQty || '0') },
-                        minNotional: { minNotional: parseFloat(minNotionalFilter?.minNotional || '0') },
-                        priceFilter: { minPrice: parseFloat(priceFilter?.minPrice || '0'), maxPrice: parseFloat(priceFilter?.maxPrice || '0'), tickSize: parseFloat(priceFilter?.tickSize || '0')},
-                        precision: { price: ccxtMarketInfo.precision.price, amount: ccxtMarketInfo.precision.amount, base: ccxtMarketInfo.precision.base, quote: ccxtMarketInfo.precision.quote },
-                        baseAssetPrecision: ccxtMarketInfo.precision.base,
-                        quotePrecision: ccxtMarketInfo.precision.quote,
-                        icebergAllowed: ccxtMarketInfo.info.icebergAllowed,
-                        ocoAllowed: ccxtMarketInfo.info.ocoAllowed,
-                        quoteOrderQtyMarketAllowed: ccxtMarketInfo.info.quoteOrderQtyMarketAllowed,
-                        isSpotTradingAllowed: ccxtMarketInfo.info.isSpotTradingAllowed,
-                        isMarginTradingAllowed: ccxtMarketInfo.info.isMarginTradingAllowed,
-                        filters: ccxtMarketInfo.info.filters,
+                        symbol: marketInfo.symbol,
+                        status: marketInfo.active ? 'TRADING' : 'BREAK',
+                        baseAsset: marketInfo.baseAsset,
+                        quoteAsset: marketInfo.quoteAsset,
+                        lotSize: {
+                            minQty: marketInfo.minQty || 0,
+                            maxQty: marketInfo.limits?.amount?.max || 0,
+                            stepSize: marketInfo.amountPrecision ? Math.pow(10, -marketInfo.amountPrecision) : 0,
+                        },
+                        minNotional: { 
+                            minNotional: marketInfo.minNotional || 0,
+                        },
+                        priceFilter: {
+                            minPrice: marketInfo.limits?.price?.min || 0,
+                            maxPrice: marketInfo.limits?.price?.max || 0,
+                            tickSize: marketInfo.pricePrecision ? Math.pow(10, -marketInfo.pricePrecision) : 0,
+                        },
+                        precision: {
+                            price: marketInfo.pricePrecision,
+                            amount: marketInfo.amountPrecision,
+                            base: marketInfo.baseAssetPrecision, 
+                            quote: marketInfo.quotePrecision,
+                        },
+                        baseAssetPrecision: marketInfo.baseAssetPrecision,
+                        quotePrecision: marketInfo.quotePrecision,
+                        icebergAllowed: marketInfo.rawInfo?.icebergAllowed || false,
+                        ocoAllowed: marketInfo.rawInfo?.ocoAllowed || false,
+                        quoteOrderQtyMarketAllowed: marketInfo.rawInfo?.quoteOrderQtyMarketAllowed || false,
+                        isSpotTradingAllowed: marketInfo.rawInfo?.isSpotTradingAllowed || false,
+                        isMarginTradingAllowed: marketInfo.rawInfo?.isMarginTradingAllowed || false,
+                        filters: marketInfo.rawInfo?.filters || [],
                     };
+
                     if (isMounted.current) setSelectedMarketRules(parsedRules);
                 } else {
                     throw new Error(rulesData.message || "Error al parsear las reglas del mercado.");
