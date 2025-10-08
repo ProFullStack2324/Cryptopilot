@@ -1,6 +1,6 @@
 "use client"
 
-// Inspired byreact-hot-toastlibray
+// Inspired byreact-hot-toastlibrary
 import * as React from "react"
 
 import type {
