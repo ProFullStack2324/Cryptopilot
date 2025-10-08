@@ -32,7 +32,7 @@ export async function GET(req: Request) {
                 pricePrecision: marketInfo.precision?.price,
                 quotePrecision: marketInfo.precision?.quote,
                 // Se mantiene la info original por si se necesita para depuración avanzada
-                rawInfo: marketInfo.info 
+                filters: marketInfo.info?.filters 
              };
         } else {
              return NextResponse.json({

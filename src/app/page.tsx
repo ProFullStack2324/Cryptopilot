@@ -139,11 +139,11 @@ export default function TradingBotControlPanel() {
             ...prevLogs.slice(0, 199) // Mantener hasta 200 logs
         ]);
 
-        if (details.type === 'strategy_decision' && details.data?.action) {
-            const decisionAction = details.data.action;
+        if (details.type === 'strategy_decision' && details.data?.action && ['buy', 'sell', 'hold'].includes(details.data.action)) {
+            const decisionAction = details.data.action as 'buy' | 'sell' | 'hold';
             setSignalCount(prev => ({
                 ...prev,
-                [decisionAction]: prev[decisionAction] + 1
+                [decisionAction]: (prev[decisionAction] || 0) + 1
             }));
         }
     }, []);
@@ -259,9 +259,6 @@ export default function TradingBotControlPanel() {
                             <div className="text-sm space-y-1">
                                 <p><strong>Cantidad Mínima:</strong> {isValidNumber(selectedMarketRules.lotSize?.minQty) ? selectedMarketRules.lotSize.minQty : 'N/A'}</p>
                                 <p><strong>Nocional Mínimo:</strong> {isValidNumber(selectedMarketRules.minNotional?.minNotional) ? `${selectedMarketRules.minNotional.minNotional} USDT` : 'N/A'}</p>
-                                <pre className="text-xs bg-muted p-2 rounded-md mt-2 overflow-auto">
-                                    {JSON.stringify(selectedMarketRules, null, 2)}
-                                </pre>
                             </div>
                         ) : (!rulesLoading && !rulesError && <p>Selecciona un mercado para ver las reglas.</p>)}
                     </CardContent>
@@ -325,7 +322,7 @@ export default function TradingBotControlPanel() {
                         </CardContent>
                     </Card>
                 )}
-
+                
                 <Card className="lg:col-span-2 shadow-lg rounded-xl">
                     <CardHeader>
                         <CardTitle>Registro de Operaciones y Decisiones</CardTitle>
@@ -360,5 +357,3 @@ export default function TradingBotControlPanel() {
         </div>
     );
 }
-
-    

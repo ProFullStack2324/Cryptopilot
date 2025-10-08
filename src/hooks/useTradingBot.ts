@@ -52,34 +52,39 @@ export const useTradingBot = (props: {
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
         if (!klines || klines.length === 0) return [];
         const annotatedHistory: MarketPriceDataPoint[] = [];
-        const closes = klines.map(k => k[4]).filter(isValidNumber);
         
-        const sma10Series = klines.map((_, i) => calculateSMA(klines.slice(0, i + 1).map(k => k[4]), 10));
-        const sma20Series = klines.map((_, i) => calculateSMA(klines.slice(0, i + 1).map(k => k[4]), 20));
-        const sma50Series = klines.map((_, i) => calculateSMA(klines.slice(0, i + 1).map(k => k[4]), 50));
-        const rsiSeries = klines.map((_, i) => calculateRSI(klines.slice(0, i + 1).map(k => k[4]), 14));
-        const macdSeries = klines.map((_, i) => calculateMACD(klines.slice(0, i + 1).map(k => k[4]), 12, 26, 9));
-        const bbSeries = klines.map((_, i) => calculateBollingerBands(klines.slice(0, i + 1).map(k => k[4]), 20, 2));
+        const closes = klines.map(k => k[4]).filter(isValidNumber);
+        if (closes.length !== klines.length) {
+            console.warn("Algunas velas no tienen precio de cierre válido.");
+            return [];
+        }
 
-        klines.forEach((klineItem, index) => {
-            if (!Array.isArray(klineItem) || klineItem.length < 6) return;
+        for (let i = 0; i < klines.length; i++) {
+            const currentCloses = klines.slice(0, i + 1).map(k => k[4]);
+            const klineItem = klines[i];
+
+            if (!Array.isArray(klineItem) || klineItem.length < 6) continue;
             const [timestamp, openPrice, highPrice, lowPrice, closePrice, volume] = klineItem;
-            if (![timestamp, openPrice, highPrice, lowPrice, closePrice, volume].every(isValidNumber)) return;
+            if (![timestamp, openPrice, highPrice, lowPrice, closePrice, volume].every(isValidNumber)) continue;
+
+            const sma10 = calculateSMA(currentCloses, 10);
+            const sma20 = calculateSMA(currentCloses, 20);
+            const sma50 = calculateSMA(currentCloses, 50);
+            const rsi = calculateRSI(currentCloses, 14);
+            const macd = calculateMACD(currentCloses, 12, 26, 9);
+            const bb = calculateBollingerBands(currentCloses, 20, 2);
 
             annotatedHistory.push({
                 timestamp, openPrice, highPrice, lowPrice, closePrice, volume,
-                sma10: sma10Series[index],
-                sma20: sma20Series[index],
-                sma50: sma50Series[index],
-                rsi: rsiSeries[index],
-                macdLine: macdSeries[index]?.macdLine,
-                signalLine: macdSeries[index]?.signalLine,
-                macdHistogram: macdSeries[index]?.macdHistogram,
-                upperBollingerBand: bbSeries[index]?.upper,
-                middleBollingerBand: bbSeries[index]?.middle,
-                lowerBollingerBand: bbSeries[index]?.lower,
+                sma10, sma20, sma50, rsi,
+                macdLine: macd.macdLine,
+                signalLine: macd.signalLine,
+                macdHistogram: macd.macdHistogram,
+                upperBollingerBand: bb.upper,
+                middleBollingerBand: bb.middle,
+                lowerBollingerBand: bb.lower,
             });
-        });
+        }
         return annotatedHistory;
     }, []);
 
@@ -147,11 +152,13 @@ export const useTradingBot = (props: {
         setIsBotRunning(prev => {
             const newStatus = !prev;
             logAction(`Bot ${newStatus ? 'iniciado' : 'detenido'}`, true, newStatus ? 'start' : 'stop');
-            toast({
-                title: `Bot ${newStatus ? 'iniciado' : 'detenido'}`,
-                description: `El bot para ${selectedMarket?.symbol || 'mercado seleccionado'} ha sido ${newStatus ? 'iniciado' : 'detenido'}.`,
-                variant: newStatus ? 'default' : 'destructive',
-            });
+            if (isMounted.current) {
+                toast({
+                    title: `Bot ${newStatus ? 'iniciado' : 'detenido'}`,
+                    description: `El bot para ${selectedMarket?.symbol || 'mercado seleccionado'} ha sido ${newStatus ? 'iniciado' : 'detenido'}.`,
+                    variant: newStatus ? 'default' : 'destructive',
+                });
+            }
             return newStatus;
         });
     }, [selectedMarket?.symbol, toast, logAction]);
@@ -175,6 +182,64 @@ export const useTradingBot = (props: {
             setIsDataLoaded(false);
 
             try {
+                const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
+                const rulesData: ApiResult<any> = await rulesResponse.json();
+                
+                if (!rulesResponse.ok || !rulesData.success) {
+                    throw new Error(rulesData.message || `Error al cargar reglas del mercado.`);
+                }
+                
+                const marketInfo = rulesData.data;
+                const lotSizeFilter = marketInfo.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
+                const minNotionalFilter = marketInfo.filters?.find((f: any) => f.filterType === 'NOTIONAL');
+                const priceFilter = marketInfo.filters?.find((f: any) => f.filterType === 'PRICE_FILTER');
+
+                const parsedRules: MarketRules = {
+                    symbol: marketInfo.symbol,
+                    status: marketInfo.active ? 'TRADING' : 'BREAK',
+                    baseAsset: marketInfo.baseAsset,
+                    quoteAsset: marketInfo.quoteAsset,
+                    lotSize: {
+                        minQty: parseFloat(lotSizeFilter?.minQty) || 0,
+                        maxQty: parseFloat(lotSizeFilter?.maxQty) || 0,
+                        stepSize: parseFloat(lotSizeFilter?.stepSize) || 0,
+                    },
+                    minNotional: {
+                        minNotional: parseFloat(minNotionalFilter?.minNotional) || 0,
+                    },
+                    priceFilter: {
+                        minPrice: parseFloat(priceFilter?.minPrice) || 0,
+                        maxPrice: parseFloat(priceFilter?.maxPrice) || 0,
+                        tickSize: parseFloat(priceFilter?.tickSize) || 0,
+                    },
+                    precision: {
+                        price: marketInfo.pricePrecision,
+                        amount: marketInfo.amountPrecision,
+                        base: marketInfo.baseAssetPrecision,
+                        quote: marketInfo.quotePrecision,
+                    },
+                    baseAssetPrecision: marketInfo.baseAssetPrecision,
+                    quotePrecision: marketInfo.quotePrecision,
+                    icebergAllowed: marketInfo.icebergAllowed || false,
+                    ocoAllowed: marketInfo.ocoAllowed || false,
+                    quoteOrderQtyMarketAllowed: marketInfo.quoteOrderQtyMarketAllowed || false,
+                    isSpotTradingAllowed: marketInfo.isSpotTradingAllowed || false,
+                    isMarginTradingAllowed: marketInfo.isMarginTradingAllowed || false,
+                    filters: marketInfo.filters || [],
+                };
+                
+                if (isMounted.current) setSelectedMarketRules(parsedRules);
+
+            } catch (error: any) {
+                if (isMounted.current) {
+                    setRulesError(error.message);
+                    toast({ title: "Error al Cargar Reglas", description: error.message, variant: "destructive" });
+                }
+            } finally {
+                if (isMounted.current) setRulesLoading(false);
+            }
+
+            try {
                 const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
                 const klinesData: ApiResult<KLine[]> = await klinesResponse.json();
                 if (!klinesResponse.ok || !klinesData.success) throw new Error(klinesData.message || "Error al cargar velas (klines).");
@@ -186,7 +251,9 @@ export const useTradingBot = (props: {
                         setCurrentPrice(historyWithIndicators.at(-1)?.closePrice || null);
                         setIsDataLoaded(true);
                     }
-                } else throw new Error("No se recibieron datos de velas (klines).");
+                } else {
+                    if (isMounted.current) setIsDataLoaded(false);
+                }
             } catch (error: any) {
                 if (isMounted.current) {
                     toast({ title: "Advertencia al Cargar Gráfico", description: error.message, variant: "destructive" });
@@ -194,43 +261,6 @@ export const useTradingBot = (props: {
                 }
             }
 
-            try {
-                const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
-                const rulesData: ApiResult<any> = await rulesResponse.json();
-                if (!rulesResponse.ok || !rulesData.success) throw new Error(rulesData.message || `Error al cargar reglas del mercado.`);
-                
-                const marketInfo = rulesData.data;
-                const lotSizeFilter = marketInfo.rawInfo?.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
-                const minNotionalFilter = marketInfo.rawInfo?.filters?.find((f: any) => f.filterType === 'MIN_NOTIONAL');
-
-                const parsedRules: MarketRules = {
-                    symbol: marketInfo.symbol,
-                    status: marketInfo.active ? 'TRADING' : 'BREAK',
-                    baseAsset: marketInfo.baseAsset,
-                    quoteAsset: marketInfo.quoteAsset,
-                    lotSize: { minQty: parseFloat(lotSizeFilter?.minQty) || 0, maxQty: parseFloat(lotSizeFilter?.maxQty) || 0, stepSize: parseFloat(lotSizeFilter?.stepSize) || 0 },
-                    minNotional: { minNotional: parseFloat(minNotionalFilter?.notional) || parseFloat(minNotionalFilter?.minNotional) || 0 },
-                    priceFilter: { minPrice: 0, maxPrice: 0, tickSize: 0 }, // Simplified
-                    precision: { price: marketInfo.pricePrecision, amount: marketInfo.amountPrecision, base: marketInfo.baseAssetPrecision, quote: marketInfo.quotePrecision },
-                    baseAssetPrecision: marketInfo.baseAssetPrecision,
-                    quotePrecision: marketInfo.quotePrecision,
-                    icebergAllowed: marketInfo.rawInfo?.icebergAllowed || false,
-                    ocoAllowed: marketInfo.rawInfo?.ocoAllowed || false,
-                    quoteOrderQtyMarketAllowed: marketInfo.rawInfo?.quoteOrderQtyMarketAllowed || false,
-                    isSpotTradingAllowed: marketInfo.rawInfo?.isSpotTradingAllowed || false,
-                    isMarginTradingAllowed: marketInfo.rawInfo?.isMarginTradingAllowed || false,
-                    filters: marketInfo.rawInfo?.filters || [],
-                };
-
-                if (isMounted.current) setSelectedMarketRules(parsedRules);
-            } catch (error: any) {
-                if (isMounted.current) {
-                    setRulesError(error.message);
-                    toast({ title: "Error al Cargar Reglas", description: error.message, variant: "destructive" });
-                }
-            } finally {
-                if (isMounted.current) setRulesLoading(false);
-            }
         };
         fetchInitialData();
     }, [selectedMarket?.symbol, toast, annotateMarketPriceHistory]);
@@ -251,5 +281,3 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory
     };
 };
-
-    
