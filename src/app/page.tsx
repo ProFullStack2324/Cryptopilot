@@ -81,6 +81,8 @@ export default function TradingBotControlPanel() {
 
     // Estado para logs de operaciones y decisiones
     const [operationLogs, setOperationLogs] = useState<BotActionDetails[]>([]);
+    const [tradeExecutionLogs, setTradeExecutionLogs] = useState<BotActionDetails[]>([]);
+
 
     // Estado para conteo de señales
     const [signalCount, setSignalCount] = useState({
@@ -132,19 +134,23 @@ export default function TradingBotControlPanel() {
 
     const onBotAction = useCallback((details: BotActionDetails) => {
         const uniqueTimestamp = Date.now() + Math.random();
+        const newLog = { ...details, timestamp: uniqueTimestamp };
 
-        // Añadir cualquier log de acción al historial general
-        setOperationLogs(prevLogs => [
-            { ...details, timestamp: uniqueTimestamp },
-            ...prevLogs.slice(0, 199) // Mantener hasta 200 logs
-        ]);
+        // 1. Añadir CUALQUIER log al historial general.
+        setOperationLogs(prevLogs => [newLog, ...prevLogs.slice(0, 199)]);
 
-        if (details.type === 'strategy_decision' && details.data?.action && ['buy', 'sell', 'hold'].includes(details.data.action)) {
+        // 2. Si es una decisión de estrategia, actualiza el contador de señales.
+        if (details.type === 'strategy_decision' && details.data?.action) {
             const decisionAction = details.data.action as 'buy' | 'sell' | 'hold';
-            setSignalCount(prev => ({
-                ...prev,
-                [decisionAction]: (prev[decisionAction] || 0) + 1
-            }));
+            if (['buy', 'sell', 'hold'].includes(decisionAction)) {
+                setSignalCount(prev => ({ ...prev, [decisionAction]: (prev[decisionAction] || 0) + 1 }));
+            }
+        }
+        
+        // 3. Añadir SOLO logs de ejecución (compra/venta) al registro de ejecución.
+        const isExecutionLog = (details.type === 'order_placed' || details.type === 'order_failed' || (details.type === 'strategy_decision' && details.data?.action !== 'hold'));
+        if (isExecutionLog) {
+            setTradeExecutionLogs(prevLogs => [newLog, ...prevLogs.slice(0, 99)]);
         }
     }, []);
 
@@ -322,6 +328,37 @@ export default function TradingBotControlPanel() {
                         </CardContent>
                     </Card>
                 )}
+
+                <Card className="lg:col-span-2 shadow-lg rounded-xl">
+                    <CardHeader>
+                        <CardTitle>Registro de Ejecución de Trades (BUY/SELL)</CardTitle>
+                        <CardDescription>Historial de intentos de compra/venta y su resultado.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <ScrollArea className="h-[300px] w-full pr-4">
+                            {tradeExecutionLogs.length > 0 ? (
+                                tradeExecutionLogs.map((log) => (
+                                    <div key={log.timestamp} className="text-xs border-b border-border py-2">
+                                        <p>
+                                            <span className="font-bold mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                                            <span className={`font-semibold ${log.success ? 'text-primary' : 'text-destructive'}`}>
+                                                {log.message}
+                                            </span>
+                                        </p>
+                                        {log.details && (
+                                            <pre className="text-[10px] bg-muted/50 p-1 rounded-sm mt-1 overflow-auto">
+                                                {typeof log.details === 'object' ? JSON.stringify(log.details, null, 2) : String(log.details)}
+                                            </pre>
+                                        )}
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-sm text-muted-foreground">Esperando la primera acción de compra o venta...</p>
+                            )}
+                        </ScrollArea>
+                    </CardContent>
+                </Card>
+
                 
                 <Card className="lg:col-span-2 shadow-lg rounded-xl">
                     <CardHeader>
@@ -356,4 +393,5 @@ export default function TradingBotControlPanel() {
             </div>
         </div>
     );
-}
+
+    
