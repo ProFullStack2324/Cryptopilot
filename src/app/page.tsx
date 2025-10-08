@@ -7,7 +7,8 @@ import { useToast } from '@/hooks/use-toast'; // Asegúrate de que la ruta sea c
 import {
     Market,
     BinanceBalance,
-    MarketPriceDataPoint
+    MarketPriceDataPoint,
+    BotActionDetails
 } from '@/lib/types'; // Importa tus tipos
 
 // Importaciones de Shadcn/ui
@@ -24,9 +25,7 @@ import { Badge } from "@/components/ui/badge"; // Para mostrar el estado del bot
 import { ScrollArea } from "@/components/ui/scroll-area"; // Para el área de historial de precios
 
 // IMPORTACIÓN ÚNICA DE GRÁFICA: SOLO MarketChart encapsula toda la lógica de Recharts.
-import { getChartLegendItems, CHART_COLORS, MarketChart } from '@/components/MarketChart';
-import clsx from 'clsx';
-import { Globe } from 'lucide-react'; // Importar el icono
+import { CHART_COLORS, MarketChart } from '@/components/MarketChart';
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
 import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
 
@@ -80,8 +79,8 @@ export default function TradingBotControlPanel() {
     const [balancesLoading, setBalancesLoading] = useState(true);
     const [balancesError, setBalancesError] = useState<string | null>(null);
 
-    // Estado para los logs detallados de la estrategia
-    const [strategyLogs, setStrategyLogs] = useState<{ timestamp: number; message: string; details?: any; }[]>([]);
+    // Estado para logs de operaciones y decisiones
+    const [operationLogs, setOperationLogs] = useState<BotActionDetails[]>([]);
 
     // Estado para conteo de señales
     const [signalCount, setSignalCount] = useState({
@@ -131,25 +130,20 @@ export default function TradingBotControlPanel() {
         return () => clearInterval(balanceInterval);
     }, []);
 
-    const onBotAction = useCallback((details: any) => {
+    const onBotAction = useCallback((details: BotActionDetails) => {
         const uniqueTimestamp = Date.now() + Math.random();
 
-        if (details.type === 'strategyExecuted') {
-            const decisionAction = details.data?.action || 'hold';
-            const displayMessage = details.message || `Decisión de estrategia: ${decisionAction.toUpperCase()}`;
+        // Añadir cualquier log de acción al historial general
+        setOperationLogs(prevLogs => [
+            { ...details, timestamp: uniqueTimestamp },
+            ...prevLogs.slice(0, 199) // Mantener hasta 200 logs
+        ]);
 
-            setStrategyLogs(prevLogs => [
-                {
-                    timestamp: uniqueTimestamp,
-                    message: displayMessage,
-                    details: { action: decisionAction, ...details.details }
-                },
-                ...prevLogs.slice(0, 99)
-            ]);
-            
+        if (details.type === 'strategy_decision' && details.data?.action) {
+            const decisionAction = details.data.action;
             setSignalCount(prev => ({
                 ...prev,
-                [decisionAction]: prev[decisionAction as 'buy' | 'sell' | 'hold'] + 1
+                [decisionAction]: prev[decisionAction] + 1
             }));
         }
     }, []);
@@ -185,83 +179,20 @@ export default function TradingBotControlPanel() {
     }, [currentMarketPriceHistory, chartDisplayError]);
 
     const annotatedHistory = useMemo(() => {
-        const validPriceHistory = Array.isArray(currentMarketPriceHistory) 
-            ? currentMarketPriceHistory.filter(dp =>
-                dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
-              )
-            : [];
-    
-        if (validPriceHistory.length === 0) return [];
-    
-        return validPriceHistory.map((dp) => {
-            const matchingLog = (strategyLogs || []).find(log =>
-                log && isValidNumber(log.timestamp) && Math.abs(log.timestamp - dp.timestamp) < 2000
-            );
-            let validSignal: 'buy' | 'sell' | 'hold' | undefined = undefined;
-            if (matchingLog?.details?.action && ['buy', 'sell', 'hold'].includes(matchingLog.details.action)) {
-                validSignal = matchingLog.details.action as 'buy' | 'sell' | 'hold';
-            }
-            return { ...dp, strategySignal: validSignal };
-        });
-    }, [currentMarketPriceHistory, strategyLogs]);
-
-    const formatDataPoint = (dataPoint: MarketPriceDataPoint, pricePrecision: number, amountPrecision: number) => {
-        if (!dataPoint || !isValidNumber(dataPoint.timestamp)) return null;
-        const timestamp = new Date(dataPoint.timestamp).toLocaleTimeString();
-        const openPrice = isValidNumber(dataPoint.openPrice) ? dataPoint.openPrice.toFixed(pricePrecision) : 'N/A';
-        const highPrice = isValidNumber(dataPoint.highPrice) ? dataPoint.highPrice.toFixed(pricePrecision) : 'N/A';
-        const lowPrice = isValidNumber(dataPoint.lowPrice) ? dataPoint.lowPrice.toFixed(pricePrecision) : 'N/A';
-        const closePrice = isValidNumber(dataPoint.closePrice) ? dataPoint.closePrice.toFixed(pricePrecision) : 'N/A';
-        const volume = isValidNumber(dataPoint.volume) ? dataPoint.volume.toFixed(amountPrecision) : 'N/A';
-        const sma10 = isValidNumber(dataPoint.sma10) ? dataPoint.sma10.toFixed(pricePrecision) : 'N/A';
-        const sma20 = isValidNumber(dataPoint.sma20) ? dataPoint.sma20.toFixed(pricePrecision) : 'N/A';
-        const macdLine = isValidNumber(dataPoint.macdLine) ? dataPoint.macdLine.toFixed(4) : 'N/A';
-        const signalLine = isValidNumber(dataPoint.signalLine) ? dataPoint.signalLine.toFixed(4) : 'N/A';
-        const macdHistogram = isValidNumber(dataPoint.macdHistogram) ? dataPoint.macdHistogram.toFixed(4) : 'N/A';
-        const rsi = isValidNumber(dataPoint.rsi) ? dataPoint.rsi.toFixed(2) : 'N/A';
-
-        const uniqueKey = `datapoint-${dataPoint.timestamp}-${Math.random()}`;
-
-        return (
-            <div key={uniqueKey} className="text-xs text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 py-1 last:border-b-0">
-                <p><strong>Time:</strong> {timestamp}</p>
-                <p><strong>O:</strong> {openPrice} | <strong>H:</strong> {highPrice} | <strong>L:</strong> {lowPrice} | <strong>C:</strong> {closePrice} | <strong>V:</strong> {volume}</p>
-                <p><strong>SMA10:</strong> {sma10} | <strong>SMA20:</strong> {sma20}</p>
-                <p><strong>MACD:</strong> {macdLine} | <strong>Signal:</strong> {signalLine} | <strong>Hist:</strong> {macdHistogram}</p>
-                <p><strong>RSI:</strong> {rsi}</p>
-            </div>
+        return (currentMarketPriceHistory || []).filter(dp =>
+            dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
         );
-    };
-
-    const latestCalculations = useMemo(() => {
-        if (!Array.isArray(currentMarketPriceHistory) || currentMarketPriceHistory.length === 0) return null;
-        const latest = currentMarketPriceHistory[currentMarketPriceHistory.length - 1];
-        if (!latest || !isValidNumber(latest.timestamp) || !isValidNumber(latest.closePrice)) return null;
-        const pricePrecision = selectedMarket?.pricePrecision || 2;
-
-        return {
-            price: isValidNumber(latest.closePrice) ? latest.closePrice.toFixed(pricePrecision) : 'N/A',
-            sma10: isValidNumber(latest.sma10) ? latest.sma10.toFixed(pricePrecision) : 'N/A',
-            sma20: isValidNumber(latest.sma20) ? latest.sma20.toFixed(pricePrecision) : 'N/A',
-            sma50: isValidNumber(latest.sma50) ? latest.sma50.toFixed(pricePrecision) : 'N/A',
-            macdLine: isValidNumber(latest.macdLine) ? latest.macdLine.toFixed(4) : 'N/A',
-            signalLine: isValidNumber(latest.signalLine) ? latest.signalLine.toFixed(4) : 'N/A',
-            macdHistogram: isValidNumber(latest.macdHistogram) ? latest.macdHistogram.toFixed(4) : 'N/A',
-            rsi: isValidNumber(latest.rsi) ? latest.rsi.toFixed(2) : 'N/A',
-            upperBB: isValidNumber(latest.upperBollingerBand) ? latest.upperBollingerBand.toFixed(pricePrecision) : 'N/A',
-            middleBB: isValidNumber(latest.middleBollingerBand) ? latest.middleBollingerBand.toFixed(pricePrecision) : 'N/A',
-            lowerBB: isValidNumber(latest.lowerBollingerBand) ? latest.lowerBollingerBand.toFixed(pricePrecision) : 'N/A',
-        };
-    }, [currentMarketPriceHistory, selectedMarket?.pricePrecision]);
-
+    }, [currentMarketPriceHistory]);
+    
     const latestDataPointForStrategy = useMemo(() => {
         return annotatedHistory.length > 0 ? annotatedHistory[annotatedHistory.length - 1] : null;
     }, [annotatedHistory]);
 
     const lastStrategyDecision = useMemo(() => {
-        const lastLog = strategyLogs.find(log => log.details?.action);
-        return lastLog?.details?.action || 'hold';
-    }, [strategyLogs]);
+        // Encontrar el último log que sea una decisión de estrategia
+        const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
+        return lastDecisionLog?.data?.action || 'hold';
+    }, [operationLogs]);
 
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 sm:p-6 lg:p-8 flex flex-col items-center">
@@ -326,7 +257,6 @@ export default function TradingBotControlPanel() {
                         {rulesError && <p className="text-red-500">{parseErrorMessage(rulesError)}</p>}
                         {selectedMarketRules ? (
                             <div className="text-sm space-y-1">
-                                <p><strong>Activo Base:</strong> {selectedMarketRules.baseAsset}</p>
                                 <p><strong>Cantidad Mínima:</strong> {isValidNumber(selectedMarketRules.lotSize?.minQty) ? selectedMarketRules.lotSize.minQty : 'N/A'}</p>
                                 <p><strong>Nocional Mínimo:</strong> {isValidNumber(selectedMarketRules.minNotional?.minNotional) ? `${selectedMarketRules.minNotional.minNotional} USDT` : 'N/A'}</p>
                                 <pre className="text-xs bg-muted p-2 rounded-md mt-2 overflow-auto">
@@ -337,6 +267,21 @@ export default function TradingBotControlPanel() {
                     </CardContent>
                 </Card>
 
+                <Card className="shadow-lg rounded-xl">
+                    <CardHeader><CardTitle>Balances de Binance</CardTitle></CardHeader>
+                    <CardContent>
+                        {balancesLoading && <p>Cargando balances...</p>}
+                        {balancesError && <p className="text-red-500">{parseErrorMessage(balancesError)}</p>}
+                        {currentBalances.length > 0 ? (
+                            <ul>
+                                {currentBalances.map(bal => (
+                                    <li key={bal.asset}><strong>{bal.asset}:</strong> {(bal.free + bal.locked).toFixed(4)}</li>
+                                ))}
+                            </ul>
+                        ) : (!balancesLoading && !balancesError && <p>No se encontraron balances significativos.</p>)}
+                    </CardContent>
+                </Card>
+                
                 {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-2 shadow-lg rounded-xl">
                         <CardHeader><CardTitle>Gráfica de Mercado</CardTitle></CardHeader>
@@ -344,7 +289,7 @@ export default function TradingBotControlPanel() {
                             <MarketChart
                                 data={annotatedHistory}
                                 selectedMarket={selectedMarket}
-                                strategyLogs={strategyLogs}
+                                strategyLogs={operationLogs}
                                 chartColors={CHART_COLORS}
                             />
                         </CardContent>
@@ -381,89 +326,39 @@ export default function TradingBotControlPanel() {
                     </Card>
                 )}
 
-                <Card className="shadow-lg rounded-xl">
-                    <CardHeader><CardTitle>Balances de Binance</CardTitle></CardHeader>
-                    <CardContent>
-                        {balancesLoading && <p>Cargando balances...</p>}
-                        {balancesError && <p className="text-red-500">{parseErrorMessage(balancesError)}</p>}
-                        {currentBalances.length > 0 ? (
-                            <ul>
-                                {currentBalances.map(bal => (
-                                    <li key={bal.asset}><strong>{bal.asset}:</strong> {(bal.free + bal.locked).toFixed(4)}</li>
-                                ))}
-                            </ul>
-                        ) : (!balancesLoading && !balancesError && <p>No se encontraron balances significativos.</p>)}
-                    </CardContent>
-                </Card>
-
                 <Card className="lg:col-span-2 shadow-lg rounded-xl">
-                    <CardHeader><CardTitle>Posición Abierta del Bot</CardTitle></CardHeader>
+                    <CardHeader>
+                        <CardTitle>Registro de Operaciones y Decisiones</CardTitle>
+                        <CardDescription>Historial de intentos de trade, operaciones y decisiones de la estrategia.</CardDescription>
+                    </CardHeader>
                     <CardContent>
-                        {botOpenPosition ? (
-                            <div className="text-sm space-y-1">
-                                <p><strong>Mercado:</strong> {botOpenPosition.marketId}</p>
-                                <p><strong>Tipo:</strong> <Badge className={`${botOpenPosition.type === 'buy' ? 'bg-blue-500' : 'bg-red-500'} text-white`}>{botOpenPosition.type.toUpperCase()}</Badge></p>
-                                <p><strong>Cantidad:</strong> {botOpenPosition.amount.toFixed(selectedMarket?.precision.amount || 4)} {selectedMarket?.baseAsset}</p>
-                                <p><strong>Precio de Entrada:</strong> {botOpenPosition.entryPrice.toFixed(selectedMarket?.pricePrecision || 2)} {selectedMarket?.quoteAsset}</p>
-                                <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket?.pricePrecision || 2) : 'N/A'}</p>
-                                {currentPrice && (
-                                    <p>
-                                        <strong>PnL:</strong>{" "}
-                                        {((currentPrice - botOpenPosition.entryPrice) * botOpenPosition.amount).toFixed(2)}{' '}
-                                        {selectedMarket?.quoteAsset}{' '}
-                                        <span className={`font-semibold ${((currentPrice - botOpenPosition.entryPrice) * botOpenPosition.amount) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                            ({(((currentPrice - botOpenPosition.entryPrice) / botOpenPosition.entryPrice) * 100).toFixed(2)}%)
-                                        </span>
-                                    </p>
-                                )}
-                            </div>
-                        ) : (<p>No hay posición abierta.</p>)}
-                        {botLastActionTimestamp && <p className="text-xs text-gray-500 mt-2">Última acción: {new Date(botLastActionTimestamp).toLocaleString()}</p>}
-                    </CardContent>
-                </Card>
-
-                <Card className="shadow-lg rounded-xl">
-                    <CardHeader><CardTitle>Indicadores Recientes</CardTitle></CardHeader>
-                    <CardContent>
-                        {latestCalculations ? (
-                            <div className="text-sm space-y-1">
-                                <p><strong>Precio:</strong> {latestCalculations.price}</p>
-                                <p><strong>SMA10:</strong> {latestCalculations.sma10}</p>
-                                <p><strong>SMA20:</strong> {latestCalculations.sma20}</p>
-                                <p><strong>RSI:</strong> {latestCalculations.rsi}</p>
-                            </div>
-                        ) : (<p>Cargando indicadores...</p>)}
-                    </CardContent>
-                </Card>
-
-                <Card className="shadow-lg border-blue-500">
-                    <CardHeader><CardTitle>Conteo de Señales</CardTitle></CardHeader>
-                    <CardContent>
-                        <ul>
-                            <li><strong>Buy:</strong> <span className="font-bold">{signalCount.buy}</span></li>
-                            <li><strong>Sell:</strong> <span className="font-bold">{signalCount.sell}</span></li>
-                            <li><strong>Hold:</strong> <span className="font-bold">{signalCount.hold}</span></li>
-                        </ul>
-                    </CardContent>
-                </Card>
-
-                <Card className="w-full max-w-7xl mt-4 shadow-lg rounded-xl lg:col-span-2">
-                    <CardHeader><CardTitle>Historial y Logs</CardTitle></CardHeader>
-                    <CardContent>
-                        <ScrollArea className="h-[400px] w-full pr-4">
-                            {annotatedHistory.slice().reverse().map((dp, index) =>
-                                <React.Fragment key={`datapoint-fragment-${dp.timestamp}-${index}`}>{formatDataPoint(dp, selectedMarket?.pricePrecision || 2, selectedMarket?.precision.amount || 2)}</React.Fragment>
+                        <ScrollArea className="h-[300px] w-full pr-4">
+                            {operationLogs.length > 0 ? (
+                                operationLogs.map((log) => (
+                                    <div key={log.timestamp} className="text-xs border-b border-border py-2">
+                                        <p>
+                                            <span className="font-bold mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                                            <span className={`font-semibold ${log.success ? 'text-primary' : 'text-destructive'}`}>
+                                                {log.message}
+                                            </span>
+                                        </p>
+                                        {log.details && (
+                                            <pre className="text-[10px] bg-muted/50 p-1 rounded-sm mt-1 overflow-auto">
+                                                {typeof log.details === 'object' ? JSON.stringify(log.details, null, 2) : String(log.details)}
+                                            </pre>
+                                        )}
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-sm text-muted-foreground">Esperando la primera acción del bot...</p>
                             )}
-                            {strategyLogs.slice().reverse().map((log, index) => (
-                                <div key={`log-${log.timestamp}-${index}`} className="text-xs text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-gray-700 py-1">
-                                    <p><strong>LOG [{new Date(log.timestamp).toLocaleTimeString()}]:</strong> {log.message}</p>
-                                    {log.details && <pre className="text-[10px]">{JSON.stringify(log.details, null, 2)}</pre>}
-                                </div>
-                            ))}
                         </ScrollArea>
                     </CardContent>
                 </Card>
+
             </div>
         </div>
     );
 }
+
+    

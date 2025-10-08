@@ -7,113 +7,67 @@ import {
     MarketRules,
     BinanceBalance,
     OrderFormData,
-    BinanceOrderResult,
     BotOpenPosition,
     BotActionDetails,
     MarketPriceDataPoint,
     PRICE_HISTORY_POINTS_TO_KEEP,
     ApiResult,
-    KLine, // Importado como KLine (con L mayúscula)
+    KLine,
     TradeEndpointResponse
 } from '@/lib/types';
 
 import { decideTradeActionAndAmount } from '@/lib/strategies/tradingStrategy';
 import { calculateSMA, calculateRSI, calculateMACD, calculateBollingerBands } from '@/lib/indicators';
 
-// Helper para validar si un valor es un número válido (no undefined, null, NaN).
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
-// ======================================================================================================
-// Hook Principal: useTradingBot
-// ======================================================================================================
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
     allBinanceBalances: BinanceBalance[];
     onBotAction?: (details: BotActionDetails) => void;
 }) => {
-    const { selectedMarket, allBinanceBalances, onBotAction } = props;
+    const { selectedMarket, allBinanceBalances, onBotAction = () => {} } = props;
 
-    // ======================================================================================================
-    // Estados del Bot
-    // ======================================================================================================
     const [isBotRunning, setIsBotRunning] = useState<boolean>(false);
     const [botOpenPosition, setBotOpenPosition] = useState<BotOpenPosition | null>(null);
     const [botLastActionTimestamp, setBotLastActionTimestamp] = useState<number | null>(null);
     const [isPlacingOrder, setIsPlacingOrder] = useState<boolean>(false);
     const [placeOrderError, setPlaceOrderError] = useState<string | null>(null);
-
-    // Estado para las reglas del mercado
     const [selectedMarketRules, setSelectedMarketRules] = useState<MarketRules | null>(null);
     const [rulesLoading, setRulesLoading] = useState<boolean>(true);
     const [rulesError, setRulesError] = useState<string | null>(null);
-
-    // ESTADOS PARA GESTIONAR EL HISTORIAL DE PRECIOS Y EL PRECIO ACTUAL
     const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>([]);
     const [currentPrice, setCurrentPrice] = useState<number | null>(null);
-
-    const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false); 
-    const [botIntervalMs, setBotIntervalMs] = useState(1000); // Frecuencia de ejecución de la estrategia (1 segundos por defecto)
-    const [signalCounts, setSignalCounts] = useState({ buy: 0, sell: 0, hold: 0 });
+    const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
+    const [botIntervalMs] = useState(5000); // Frecuencia de ejecución de la estrategia (5 segundos)
 
     const { toast } = useToast();
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const priceFetchIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Bandera para controlar si el componente está montado.
     const isMounted = useRef(false);
 
-    // ======================================================================================================
-    // Callbacks de Utilidad (log, debug)
-    // ======================================================================================================
-    const log = useCallback((message: string, details?: any) => {
-        console.log(`LOG: [${message}]`, details || '');
-        if (onBotAction) {
-            onBotAction({
-                type: 'strategyExecuted',
-                success: true,
-                timestamp: Date.now(),
-                message: message,
-                data: details,
-            });
-        }
+    const logAction = useCallback((message: string, success: boolean, type: BotActionDetails['type'], details?: any, data?: any) => {
+        onBotAction({ type, success, message, details, data, timestamp: Date.now() });
     }, [onBotAction]);
 
-    const debug = useCallback((message: string, details?: any) => {
-        console.debug(`DEBUG: ${message}`, details || '');
-    }, []);
-
-    // ======================================================================================================
-    // Función Centralizada para Anotar el Historial con Indicadores
-    // ======================================================================================================
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
-        if (!klines || klines.length === 0) {
-            return [];
-        }
-    
+        if (!klines || klines.length === 0) return [];
         const annotatedHistory: MarketPriceDataPoint[] = [];
-        const closes = klines.map(k => k[4]).filter(isValidNumber); // Obtener todos los precios de cierre válidos
-    
-        // Pre-calcular series de indicadores para eficiencia
-        const sma10Series = calculateSMASeries(closes, 10);
-        const sma20Series = calculateSMASeries(closes, 20);
-        const sma50Series = calculateSMASeries(closes, 50);
-        const rsiSeries = calculateRSISeries(closes, 14);
-        const macdSeries = calculateMACDSeries(closes, 12, 26, 9);
-        const bbSeries = calculateBollingerBandsSeries(closes, 20, 2);
-    
+        const closes = klines.map(k => k[4]).filter(isValidNumber);
+        
+        const sma10Series = klines.map((_, i) => calculateSMA(klines.slice(0, i + 1).map(k => k[4]), 10));
+        const sma20Series = klines.map((_, i) => calculateSMA(klines.slice(0, i + 1).map(k => k[4]), 20));
+        const sma50Series = klines.map((_, i) => calculateSMA(klines.slice(0, i + 1).map(k => k[4]), 50));
+        const rsiSeries = klines.map((_, i) => calculateRSI(klines.slice(0, i + 1).map(k => k[4]), 14));
+        const macdSeries = klines.map((_, i) => calculateMACD(klines.slice(0, i + 1).map(k => k[4]), 12, 26, 9));
+        const bbSeries = klines.map((_, i) => calculateBollingerBands(klines.slice(0, i + 1).map(k => k[4]), 20, 2));
+
         klines.forEach((klineItem, index) => {
-            if (!Array.isArray(klineItem) || klineItem.length < 6 || !klineItem.every(isValidNumber)) {
-                log(`[Annotate] Kline inválido en índice ${index}, saltando.`, klineItem);
-                return;
-            }
-    
-            const dataPoint: MarketPriceDataPoint = {
-                timestamp: klineItem[0],
-                openPrice: klineItem[1],
-                highPrice: klineItem[2],
-                lowPrice: klineItem[3],
-                closePrice: klineItem[4],
-                volume: klineItem[5],
+            if (!Array.isArray(klineItem) || klineItem.length < 6) return;
+            const [timestamp, openPrice, highPrice, lowPrice, closePrice, volume] = klineItem;
+            if (![timestamp, openPrice, highPrice, lowPrice, closePrice, volume].every(isValidNumber)) return;
+
+            annotatedHistory.push({
+                timestamp, openPrice, highPrice, lowPrice, closePrice, volume,
                 sma10: sma10Series[index],
                 sma20: sma20Series[index],
                 sma50: sma50Series[index],
@@ -124,117 +78,84 @@ export const useTradingBot = (props: {
                 upperBollingerBand: bbSeries[index]?.upper,
                 middleBollingerBand: bbSeries[index]?.middle,
                 lowerBollingerBand: bbSeries[index]?.lower,
-            };
-            annotatedHistory.push(dataPoint);
+            });
         });
-    
         return annotatedHistory;
-    }, [log]);
-    
-    // Funciones auxiliares para calcular series completas de indicadores
-    const calculateSMASeries = (prices: number[], period: number) => prices.map((_, i) => calculateSMA(prices.slice(0, i + 1), period));
-    const calculateRSISeries = (prices: number[], period: number) => prices.map((_, i) => calculateRSI(prices.slice(0, i + 1), period));
-    const calculateMACDSeries = (prices: number[], fast: number, slow: number, signal: number) => prices.map((_, i) => calculateMACD(prices.slice(0, i + 1), fast, slow, signal));
-    const calculateBollingerBandsSeries = (prices: number[], period: number, stdDev: number) => prices.map((_, i) => calculateBollingerBands(prices.slice(0, i + 1), period, stdDev));
+    }, []);
 
-    // ======================================================================================================
-    // Lógica principal de la estrategia del bot (AHORA CON MONITOREO DE SL/TP)
-    // ======================================================================================================
     const executeBotStrategy = useCallback(async () => {
-        const minDataPointsForStrategy = 51; 
-
-        if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < minDataPointsForStrategy || !selectedMarketRules || isPlacingOrder) {
-            return; 
+        if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < 30 || !selectedMarketRules || isPlacingOrder) {
+            return;
         }
 
-        let actionToExecute: 'buy' | 'sell' | 'hold' = 'hold';
-        let orderDataToExecute: OrderFormData | undefined;
+        const strategyDecision = decideTradeActionAndAmount({
+            selectedMarket,
+            currentMarketPriceHistory,
+            currentPrice,
+            allBinanceBalances,
+            botOpenPosition,
+            selectedMarketRules,
+            logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
+        });
+        
+        logAction(`Decisión de la estrategia: ${strategyDecision.action.toUpperCase()}`, true, 'strategy_decision', { decision: strategyDecision }, { action: strategyDecision.action });
 
-        if (botOpenPosition) {
-            const { amount, stopLossPrice, takeProfitPrice } = botOpenPosition;
-
-            if (stopLossPrice && currentPrice <= stopLossPrice) {
-                actionToExecute = 'sell';
-                orderDataToExecute = { symbol: selectedMarket.symbol, side: 'SELL', orderType: 'MARKET', quantity: amount, price: currentPrice };
-                toast({ title: "¡Stop Loss Activado!", description: `Vendiendo ${amount} ${selectedMarket.baseAsset}.`, variant: "destructive" });
-            }
-            else if (takeProfitPrice && currentPrice >= takeProfitPrice) {
-                actionToExecute = 'sell';
-                orderDataToExecute = { symbol: selectedMarket.symbol, side: 'SELL', orderType: 'MARKET', quantity: amount, price: currentPrice };
-                toast({ title: "¡Take Profit Activado!", description: `Vendiendo ${amount} ${selectedMarket.baseAsset}.` });
-            }
-        }
-
-        if (actionToExecute === 'hold') { 
-            const strategyDecision = decideTradeActionAndAmount({ selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, logStrategyMessage: (msg, details) => log(msg, details) });
-            actionToExecute = strategyDecision.action;
-            orderDataToExecute = strategyDecision.orderData;
-        }
-
-        if ((actionToExecute === 'buy' || actionToExecute === 'sell') && orderDataToExecute) {
+        if (strategyDecision.action !== 'hold' && strategyDecision.orderData) {
             if (isPlacingOrder) return;
-
-            setIsPlacingOrder(true); 
-            setPlaceOrderError(null); 
-
+            setIsPlacingOrder(true);
+            setPlaceOrderError(null);
+            
+            logAction(`Intento de orden: ${strategyDecision.action.toUpperCase()} ${strategyDecision.orderData.quantity} ${selectedMarket.symbol}`, true, 'order_placed', strategyDecision.orderData);
+            
             try {
-                const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderDataToExecute) });
-                const tradeResult: TradeEndpointResponse = await response.json();
-                if (!response.ok || !tradeResult.success) {
-                    const errorMessage = tradeResult.error || tradeResult.message || "Error desconocido al colocar la orden.";
+                const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(strategyDecision.orderData) });
+                const result: TradeEndpointResponse = await response.json();
+                
+                if (!response.ok || !result.success) {
+                    const errorMessage = result.message || result.error || "Error desconocido al colocar la orden.";
                     setPlaceOrderError(errorMessage);
+                    logAction(`FALLO al colocar orden: ${errorMessage}`, false, 'order_failed', { error: errorMessage, orderData: strategyDecision.orderData });
                     toast({ title: "Error al colocar orden", description: errorMessage, variant: "destructive" });
                 } else {
-                    const orderDetails: BinanceOrderResult = tradeResult.data!;
                     setBotLastActionTimestamp(Date.now());
-                    
-                    if (actionToExecute === 'buy') {
-                        const executedQtyNum = parseFloat(orderDetails.executedQty);
-                        const cummulativeQuoteQtyNum = parseFloat(orderDetails.cummulativeQuoteQty);
-                        const entryPrice = executedQtyNum > 0 ? cummulativeQuoteQtyNum / executedQtyNum : 0;
-                        setBotOpenPosition({ marketId: selectedMarket.id, entryPrice, amount: executedQtyNum, type: 'buy', timestamp: orderDetails.transactTime });
+                    if (strategyDecision.action === 'buy') {
+                        setBotOpenPosition({ marketId: selectedMarket.id, entryPrice: currentPrice, amount: strategyDecision.orderData.quantity, type: 'buy', timestamp: Date.now() });
                         toast({ title: "¡Orden de Compra Exitosa!", variant: "default" });
-                    } else if (actionToExecute === 'sell') {
+                    } else if (strategyDecision.action === 'sell') {
                         setBotOpenPosition(null);
                         toast({ title: "¡Orden de Venta Exitosa!", variant: "default" });
                     }
+                    logAction(`ÉXITO al colocar orden ${strategyDecision.action.toUpperCase()}`, true, 'order_placed', result.data);
                 }
-            } catch (fetchError: any) {
-                setPlaceOrderError(fetchError.message || "Error de conexión con la API.");
-                toast({ title: "Error de conexión", description: fetchError.message, variant: "destructive" });
+            } catch (error: any) {
+                const errorMessage = error.message || "Error de conexión con la API.";
+                setPlaceOrderError(errorMessage);
+                logAction(`FALLO de red al colocar orden: ${errorMessage}`, false, 'order_failed', { error: errorMessage, orderData: strategyDecision.orderData });
+                toast({ title: "Error de conexión", description: errorMessage, variant: "destructive" });
             } finally {
-                if(isMounted.current) {
-                    setIsPlacingOrder(false);
-                }
+                if(isMounted.current) setIsPlacingOrder(false);
             }
         }
-    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, isPlacingOrder, toast, log ]);
+    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, isPlacingOrder, toast, logAction ]);
 
-    // ======================================================================================================
-    // Efecto para gestionar la bandera isMounted.
-    // ======================================================================================================
     useEffect(() => {
-        isMounted.current = true; 
+        isMounted.current = true;
         return () => { isMounted.current = false; };
     }, []);
-
-    const toggleBotStatus = useCallback(() => {
-        setIsBotRunning(prev => !prev);
-    }, []);
     
-    useEffect(() => {
-        if(selectedMarket){
+    const toggleBotStatus = useCallback(() => {
+        setIsBotRunning(prev => {
+            const newStatus = !prev;
+            logAction(`Bot ${newStatus ? 'iniciado' : 'detenido'}`, true, newStatus ? 'start' : 'stop');
             toast({
-                title: `Bot ${isBotRunning ? 'iniciado' : 'detenido'}`,
-                description: `El bot para ${selectedMarket.symbol} ha sido ${isBotRunning ? 'iniciado' : 'detenido'}.`,
-                variant: isBotRunning ? 'default' : 'destructive',
+                title: `Bot ${newStatus ? 'iniciado' : 'detenido'}`,
+                description: `El bot para ${selectedMarket?.symbol || 'mercado seleccionado'} ha sido ${newStatus ? 'iniciado' : 'detenido'}.`,
+                variant: newStatus ? 'default' : 'destructive',
             });
-        }
-    }, [isBotRunning]);
+            return newStatus;
+        });
+    }, [selectedMarket?.symbol, toast, logAction]);
 
-    // ======================================================================================================
-    // Efecto para la Carga Inicial de Reglas del Mercado y el Historial de Velas (OHLCV).
-    // ======================================================================================================
     useEffect(() => {
         const fetchInitialData = async () => {
             if (!selectedMarket?.symbol) {
@@ -253,129 +174,82 @@ export const useTradingBot = (props: {
             setRulesError(null);
             setIsDataLoaded(false);
 
-            // Fetch Klines (primero, no depende de autenticación)
             try {
                 const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
-                if (!klinesResponse.ok) {
-                    const errorData = await klinesResponse.json();
-                    throw new Error(errorData.message || `Error HTTP al cargar velas: ${klinesResponse.status}`);
-                }
                 const klinesData: ApiResult<KLine[]> = await klinesResponse.json();
-
+                if (!klinesResponse.ok || !klinesData.success) throw new Error(klinesData.message || "Error al cargar velas (klines).");
                 const klinesArray = klinesData.data || (klinesData as any).klines;
-                if (klinesData.success && Array.isArray(klinesArray) && klinesArray.length > 0) {
+                if (Array.isArray(klinesArray) && klinesArray.length > 0) {
                     const historyWithIndicators = annotateMarketPriceHistory(klinesArray);
                     if (isMounted.current) {
                         setCurrentMarketPriceHistory(historyWithIndicators);
-                        setCurrentPrice(historyWithIndicators[historyWithIndicators.length - 1]?.closePrice || null);
-                        setIsDataLoaded(true); 
+                        setCurrentPrice(historyWithIndicators.at(-1)?.closePrice || null);
+                        setIsDataLoaded(true);
                     }
-                } else {
-                    throw new Error("No se pudieron cargar velas históricas iniciales o el array está vacío.");
-                }
+                } else throw new Error("No se recibieron datos de velas (klines).");
             } catch (error: any) {
                 if (isMounted.current) {
                     toast({ title: "Advertencia al Cargar Gráfico", description: error.message, variant: "destructive" });
-                    setCurrentMarketPriceHistory([]);
-                    setIsDataLoaded(false);
+                    setCurrentMarketPriceHistory([]); setIsDataLoaded(false);
                 }
             }
 
-            // Fetch Rules (segundo, puede fallar por autenticación sin detener el gráfico)
             try {
                 const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
                 const rulesData: ApiResult<any> = await rulesResponse.json();
-
-                // --- INICIO DEPURACIÓN ---
-                console.log("Respuesta cruda de /api/binance/exchange-info:", rulesData);
-                // --- FIN DEPURACIÓN ---
-
-                if (!rulesResponse.ok) {
-                    throw new Error(rulesData.message || `Error HTTP al cargar reglas: ${rulesResponse.status}`);
-                }
+                if (!rulesResponse.ok || !rulesData.success) throw new Error(rulesData.message || `Error al cargar reglas del mercado.`);
                 
-                if (rulesData.success && rulesData.data) {
-                    const marketInfo = rulesData.data;
-                    
-                    // --- CORRECCIÓN: Parseo robusto de las reglas ---
-                    const parsedRules: MarketRules = {
-                        symbol: marketInfo.symbol,
-                        status: marketInfo.active ? 'TRADING' : 'BREAK',
-                        baseAsset: marketInfo.baseAsset,
-                        quoteAsset: marketInfo.quoteAsset,
-                        lotSize: {
-                            minQty: marketInfo.minQty || 0,
-                            maxQty: marketInfo.limits?.amount?.max || 0,
-                            stepSize: marketInfo.amountPrecision ? Math.pow(10, -marketInfo.amountPrecision) : 0,
-                        },
-                        minNotional: { 
-                            minNotional: marketInfo.minNotional || 0,
-                        },
-                        priceFilter: {
-                            minPrice: marketInfo.limits?.price?.min || 0,
-                            maxPrice: marketInfo.limits?.price?.max || 0,
-                            tickSize: marketInfo.pricePrecision ? Math.pow(10, -marketInfo.pricePrecision) : 0,
-                        },
-                        precision: {
-                            price: marketInfo.pricePrecision,
-                            amount: marketInfo.amountPrecision,
-                            base: marketInfo.baseAssetPrecision, 
-                            quote: marketInfo.quotePrecision,
-                        },
-                        baseAssetPrecision: marketInfo.baseAssetPrecision,
-                        quotePrecision: marketInfo.quotePrecision,
-                        icebergAllowed: marketInfo.rawInfo?.icebergAllowed || false,
-                        ocoAllowed: marketInfo.rawInfo?.ocoAllowed || false,
-                        quoteOrderQtyMarketAllowed: marketInfo.rawInfo?.quoteOrderQtyMarketAllowed || false,
-                        isSpotTradingAllowed: marketInfo.rawInfo?.isSpotTradingAllowed || false,
-                        isMarginTradingAllowed: marketInfo.rawInfo?.isMarginTradingAllowed || false,
-                        filters: marketInfo.rawInfo?.filters || [],
-                    };
+                const marketInfo = rulesData.data;
+                const lotSizeFilter = marketInfo.rawInfo?.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
+                const minNotionalFilter = marketInfo.rawInfo?.filters?.find((f: any) => f.filterType === 'MIN_NOTIONAL');
 
-                    if (isMounted.current) setSelectedMarketRules(parsedRules);
-                } else {
-                    throw new Error(rulesData.message || "Error al parsear las reglas del mercado.");
-                }
+                const parsedRules: MarketRules = {
+                    symbol: marketInfo.symbol,
+                    status: marketInfo.active ? 'TRADING' : 'BREAK',
+                    baseAsset: marketInfo.baseAsset,
+                    quoteAsset: marketInfo.quoteAsset,
+                    lotSize: { minQty: parseFloat(lotSizeFilter?.minQty) || 0, maxQty: parseFloat(lotSizeFilter?.maxQty) || 0, stepSize: parseFloat(lotSizeFilter?.stepSize) || 0 },
+                    minNotional: { minNotional: parseFloat(minNotionalFilter?.notional) || parseFloat(minNotionalFilter?.minNotional) || 0 },
+                    priceFilter: { minPrice: 0, maxPrice: 0, tickSize: 0 }, // Simplified
+                    precision: { price: marketInfo.pricePrecision, amount: marketInfo.amountPrecision, base: marketInfo.baseAssetPrecision, quote: marketInfo.quotePrecision },
+                    baseAssetPrecision: marketInfo.baseAssetPrecision,
+                    quotePrecision: marketInfo.quotePrecision,
+                    icebergAllowed: marketInfo.rawInfo?.icebergAllowed || false,
+                    ocoAllowed: marketInfo.rawInfo?.ocoAllowed || false,
+                    quoteOrderQtyMarketAllowed: marketInfo.rawInfo?.quoteOrderQtyMarketAllowed || false,
+                    isSpotTradingAllowed: marketInfo.rawInfo?.isSpotTradingAllowed || false,
+                    isMarginTradingAllowed: marketInfo.rawInfo?.isMarginTradingAllowed || false,
+                    filters: marketInfo.rawInfo?.filters || [],
+                };
+
+                if (isMounted.current) setSelectedMarketRules(parsedRules);
             } catch (error: any) {
-                 if (isMounted.current) {
+                if (isMounted.current) {
                     setRulesError(error.message);
-                    toast({ title: "Error al Cargar Reglas del Mercado", description: error.message, variant: "destructive" });
+                    toast({ title: "Error al Cargar Reglas", description: error.message, variant: "destructive" });
                 }
             } finally {
-                if (isMounted.current) {
-                    setRulesLoading(false);
-                }
+                if (isMounted.current) setRulesLoading(false);
             }
         };
-
         fetchInitialData();
     }, [selectedMarket?.symbol, toast, annotateMarketPriceHistory]);
 
-
-    // ======================================================================================================
-    // Efecto para iniciar/detener el bot
-    // ======================================================================================================
     useEffect(() => {
         if (isBotRunning && isDataLoaded) {
             botIntervalRef.current = setInterval(executeBotStrategy, botIntervalMs);
-            executeBotStrategy(); 
+            executeBotStrategy();
         } else {
-            if (botIntervalRef.current) {
-                clearInterval(botIntervalRef.current);
-                botIntervalRef.current = null;
-            }
+            if (botIntervalRef.current) clearInterval(botIntervalRef.current);
         }
-
-        return () => {
-            if (botIntervalRef.current) {
-                clearInterval(botIntervalRef.current);
-            }
-        };
+        return () => { if (botIntervalRef.current) clearInterval(botIntervalRef.current); };
     }, [isBotRunning, isDataLoaded, executeBotStrategy, botIntervalMs]);
 
     return {
         isBotRunning, toggleBotStatus, botOpenPosition, botLastActionTimestamp,
         isPlacingOrder, placeOrderError, selectedMarketRules, rulesLoading, rulesError,
-        currentPrice, currentMarketPriceHistory, signalCounts,
+        currentPrice, currentMarketPriceHistory
     };
 };
+
+    

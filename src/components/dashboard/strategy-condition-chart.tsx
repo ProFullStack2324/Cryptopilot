@@ -12,6 +12,7 @@ interface StrategyConditionChartProps {
 
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
+// Colores más distintivos para cada condición
 const BUY_CONDITION_PRICE_COLOR = "rgba(34, 197, 94, 0.7)"; // green-500
 const BUY_CONDITION_RSI_COLOR = "rgba(163, 230, 53, 0.7)"; // lime-400
 const BUY_CONDITION_MACD_COLOR = "rgba(5, 150, 105, 0.7)"; // emerald-600
@@ -124,3 +125,5 @@ export function StrategyConditionChart({ data }: StrategyConditionChartProps) {
     </Card>
   );
 }
+
+    
