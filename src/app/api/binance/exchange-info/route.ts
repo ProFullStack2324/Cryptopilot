@@ -54,27 +54,27 @@ export async function GET(req: Request) {
   } catch (error: any) {
     console.error(`[API/Binance/ExchangeInfo] Error al obtener info del exchange con CCXT en Mainnet:`, error);
     let userMessage = `Error al obtener la información del exchange de Mainnet.`;
-    let details = error.message || 'Error desconocido';
     let statusCode = 500;
-
+    
+    // Mejorar el manejo de errores para ser más específico
     if (error.message.includes('Service unavailable from a restricted location')) {
         userMessage = "Servicio no disponible: La API de Binance está restringiendo el acceso desde la ubicación del servidor.";
-        details = "Bloqueo geográfico de Binance.";
         statusCode = 403;
-    } else if (error instanceof ccxt.NetworkError) {
-        userMessage = "Error de conexión con la API de Binance.";
-        statusCode = 503;
     } else if (error instanceof ccxt.AuthenticationError) {
          userMessage = "Error de autenticación. Causa probable: La IP pública de tu red no está en la lista blanca (whitelist) de tu clave API en Binance, o la clave no tiene los permisos necesarios.";
          statusCode = 401;
+    } else if (error instanceof ccxt.NetworkError) {
+        userMessage = "Error de conexión con la API de Binance.";
+        statusCode = 503;
     } else if (error instanceof ccxt.ExchangeError) {
          userMessage = `Ocurrió un error en el exchange: ${error.message}`;
+         statusCode = 502;
     }
 
     return NextResponse.json({
       success: false,
       message: userMessage,
-      details: details,
+      details: error.message,
     }, { status: statusCode });
   }
 }
