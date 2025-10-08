@@ -327,8 +327,10 @@ export default function TradingBotControlPanel() {
                         {selectedMarketRules ? (
                             <div className="text-sm space-y-1">
                                 <p><strong>Activo Base:</strong> {selectedMarketRules.baseAsset}</p>
-                                <p><strong>Cantidad Mínima:</strong> {selectedMarketRules.lotSize?.minQty || 'N/A'}</p>
-                                <p><strong>Nocional Mínimo:</strong> {selectedMarketRules.minNotional?.minNotional || 'N/A'} USDT</p>
+                                {/* CORRECCIÓN: Se usa `minQty` para la cantidad mínima */}
+                                <p><strong>Cantidad Mínima:</strong> {isValidNumber(selectedMarketRules.lotSize?.minQty) ? selectedMarketRules.lotSize.minQty : 'N/A'}</p>
+                                {/* CORRECCIÓN: Se usa `minNotional` para el nocional mínimo y se valida */}
+                                <p><strong>Nocional Mínimo:</strong> {isValidNumber(selectedMarketRules.minNotional?.minNotional) ? `${selectedMarketRules.minNotional.minNotional} USDT` : 'N/A'}</p>
                             </div>
                         ) : (!rulesLoading && !rulesError && <p>Selecciona un mercado para ver las reglas.</p>)}
                     </CardContent>
@@ -464,4 +466,3 @@ export default function TradingBotControlPanel() {
         </div>
     );
 }
-

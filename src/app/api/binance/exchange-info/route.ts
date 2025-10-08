@@ -8,15 +8,32 @@ export async function GET(req: Request) {
   const symbolParam = searchParams.get('symbol');
 
   try {
-    // Es público, pero requiere inicialización
+    // Es público, pero requiere inicialización para cargar todos los mercados
     await exchangeMainnet.loadMarkets();
 
     let responseData = null;
     if (symbolParam) {
         const ccxtSymbol = symbolParam.includes('/') ? symbolParam : `${symbolParam.replace(/USDT$/i, '')}/USDT`;
         const marketInfo = exchangeMainnet.market(ccxtSymbol);
+
         if (marketInfo) {
-             responseData = marketInfo;
+             // CORRECCIÓN: Se extraen los datos de una manera más robusta y directa desde la estructura de ccxt.
+             responseData = {
+                id: marketInfo.id,
+                symbol: marketInfo.symbol,
+                baseAsset: marketInfo.base,
+                quoteAsset: marketInfo.quote,
+                active: marketInfo.active,
+                // `minNotional` se obtiene de `market.limits.cost.min`
+                minNotional: marketInfo.limits?.cost?.min,
+                // `minQty` se obtiene de `market.limits.amount.min`
+                minQty: marketInfo.limits?.amount?.min,
+                amountPrecision: marketInfo.precision?.amount,
+                pricePrecision: marketInfo.precision?.price,
+                quotePrecision: marketInfo.precision?.quote,
+                // Se mantiene la info original por si se necesita para depuración avanzada
+                rawInfo: marketInfo.info 
+             };
         } else {
              return NextResponse.json({
                   success: false,
@@ -24,6 +41,7 @@ export async function GET(req: Request) {
               }, { status: 404 });
         }
     } else {
+        // Si no hay símbolo, se devuelve la lista completa de mercados (puede ser muy grande)
         responseData = exchangeMainnet.markets;
     }
 
