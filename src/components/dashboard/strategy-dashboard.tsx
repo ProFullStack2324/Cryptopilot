@@ -48,7 +48,7 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
   const lowerBB = latest.lowerBollingerBand;
   const upperBB = latest.upperBollingerBand;
   const macdHist = latest.macdHistogram;
-  const prevMacdHist = prev.macdHistogram;
+  const prevMacdHist = prev?.macdHistogram;
 
   // Definir las condiciones de la estrategia para visualización
   const buyPriceCondition = isValidNumber(price) && isValidNumber(lowerBB) && price <= lowerBB;
@@ -86,12 +86,12 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
         <CardContent>
           <ul className="space-y-2">
             <ConditionStatus 
-              label="Precio ≤ BB Inferior"
-              value={isValidNumber(price) && isValidNumber(lowerBB) ? `${price.toFixed(pricePrecision)} ≤ ${lowerBB.toFixed(pricePrecision)}` : "N/A"}
+              label="Precio <= BB Inferior"
+              value={isValidNumber(price) && isValidNumber(lowerBB) ? `${price.toFixed(pricePrecision)} <= ${lowerBB.toFixed(pricePrecision)}` : "N/A"}
               conditionMet={buyPriceCondition}
             />
             <ConditionStatus 
-              label="RSI ≤ 35"
+              label="RSI <= 35"
               value={isValidNumber(rsi) ? rsi.toFixed(2) : "N/A"}
               conditionMet={buyRsiCondition}
             />
@@ -113,12 +113,12 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
         <CardContent>
           <ul className="space-y-2">
             <ConditionStatus 
-              label="Precio ≥ BB Superior"
-              value={isValidNumber(price) && isValidNumber(upperBB) ? `${price.toFixed(pricePrecision)} ≥ ${upperBB.toFixed(pricePrecision)}` : "N/A"}
+              label="Precio >= BB Superior"
+              value={isValidNumber(price) && isValidNumber(upperBB) ? `${price.toFixed(pricePrecision)} >= ${upperBB.toFixed(pricePrecision)}` : "N/A"}
               conditionMet={sellPriceCondition}
             />
             <ConditionStatus 
-              label="RSI ≥ 65"
+              label="RSI >= 65"
               value={isValidNumber(rsi) ? rsi.toFixed(2) : "N/A"}
               conditionMet={sellRsiCondition}
             />

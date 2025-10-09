@@ -7,8 +7,7 @@ import { useToast } from '@/hooks/use-toast'; // Asegúrate de que la ruta sea c
 import {
     Market,
     BinanceBalance,
-    MarketPriceDataPoint,
-    BotActionDetails
+    MarketPriceDataPoint
 } from '@/lib/types'; // Importa tus tipos
 
 // Importaciones de Shadcn/ui
@@ -80,8 +79,8 @@ export default function TradingBotControlPanel() {
     const [balancesError, setBalancesError] = useState<string | null>(null);
 
     // Estado para logs de operaciones y decisiones
-    const [operationLogs, setOperationLogs] = useState<BotActionDetails[]>([]);
-    const [tradeExecutionLogs, setTradeExecutionLogs] = useState<BotActionDetails[]>([]);
+    const [operationLogs, setOperationLogs] = useState<any[]>([]);
+    const [tradeExecutionLogs, setTradeExecutionLogs] = useState<any[]>([]);
 
 
     // Estado para conteo de señales
@@ -132,7 +131,7 @@ export default function TradingBotControlPanel() {
         return () => clearInterval(balanceInterval);
     }, []);
 
-    const onBotAction = useCallback((details: BotActionDetails) => {
+    const onBotAction = useCallback((details: any) => {
         const uniqueTimestamp = Date.now() + Math.random();
         const newLog = { ...details, timestamp: uniqueTimestamp };
 
@@ -199,6 +198,55 @@ export default function TradingBotControlPanel() {
         const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
         return lastDecisionLog?.data?.action || 'hold';
     }, [operationLogs]);
+
+    const MarketAnalysisDescription = () => {
+        if (!latestDataPointForStrategy) return "Cargando análisis de mercado...";
+    
+        const { closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50 } = latestDataPointForStrategy;
+    
+        if (![closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50].every(isValidNumber)) {
+            return "Datos insuficientes para un análisis completo.";
+        }
+    
+        let trend = "lateral";
+        if (sma10 > sma20 && sma20 > sma50) trend = "alcista fuerte";
+        else if (sma10 > sma20) trend = "alcista";
+        else if (sma10 < sma20 && sma20 < sma50) trend = "bajista fuerte";
+        else if (sma10 < sma20) trend = "bajista";
+    
+        const volatility = (upperBollingerBand! - lowerBollingerBand!) / closePrice! * 100;
+        let volatilityDesc = `La volatilidad es ${volatility.toFixed(2)}%.`;
+        if (volatility < 1) volatilityDesc += " El mercado está muy comprimido, posible movimiento brusco inminente.";
+        if (volatility > 4) volatilityDesc += " El mercado está muy volátil, operar con precaución.";
+    
+        let momentum = `El RSI en ${rsi!.toFixed(1)} indica una fuerza de mercado neutral.`;
+        if (rsi! > 70) momentum = `El RSI en ${rsi!.toFixed(1)} sugiere que el mercado está sobrecomprado.`;
+        if (rsi! < 30) momentum = `El RSI en ${rsi!.toFixed(1)} sugiere que el mercado está sobrevendido.`;
+    
+        return `Actualmente, el mercado presenta una tendencia ${trend}. ${volatilityDesc} ${momentum}`;
+    };
+    
+    const StrategyAnalysisDescription = () => {
+        if (!latestDataPointForStrategy) return "Esperando datos para analizar la estrategia...";
+    
+        const decision = lastStrategyDecision;
+    
+        if (decision === 'buy') {
+            return "Conclusión del Bot: Señal de COMPRA activa. La estrategia ha identificado una confluencia de indicadores que sugieren una alta probabilidad de reversión alcista. Se ha procedido a ejecutar una orden de compra.";
+        }
+        if (decision === 'sell') {
+            return "Conclusión del Bot: Señal de VENTA activa. La estrategia ha detectado condiciones que indican un potencial agotamiento de la tendencia alcista o una reversión bajista. Se ha procedido a cerrar la posición.";
+        }
+        
+        // Análisis del HOLD
+        const { priceBuyConditionMet, rsiBuyConditionMet, macdBuyConditionMet, conditionsForBuyMet, buyConditionsCount } = operationLogs.find(log => log.type === 'strategy_decision')?.data?.decisionDetails || {};
+        
+        if (buyConditionsCount > 0) {
+            return `Conclusión del Bot: MANTENER (HOLD). Aunque se ha(n) cumplido ${buyConditionsCount} de 2 condiciones de compra necesarias, no es suficiente para confirmar una entrada con alta probabilidad. El bot permanece a la espera de una señal más clara para minimizar riesgos.`;
+        }
+    
+        return "Conclusión del Bot: MANTENER (HOLD). Ninguna de las condiciones de entrada (compra) o salida (venta) de la estrategia se cumple actualmente. El bot está monitoreando activamente el mercado en espera de una oportunidad clara.";
+    };
 
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 sm:p-6 lg:p-8 flex flex-col items-center">
@@ -296,6 +344,9 @@ export default function TradingBotControlPanel() {
                                 chartColors={CHART_COLORS}
                             />
                         </CardContent>
+                        <CardFooter>
+                            <p className="text-xs text-muted-foreground"><MarketAnalysisDescription /></p>
+                        </CardFooter>
                     </Card>
                 )}
 
@@ -315,9 +366,16 @@ export default function TradingBotControlPanel() {
 
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-2 shadow-lg rounded-xl">
+                        <CardHeader>
+                            <CardTitle>Análisis de Condiciones de Estrategia</CardTitle>
+                            <CardDescription>Visualiza qué condiciones de compra (arriba) o venta (abajo) se cumplen en cada vela.</CardDescription>
+                        </CardHeader>
                         <CardContent className="pt-6">
                             <StrategyConditionChart data={annotatedHistory} />
                         </CardContent>
+                        <CardFooter>
+                             <p className="text-xs text-muted-foreground"><StrategyAnalysisDescription /></p>
+                        </CardFooter>
                     </Card>
                 )}
                 {chartDisplayError && (
@@ -331,7 +389,7 @@ export default function TradingBotControlPanel() {
 
                 <Card className="lg:col-span-2 shadow-lg rounded-xl">
                     <CardHeader>
-                        <CardTitle>Registro de Ejecución de Trades (BUY/SELL)</CardTitle>
+                        <CardTitle>Libro de Órdenes</CardTitle>
                         <CardDescription>Historial de intentos de compra/venta y su resultado.</CardDescription>
                     </CardHeader>
                     <CardContent>

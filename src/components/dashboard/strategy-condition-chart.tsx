@@ -2,7 +2,7 @@
 "use client";
 
 import React from 'react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine } from 'recharts';
 import { MarketPriceDataPoint } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
@@ -13,12 +13,12 @@ interface StrategyConditionChartProps {
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
 // Colores más distintivos para cada condición
-const BUY_CONDITION_PRICE_COLOR = "rgba(34, 197, 94, 0.7)"; // green-500
-const BUY_CONDITION_RSI_COLOR = "rgba(163, 230, 53, 0.7)"; // lime-400
-const BUY_CONDITION_MACD_COLOR = "rgba(5, 150, 105, 0.7)"; // emerald-600
+const BUY_CONDITION_PRICE_COLOR = "rgba(16, 185, 129, 0.7)"; // emerald-500
+const BUY_CONDITION_RSI_COLOR = "rgba(52, 211, 153, 0.7)"; // emerald-400
+const BUY_CONDITION_MACD_COLOR = "rgba(110, 231, 183, 0.7)"; // emerald-300
 
 const SELL_CONDITION_PRICE_COLOR = "rgba(239, 68, 68, 0.7)"; // red-500
-const SELL_CONDITION_RSI_COLOR = "rgba(249, 115, 22, 0.7)"; // orange-500
+const SELL_CONDITION_RSI_COLOR = "rgba(248, 113, 113, 0.7)"; // red-400
 
 export function StrategyConditionChart({ data }: StrategyConditionChartProps) {
 
@@ -73,57 +73,48 @@ export function StrategyConditionChart({ data }: StrategyConditionChartProps) {
   };
 
   return (
-    <Card>
-        <CardHeader>
-            <CardTitle>Análisis de Condiciones de Estrategia</CardTitle>
-            <CardDescription>Visualiza qué condiciones de compra (arriba) o venta (abajo) se cumplen en cada vela.</CardDescription>
-        </CardHeader>
-        <CardContent>
-            <div style={{ width: '100%', height: 200 }}>
-                <ResponsiveContainer>
-                    <AreaChart 
-                        data={processedData} 
-                        margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
-                        stackOffset="sign" // Apila valores positivos hacia arriba y negativos hacia abajo
-                    >
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis 
-                        dataKey="timestamp" 
-                        tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                        minTickGap={60}
-                    />
-                    <YAxis 
-                        domain={[-3, 3]} 
-                        allowDecimals={false}
-                        tickCount={7}
-                        tickFormatter={(value) => `${Math.abs(value)}`} // Muestra el número de condiciones
-                        label={{ value: 'Nº de Condiciones', angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend
-                        verticalAlign="top"
-                        align="right"
-                        iconType="circle"
-                        wrapperStyle={{ fontSize: '12px', paddingBottom: '10px' }}
-                    />
+    <div style={{ width: '100%', height: 200 }}>
+        <ResponsiveContainer>
+            <AreaChart 
+                data={processedData} 
+                margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+                stackOffset="sign" // Apila valores positivos hacia arriba y negativos hacia abajo
+            >
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis 
+                dataKey="timestamp" 
+                tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                minTickGap={60}
+            />
+            <YAxis 
+                domain={[-3, 3]} 
+                allowDecimals={false}
+                tickCount={7}
+                tickFormatter={(value) => `${Math.abs(value)}`} // Muestra el número de condiciones
+                label={{ value: 'Nº de Condiciones', angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend
+                verticalAlign="top"
+                align="right"
+                iconType="circle"
+                wrapperStyle={{ fontSize: '12px', paddingBottom: '10px' }}
+            />
+            <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
+            
+            {/* Áreas de Compra */}
+            <Area type="monotone" dataKey="buyPriceCondition" stackId="buy" name="Precio <= BB Inf." stroke={BUY_CONDITION_PRICE_COLOR} fill={BUY_CONDITION_PRICE_COLOR} />
+            <Area type="monotone" dataKey="buyRsiCondition" stackId="buy" name="RSI <= 35" stroke={BUY_CONDITION_RSI_COLOR} fill={BUY_CONDITION_RSI_COLOR} />
+            <Area type="monotone" dataKey="buyMacdCondition" stackId="buy" name="Cruce MACD" stroke={BUY_CONDITION_MACD_COLOR} fill={BUY_CONDITION_MACD_COLOR} />
 
-                    {/* Áreas de Compra */}
-                    <Area type="monotone" dataKey="buyPriceCondition" stackId="buy" name="Precio <= BB Inf." stroke={BUY_CONDITION_PRICE_COLOR} fill={BUY_CONDITION_PRICE_COLOR} />
-                    <Area type="monotone" dataKey="buyRsiCondition" stackId="buy" name="RSI <= 35" stroke={BUY_CONDITION_RSI_COLOR} fill={BUY_CONDITION_RSI_COLOR} />
-                    <Area type="monotone" dataKey="buyMacdCondition" stackId="buy" name="Cruce MACD" stroke={BUY_CONDITION_MACD_COLOR} fill={BUY_CONDITION_MACD_COLOR} />
+            {/* Áreas de Venta */}
+            <Area type="monotone" dataKey="sellPriceCondition" stackId="sell" name="Precio >= BB Sup." stroke={SELL_CONDITION_PRICE_COLOR} fill={SELL_CONDITION_PRICE_COLOR} />
+            <Area type="monotone" dataKey="sellRsiCondition" stackId="sell" name="RSI >= 65" stroke={SELL_CONDITION_RSI_COLOR} fill={SELL_CONDITION_RSI_COLOR} />
 
-                    {/* Áreas de Venta */}
-                    <Area type="monotone" dataKey="sellPriceCondition" stackId="sell" name="Precio >= BB Sup." stroke={SELL_CONDITION_PRICE_COLOR} fill={SELL_CONDITION_PRICE_COLOR} />
-                    <Area type="monotone" dataKey="sellRsiCondition" stackId="sell" name="RSI >= 65" stroke={SELL_CONDITION_RSI_COLOR} fill={SELL_CONDITION_RSI_COLOR} />
-
-                    </AreaChart>
-                </ResponsiveContainer>
-            </div>
-        </CardContent>
-    </Card>
+            </AreaChart>
+        </ResponsiveContainer>
+    </div>
   );
 }
-
-    
