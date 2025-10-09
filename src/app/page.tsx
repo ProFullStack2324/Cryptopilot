@@ -12,7 +12,7 @@ import {
 
 // Importaciones de Shadcn/ui
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import {
     Select,
     SelectContent,
@@ -239,7 +239,9 @@ export default function TradingBotControlPanel() {
         }
         
         // Análisis del HOLD
-        const { priceBuyConditionMet, rsiBuyConditionMet, macdBuyConditionMet, conditionsForBuyMet, buyConditionsCount } = operationLogs.find(log => log.type === 'strategy_decision')?.data?.decisionDetails || {};
+        const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
+        const decisionDetails = lastDecisionLog?.data?.decisionDetails || {};
+        const { conditionsForBuyMet, buyConditionsCount } = decisionDetails;
         
         if (buyConditionsCount > 0) {
             return `Conclusión del Bot: MANTENER (HOLD). Aunque se ha(n) cumplido ${buyConditionsCount} de 2 condiciones de compra necesarias, no es suficiente para confirmar una entrada con alta probabilidad. El bot permanece a la espera de una señal más clara para minimizar riesgos.`;
@@ -453,3 +455,5 @@ export default function TradingBotControlPanel() {
     );
 
     
+
+}
