@@ -103,7 +103,7 @@ export const useTradingBot = (props: {
             logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
         });
         
-        logAction(`Decisión de la estrategia: ${strategyDecision.action.toUpperCase()}`, true, 'strategy_decision', { decision: strategyDecision }, { action: strategyDecision.action });
+        logAction(`Decisión de la estrategia: ${strategyDecision.action.toUpperCase()}`, true, 'strategy_decision', { decision: strategyDecision }, { action: strategyDecision.action, decisionDetails: strategyDecision.details });
 
         if (strategyDecision.action !== 'hold' && strategyDecision.orderData) {
             if (isPlacingOrder) return;
@@ -191,7 +191,7 @@ export const useTradingBot = (props: {
                 
                 const marketInfo = rulesData.data;
                 const lotSizeFilter = marketInfo.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
-                const minNotionalFilter = marketInfo.filters?.find((f: any) => f.filterType === 'NOTIONAL');
+                const minNotionalFilter = marketInfo.filters?.find((f: any) => f.filterType === 'NOTIONAL' || f.filterType === 'MIN_NOTIONAL');
                 const priceFilter = marketInfo.filters?.find((f: any) => f.filterType === 'PRICE_FILTER');
 
                 const parsedRules: MarketRules = {
@@ -205,7 +205,7 @@ export const useTradingBot = (props: {
                         stepSize: parseFloat(lotSizeFilter?.stepSize) || 0,
                     },
                     minNotional: {
-                        minNotional: parseFloat(minNotionalFilter?.minNotional) || 0,
+                        minNotional: parseFloat(minNotionalFilter?.minNotional || minNotionalFilter?.notional) || 0,
                     },
                     priceFilter: {
                         minPrice: parseFloat(priceFilter?.minPrice) || 0,
