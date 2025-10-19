@@ -201,6 +201,10 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
 
             {/* Zonas de Estrategia */}
             {renderStrategyReferenceAreas()}
+             {/* Leyenda para las Zonas */}
+             <Area type="monotone" dataKey="non_existent_key_1" name="Zona Compra Débil" fill={chartColors.buyZoneWeak} stroke={chartColors.buyZoneWeak} />
+             <Area type="monotone" dataKey="non_existent_key_2" name="Zona Compra Fuerte" fill={chartColors.buyZoneStrong} stroke={chartColors.buyZoneStrong} />
+             <Area type="monotone" dataKey="non_existent_key_3" name="Zona Venta" fill={chartColors.sellZoneWeak} stroke={chartColors.sellZoneWeak} />
 
             {/* Velas Japonesas (como Scatter para mechas, y Bar para cuerpo) */}
             <Scatter
@@ -208,14 +212,25 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
               name="Velas"
               data={cleanedData}
               shape={({ x, y, payload }) => {
-                const { highPrice, lowPrice } = payload;
-                if (x === undefined || y === undefined || !isValidNumber(highPrice) || !isValidNumber(lowPrice)) return null;
-                const color = payload.openPrice <= payload.closePrice ? chartColors.signalBuy : chartColors.signalSell;
-                return <line x1={x} y1={y} x2={x} y2={y - (highPrice - lowPrice)} stroke={color} strokeWidth={1} />;
+                if (x === undefined || y === undefined || !isValidNumber(payload.highPrice) || !isValidNumber(payload.lowPrice)) return null;
+                const { openPrice, closePrice, highPrice, lowPrice } = payload;
+                const isGreen = openPrice <= closePrice;
+                const color = isGreen ? chartColors.signalBuy : chartColors.signalSell;
+                
+                // Calcular la posición y del cuerpo de la vela
+                const yBody = isGreen ? y - (closePrice - openPrice) : y;
+                
+                return (
+                  <g stroke={color} strokeWidth={1}>
+                    {/* Mecha */}
+                    <line x1={x} y1={y-(highPrice-lowPrice)} x2={x} y2={y} />
+                    {/* Cuerpo (se dibujará por el componente Bar, esto es solo una referencia de mecha) */}
+                  </g>
+                );
               }}
               isAnimationActive={false}
             />
-            <Bar dataKey="closePrice" yAxisId="priceAxis" name="Cuerpo Vela" isAnimationActive={false} barSize={4}>
+            <Bar dataKey="closePrice" yAxisId="priceAxis" name="Precio" isAnimationActive={false} barSize={4}>
                {cleanedData.map((entry, index) => {
                  const color = entry.openPrice <= entry.closePrice ? chartColors.signalBuy : chartColors.signalSell;
                  return <Cell key={`cell-${index}`} fill={color} />;
@@ -224,11 +239,11 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
 
 
             {/* Líneas de Indicadores */}
-            <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={chartColors.sma10} dot={false} strokeWidth={2} name="SMA10" />
-            <Line yAxisId="priceAxis" type="monotone" dataKey="sma20" stroke={chartColors.sma20} dot={false} strokeWidth={2} name="SMA20" />
-            <Line yAxisId="priceAxis" type="monotone" dataKey="sma50" stroke={chartColors.sma50} dot={false} strokeWidth={1.5} name="SMA50" />
-            <Area yAxisId="priceAxis" type="monotone" dataKey="upperBollingerBand" stackId="bb" stroke={chartColors.bollingerBands} fill="none" name="BB Superior" />
-            <Area yAxisId="priceAxis" type="monotone" dataKey="lowerBollingerBand" stackId="bb" stroke={chartColors.bollingerBands} fill={chartColors.bollingerBands} name="BB Inferior" />
+            <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={chartColors.sma10} dot={false} strokeWidth={2} name="SMA 10" />
+            <Line yAxisId="priceAxis" type="monotone" dataKey="sma20" stroke={chartColors.sma20} dot={false} strokeWidth={2} name="SMA 20" />
+            <Line yAxisId="priceAxis" type="monotone" dataKey="sma50" stroke={chartColors.sma50} dot={false} strokeWidth={1.5} name="SMA 50" />
+            <Area yAxisId="priceAxis" type="monotone" dataKey="upperBollingerBand" stackId="bb" stroke={chartColors.bollingerBands} fill="none" name="Banda Bollinger Sup." />
+            <Area yAxisId="priceAxis" type="monotone" dataKey="lowerBollingerBand" stackId="bb" stroke={chartColors.bollingerBands} fill={chartColors.bollingerBands} name="Banda Bollinger Inf." />
 
             {/* Líneas de Referencia para Señales de Compra/Venta */}
             {strategyLogs.map((log) => {
