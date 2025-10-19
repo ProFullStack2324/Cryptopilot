@@ -52,7 +52,7 @@ export const useTradingBot = (props: {
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
         if (!klines || klines.length === 0) return [];
         const annotatedHistory: MarketPriceDataPoint[] = [];
-        
+
         const closes = klines.map(k => k[4]).filter(isValidNumber);
         if (closes.length !== klines.length) {
             console.warn("Algunas velas no tienen precio de cierre válido.");
@@ -66,7 +66,10 @@ export const useTradingBot = (props: {
             if (!Array.isArray(klineItem) || klineItem.length < 6) continue;
             const [timestamp, openPrice, highPrice, lowPrice, closePrice, volume] = klineItem;
             if (![timestamp, openPrice, highPrice, lowPrice, closePrice, volume].every(isValidNumber)) continue;
+            
+            const prevKline = i > 0 ? klines[i - 1] : null;
 
+            // --- Cálculos de Indicadores ---
             const sma10 = calculateSMA(currentCloses, 10);
             const sma20 = calculateSMA(currentCloses, 20);
             const sma50 = calculateSMA(currentCloses, 50);
@@ -74,6 +77,30 @@ export const useTradingBot = (props: {
             const macd = calculateMACD(currentCloses, 12, 26, 9);
             const bb = calculateBollingerBands(currentCloses, 20, 2);
 
+            // --- Conteo de Condiciones de Estrategia ---
+            let buyConditionsMet = 0;
+            let sellConditionsMet = 0;
+
+            if (isValidNumber(closePrice) && isValidNumber(bb.lower)) {
+                if (closePrice <= bb.lower) buyConditionsMet++;
+            }
+            if (isValidNumber(rsi) && rsi <= 35) {
+                buyConditionsMet++;
+            }
+            if (isValidNumber(macd.macdHistogram) && prevKline) {
+                 const prevMacd = calculateMACD(klines.slice(0, i).map(k => k[4]), 12, 26, 9);
+                 if (isValidNumber(prevMacd.macdHistogram) && macd.macdHistogram > 0 && prevMacd.macdHistogram <= 0) {
+                     buyConditionsMet++;
+                 }
+            }
+            
+            if (isValidNumber(closePrice) && isValidNumber(bb.upper)) {
+                if (closePrice >= bb.upper) sellConditionsMet++;
+            }
+            if (isValidNumber(rsi) && rsi >= 65) {
+                sellConditionsMet++;
+            }
+            
             annotatedHistory.push({
                 timestamp, openPrice, highPrice, lowPrice, closePrice, volume,
                 sma10, sma20, sma50, rsi,
@@ -83,6 +110,9 @@ export const useTradingBot = (props: {
                 upperBollingerBand: bb.upper,
                 middleBollingerBand: bb.middle,
                 lowerBollingerBand: bb.lower,
+                // --- Nuevos campos de conteo ---
+                buyConditionsMet,
+                sellConditionsMet,
             });
         }
         return annotatedHistory;
@@ -114,11 +144,11 @@ export const useTradingBot = (props: {
                 symbol: decision.orderData.symbol,
                 side: decision.orderData.side,
                 type: decision.orderData.orderType,
-                quantity: decision.orderData.quantity,
+                amount: decision.orderData.quantity, // <--- CORRECCIÓN IMPORTANTE
                 price: decision.orderData.price
             };
             
-            logAction(`Intento de orden: ${orderDetails.side} ${orderDetails.quantity} ${orderDetails.symbol}`, true, 'order_placed', orderDetails);
+            logAction(`Intento de orden: ${orderDetails.side} ${orderDetails.amount} ${orderDetails.symbol}`, true, 'order_placed', orderDetails);
             
             try {
                 const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderDetails) });
@@ -132,7 +162,7 @@ export const useTradingBot = (props: {
                 } else {
                     setBotLastActionTimestamp(Date.now());
                     if (decision.action === 'buy') {
-                        setBotOpenPosition({ marketId: selectedMarket.id, entryPrice: currentPrice, amount: orderDetails.quantity, type: 'buy', timestamp: Date.now() });
+                        setBotOpenPosition({ marketId: selectedMarket.id, entryPrice: currentPrice, amount: orderDetails.amount, type: 'buy', timestamp: Date.now() });
                         toast({ title: "¡Orden de Compra Exitosa!", variant: "default" });
                     } else if (decision.action === 'sell') {
                         setBotOpenPosition(null);

@@ -45,43 +45,22 @@ interface MarketChartProps {
 export const CHART_COLORS = {
   sma10: '#34d399', // emerald-400 (verde claro)
   sma20: '#8b5cf6', // violet-500 (violeta)
+  sma50: '#f97316', // orange-500
   macdLine: '#3b82f6', // blue-500 (azul)
   signalLine: '#ef4444', // red-500 (rojo)
-  macdHistogramPositive: '#10b981', // emerald-500 (verde esmeralda)
-  macdHistogramNegative: '#ef4444', // red-500 (rojo)
+  macdHistogramPositive: 'rgba(16, 185, 129, 0.4)', // emerald-500 con opacidad
+  macdHistogramNegative: 'rgba(239, 68, 68, 0.4)', // red-500 con opacidad
   rsi: '#a855f7', // purple-500 (púrpura)
+  bollingerBands: 'rgba(167, 139, 250, 0.3)', // violet-400 con opacidad
   priceLine: '#6b7280', // gray-500
-  crossoverBuy: '#22c55e', // green-500 (verde para cruces alcistas)
-  crossoverSell: '#dc2626', // red-600 (rojo para cruces bajistas)
-  highlightArea: 'rgba(255, 255, 0, 0.25)', // Amarillo semitransparente para resaltar
-  volumeSMA: '#cbd5e1', // slate-300 (gris azulado para SMA de volumen)
-  signalBuy: '#10b981', // emerald-500 (señales de compra)
-  signalSell: '#ef4444', // red-500 (señales de venta)
-  signalHold: '#facc15', // yellow-400 (señales de hold)
+  signalBuy: '#22c55e', // green-500
+  signalSell: '#ef4444', // red-500
+  buyZoneWeak: 'rgba(16, 185, 129, 0.1)',   // Verde muy transparente
+  buyZoneStrong: 'rgba(16, 185, 129, 0.25)', // Verde más intenso
+  sellZoneWeak: 'rgba(239, 68, 68, 0.1)',  // Rojo muy transparente
+  sellZoneStrong: 'rgba(239, 68, 68, 0.25)', // Rojo más intenso
 };
 
-// Items para la leyenda del gráfico, con sus tipos y colores asociados
-export const getChartLegendItems = (colors: typeof CHART_COLORS) => [
-  { value: 'Velas Japonesas', type: 'rect', color: '#16a34a', id: 'candles' },
-  { value: 'SMA10', type: 'line', color: colors.sma10, id: 'sma10' },
-  { value: 'SMA20', type: 'line', color: colors.sma20, id: 'sma20' },
-  { value: 'Volumen', type: 'area', color: '#8884d8', id: 'volume' },
-  { value: 'Volumen SMA20', type: 'line', color: colors.volumeSMA, id: 'volumeSMA20' },
-  { value: 'RSI', type: 'line', color: colors.rsi, id: 'rsi' },
-  { value: 'MACD Line', type: 'line', color: colors.macdLine, id: 'macdLine' },
-  { value: 'Signal Line', type: 'line', color: colors.signalLine, id: 'signalLine' },
-  { value: 'MACD Histograma (+)', type: 'rect', color: colors.macdHistogramPositive, id: 'macdHistPositive' },
-  { value: 'MACD Histograma (-)', type: 'rect', color: colors.macdHistogramNegative, id: 'macdHistNegative' },
-  { value: 'Cruce SMA (Compra)', type: 'dot', color: colors.crossoverBuy, id: 'smaCrossoverBuy' },
-  { value: 'Cruce SMA (Venta)', type: 'dot', color: colors.crossoverSell, id: 'smaCrossoverSell' },
-  { value: 'Cruce MACD (Compra)', type: 'dot', color: colors.crossoverBuy, id: 'macdCrossoverBuy' },
-  { value: 'Cruce MACD (Venta)', type: 'dot', color: colors.crossoverSell, id: 'macdCrossoverSell' },
-  { value: 'Señal de Compra', type: 'line', color: colors.signalBuy, id: 'signalBuy' },
-  { value: 'Señal de Venta', type: 'line', color: colors.signalSell, id: 'signalSell' },
-  { value: 'Zona de Estrategia', type: 'rect', color: colors.highlightArea, id: 'strategyZone' },
-  { value: 'RSI > 70 (Sobrecompra)', type: 'dot', color: colors.crossoverSell, id: 'rsiOverbought' },
-  { value: 'RSI < 30 (Sobreventa)', type: 'dot', color: colors.crossoverBuy, id: 'rsiOversold' },
-];
 
 // Componente principal del gráfico de mercado
 export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, strategyLogs, chartColors }) => {
@@ -90,132 +69,52 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
   const amountPrecision = selectedMarket?.precision.amount || 2;
 
   // Estado para controlar el montaje y asegurar que ResponsiveContainer renderice correctamente
-  // Recharts a veces requiere un montaje tardío para calcular dimensiones.
   const [isMounted, setIsMounted] = useState(false);
-
-  // Efecto para montar el gráfico después de un pequeño retraso
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsMounted(true);
-    }, 100);
-    return () => clearTimeout(timer); // Limpieza del temporizador al desmontar
+    const timer = setTimeout(() => setIsMounted(true), 100);
+    return () => clearTimeout(timer);
   }, []);
 
   // Mapea los logs de estrategia a un formato más accesible por timestamp
-  // Permite acceso rápido a la acción de una señal para un timestamp dado
   const strategySignalsMap = useMemo(() => {
     const map = new Map<number, 'buy' | 'sell' | 'hold'>();
     strategyLogs.forEach(log => {
-      // Verifica que el timestamp sea un número válido y que la acción sea una de las esperadas
       if (isValidNumber(log.timestamp) && log.details?.action && ['buy', 'sell', 'hold'].includes(log.details.action)) {
-        map.set(log.timestamp, log.details.action as 'buy' | 'sell' | 'hold'); // Aserción de tipo segura aquí
+        map.set(log.timestamp, log.details.action as 'buy' | 'sell' | 'hold');
       }
     });
     return map;
-  }, [strategyLogs]); // Se recalcula si `strategyLogs` cambia
+  }, [strategyLogs]);
 
   // Limpia y prepara los datos del gráfico
-  // Filtra puntos de datos incompletos y calcula la SMA de volumen, RSI y MACD
   const cleanedData = useMemo(() => {
     return data.filter(dp =>
-      // Asegura que cada punto de datos y sus propiedades clave son válidos y numéricos
       dp && typeof dp === 'object' &&
-      isValidNumber(dp.timestamp) &&
-      isValidNumber(dp.openPrice) &&
-      isValidNumber(dp.highPrice) &&
-      isValidNumber(dp.lowPrice) &&
-      isValidNumber(dp.closePrice)
-    ).map((dp, index, arr) => {
-      let volumeSMA20 = null;
-      // Calcula la SMA de 20 periodos para el volumen si hay suficientes datos previos
-      if (index >= 19) {
-        const relevantVolumes = arr.slice(index - 19, index + 1).map(d => d.volume);
-        volumeSMA20 = calculateSMA(relevantVolumes as number[], 20); // Aseguramos que `relevantVolumes` es `number[]`
-      }
-      return {
-        ...dp,
-        volumeSMA20: volumeSMA20 // Añade la SMA de volumen al punto de datos
-      };
-    });
-  }, [data]); // Se recalcula si los datos brutos cambian
-
-  // Si no hay datos limpios, muestra un mensaje
-  if (cleanedData.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-        No hay suficientes datos históricos para mostrar el gráfico.
-      </div>
+      [dp.timestamp, dp.openPrice, dp.highPrice, dp.lowPrice, dp.closePrice].every(isValidNumber)
     );
+  }, [data]);
+
+  if (cleanedData.length === 0) {
+    return <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">Cargando datos de mercado...</div>;
   }
-
-  // Obtiene el último punto de datos disponible para ReferenceDot del RSI
-  const latestDataPoint = cleanedData.length > 0 ? cleanedData[cleanedData.length - 1] : null;
-
-  // Calcula los puntos de cruce para SMAs y MACD para ReferenceDot
-  const crossoverPoints = useMemo(() => {
-    const points: { timestamp: number; type: 'smaBuy' | 'smaSell' | 'macdBuy' | 'macdSell'; value: number }[] = [];
-
-    for (let i = 1; i < cleanedData.length; i++) {
-      const prev = cleanedData[i - 1];
-      const curr = cleanedData[i];
-
-      // Cruce SMA (SMA10 vs SMA20)
-      // Aseguramos que las propiedades son números válidos antes de comparar
-      if (
-        isValidNumber(prev?.sma10) && isValidNumber(prev?.sma20) &&
-        isValidNumber(curr.sma10) && isValidNumber(curr.sma20)
-      ) {
-        if (prev.sma10 <= prev.sma20 && curr.sma10 > curr.sma20) {
-          points.push({ timestamp: curr.timestamp, type: 'smaBuy', value: curr.closePrice });
-        }
-        if (prev.sma10 >= prev.sma20 && curr.sma10 < curr.sma20) {
-          points.push({ timestamp: curr.timestamp, type: 'smaSell', value: curr.closePrice });
-        }
-      }
-
-      // Cruce MACD (MACD Line vs Signal Line)
-      // CORRECCIÓN: Aseguramos que curr.signalLine se valida correctamente aquí.
-      if (
-        isValidNumber(prev?.macdLine) && isValidNumber(prev?.signalLine) &&
-        isValidNumber(curr.macdLine) && isValidNumber(curr.signalLine)
-      ) {
-        if (prev.macdLine <= prev.signalLine && curr.macdLine > curr.signalLine) {
-          points.push({ timestamp: curr.timestamp, type: 'macdBuy', value: curr.macdLine });
-        }
-        if (prev.macdLine >= prev.signalLine && curr.macdLine < curr.signalLine) {
-          points.push({ timestamp: curr.timestamp, type: 'macdSell', value: curr.macdLine });
-        }
-      }
-    }
-    return points;
-  }, [cleanedData]); // Se recalcula si `cleanedData` cambia
-
-  // CustomTooltip: Componente de tooltip personalizado para mostrar información detallada
+  
   const CustomTooltip = ({ active, payload, label }: any) => {
-    // Solo renderiza si el tooltip está activo y hay datos
     if (active && payload && payload.length) {
-      const dataPoint = payload[0].payload; // El objeto de datos completo para el punto actual
-      const signal = strategySignalsMap.get(dataPoint.timestamp); // Obtiene la señal de estrategia si existe
+      const dataPoint = payload[0].payload;
+      const signal = strategySignalsMap.get(dataPoint.timestamp);
 
       return (
-        <div className="bg-gray-800 bg-opacity-90 p-3 rounded-md shadow-lg text-white text-xs space-y-1 border border-gray-700">
+        <div className="bg-background/90 p-3 rounded-md shadow-lg text-foreground text-xs space-y-1 border border-border backdrop-blur-sm">
           <p className="font-bold">Hora: {new Date(label).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
-          {/* Muestra los precios de apertura, máximo, mínimo y cierre */}
           <p>Open: <span className="font-mono">{isValidNumber(dataPoint.openPrice) ? dataPoint.openPrice.toFixed(pricePrecision) : 'N/A'}</span></p>
           <p>High: <span className="font-mono">{isValidNumber(dataPoint.highPrice) ? dataPoint.highPrice.toFixed(pricePrecision) : 'N/A'}</span></p>
           <p>Low: <span className="font-mono">{isValidNumber(dataPoint.lowPrice) ? dataPoint.lowPrice.toFixed(pricePrecision) : 'N/A'}</span></p>
           <p>Close: <span className="font-mono">{isValidNumber(dataPoint.closePrice) ? dataPoint.closePrice.toFixed(pricePrecision) : 'N/A'}</span></p>
-          {/* Muestra el volumen y su SMA si están disponibles */}
-          <p>Volume: <span className="font-mono">{isValidNumber(dataPoint.volume) ? dataPoint.volume.toFixed(amountPrecision) : 'N/A'}</span></p>
-          {isValidNumber(dataPoint.volumeSMA20) && <p>Vol SMA20: <span className="font-mono">{dataPoint.volumeSMA20.toFixed(amountPrecision)}</span></p>}
-          {/* Muestra los valores de los indicadores si están disponibles */}
+          {isValidNumber(dataPoint.volume) && <p>Volume: <span className="font-mono">{dataPoint.volume.toFixed(amountPrecision)}</span></p>}
           {isValidNumber(dataPoint.sma10) && <p>SMA10: <span className="font-mono">{dataPoint.sma10.toFixed(pricePrecision)}</span></p>}
           {isValidNumber(dataPoint.sma20) && <p>SMA20: <span className="font-mono">{dataPoint.sma20.toFixed(pricePrecision)}</span></p>}
-          {isValidNumber(dataPoint.macdLine) && <p>MACD Line: <span className="font-mono">{dataPoint.macdLine.toFixed(4)}</span></p>}
-          {isValidNumber(dataPoint.signalLine) && <p>Signal Line: <span className="font-mono">{dataPoint.signalLine.toFixed(4)}</span></p>}
-          {isValidNumber(dataPoint.macdHistogram) && <p>MACD Hist: <span className="font-mono">{dataPoint.macdHistogram.toFixed(4)}</span></p>}
+          {isValidNumber(dataPoint.sma50) && <p>SMA50: <span className="font-mono">{dataPoint.sma50.toFixed(pricePrecision)}</span></p>}
           {isValidNumber(dataPoint.rsi) && <p>RSI: <span className="font-mono">{dataPoint.rsi.toFixed(2)}</span></p>}
-          {/* Muestra la señal de estrategia si existe */}
           {signal && (
             <p className={clsx("font-bold text-base mt-2", {
               'text-green-400': signal === 'buy',
@@ -230,251 +129,123 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
     }
     return null;
   };
+  
+    // Función para renderizar las áreas de referencia de estrategia
+    const renderStrategyReferenceAreas = () => {
+        const areas = [];
+        let segmentStart = null;
 
-  // CustomCandleShape: Función para dibujar las velas japonesas.
-  // Esta función se pasa al prop 'shape' de un componente <Scatter>.
-  // Recibe 'cx', 'cy' (coordenadas del centro del punto) y 'payload' (los datos del punto).
-  const CustomCandleShape = (props: any): ReactElement<SVGElement> => {
-    // 1. Desestructurar las props. Recharts pasa 'props' como 'any' o 'unknown'.
-    const { cx, cy, payload } = props;
+        for (let i = 0; i < cleanedData.length; i++) {
+            const currentPoint = cleanedData[i];
+            const currentBuyConditions = currentPoint.buyConditionsMet || 0;
+            const currentSellConditions = currentPoint.sellConditionsMet || 0;
 
-    // 2. Aplicar aserciones de tipo y guardias de tipo robustas.
-    // Esto asegura a TypeScript (tiempo de compilación) y al runtime (tiempo de ejecución)
-    // que las variables que usaremos son números válidos.
-    // Si alguna es inválida, se retorna un elemento SVG transparente para evitar errores.
-    if (
-      !isValidNumber(cx) ||
-      !isValidNumber(cy) ||
-      !payload || typeof payload !== 'object' ||
-      !isValidNumber(payload.openPrice) ||
-      !isValidNumber(payload.closePrice) ||
-      !isValidNumber(payload.highPrice) ||
-      !isValidNumber(payload.lowPrice)
-    ) {
-      return <g />; // Retorna un grupo SVG vacío si los datos no son válidos
-    }
+            if (segmentStart === null && (currentBuyConditions > 0 || currentSellConditions > 0)) {
+                segmentStart = currentPoint.timestamp;
+            } else if (segmentStart !== null) {
+                const prevPoint = cleanedData[i - 1];
+                const prevBuyConditions = prevPoint.buyConditionsMet || 0;
+                const prevSellConditions = prevPoint.sellConditionsMet || 0;
 
-    // Ahora, sabemos que todas estas variables son números válidos.
-    const { openPrice, closePrice, highPrice, lowPrice } = payload;
-    const isBullish = closePrice >= openPrice; // Determina si la vela es alcista
-    const color = isBullish ? '#16a34a' : '#dc2626'; // Verde para alcista, rojo para bajista
+                const conditionsChanged = currentBuyConditions !== prevBuyConditions || currentSellConditions !== prevSellConditions;
+                const isLastPoint = i === cleanedData.length - 1;
 
-    const candleBodyWidth = 4; // Ancho fijo del cuerpo de la vela en píxeles (ajustable)
-
-    // Calculamos el rango de precios de la vela (High - Low) y aseguramos un mínimo para evitar división por cero
-    const priceRange = Math.max(Math.abs(highPrice - lowPrice), 0.0001);
-
-    // Determinamos la escala de píxeles por unidad de precio.
-    // Asumimos un tamaño de vela vertical máximo (ej. 50 píxeles) para una visualización consistente.
-    // Este valor puede ser ajustado para hacer las velas más altas o más cortas.
-    const maxPixelHeightForRange = 50; // Valor arbitrario, ajustar según necesidad
-    const pixelPerPriceUnit = maxPixelHeightForRange / priceRange;
-
-    // Calculamos las coordenadas Y para la apertura, máximo, mínimo y cierre de la vela.
-    // Estas son relativas a 'cy', que es el punto central Y de la vela proporcionado por Scatter.
-    // La conversión de precio a píxeles se hace usando 'pixelPerPriceUnit'.
-    const openY = cy - (openPrice - closePrice) * pixelPerPriceUnit;
-    const highY = cy - (highPrice - closePrice) * pixelPerPriceUnit;
-    const lowY = cy - (lowPrice - closePrice) * pixelPerPriceUnit;
-
-    // Calculamos la posición y altura del cuerpo de la vela.
-    const bodyTop = Math.min(openY, cy); // El punto Y superior del cuerpo
-    const bodyBottom = Math.max(openY, cy); // El punto Y inferior del cuerpo
-    const bodyHeight = Math.abs(openY - cy) || 1; // Altura del cuerpo, mínimo 1px para dojis
-
-    // Retornamos los elementos SVG para dibujar la vela
-    return (
-      <g>
-        {/* Mecha superior (desde High hasta el cuerpo) */}
-        <line
-          x1={cx} y1={highY}
-          x2={cx} y2={bodyTop}
-          stroke={color}
-          strokeWidth={1}
-        />
-        {/* Mecha inferior (desde el cuerpo hasta Low) */}
-        <line
-          x1={cx} y1={bodyBottom}
-          x2={cx} y2={lowY}
-          stroke={color}
-          strokeWidth={1}
-        />
-        {/* Cuerpo de la vela (rectángulo) */}
-        <rect
-          x={cx - candleBodyWidth / 2} // Centra el cuerpo horizontalmente
-          y={bodyTop}
-          width={candleBodyWidth}
-          height={bodyHeight}
-          fill={color}
-          stroke={color}
-        />
-      </g>
-    );
-  };
+                if (conditionsChanged || isLastPoint) {
+                    const segmentEnd = isLastPoint ? currentPoint.timestamp : prevPoint.timestamp;
+                    let fill = 'transparent';
+                    if (prevBuyConditions >= 2) fill = chartColors.buyZoneStrong;
+                    else if (prevBuyConditions === 1) fill = chartColors.buyZoneWeak;
+                    else if (prevSellConditions >= 2) fill = chartColors.sellZoneStrong; // No tenemos 2 sell conditions, pero se deja por escalabilidad
+                    else if (prevSellConditions === 1) fill = chartColors.sellZoneWeak;
+                    
+                    if (fill !== 'transparent') {
+                        areas.push(
+                            <ReferenceArea
+                                key={`strat-area-${segmentStart}`}
+                                x1={segmentStart}
+                                x2={segmentEnd}
+                                yAxisId="priceAxis"
+                                fill={fill}
+                                stroke="none"
+                            />
+                        );
+                    }
+                    segmentStart = (currentBuyConditions > 0 || currentSellConditions > 0) ? currentPoint.timestamp : null;
+                }
+            }
+        }
+        return areas;
+    };
 
   return (
     <div className="flex flex-col w-full h-full">
-      {/* ==================================== Gráfico Unificado de Scalping ==================================== */}
-      {/* Contenedor principal del gráfico con altura fija */}
-      <div style={{ width: '100%', height: '500px' }}> {/* Altura ajustada para acomodar todos los indicadores */}
+      <div style={{ width: '100%', height: '500px' }}>
         {isMounted && <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart
-            data={cleanedData}
-            margin={{ top: 10, right: 30, left: 20, bottom: 0 }}
-          >
-            {/* Rejilla cartesiana del gráfico */}
+          <ComposedChart data={cleanedData} margin={{ top: 10, right: 30, left: 20, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#4b5563" />
-
-            {/* Eje X (Tiempo): Visible y con formato de hora */}
             <XAxis
-              dataKey="timestamp"
-              type="number"
-              scale="time"
-              domain={['dataMin', 'dataMax']}
+              dataKey="timestamp" type="number" scale="time" domain={['dataMin', 'dataMax']}
               tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              minTickGap={50}
-              tick={{ fill: '#6b7280', fontSize: 10 }}
-              axisLine={{ stroke: '#4b5563' }}
-              tickLine={{ stroke: '#4b5563' }}
+              minTickGap={50} tick={{ fill: '#6b7280', fontSize: 10 }}
+              axisLine={{ stroke: '#4b5563' }} tickLine={{ stroke: '#4b5563' }}
             />
-
-            {/* Tooltip personalizado para mostrar información detallada */}
-            <Tooltip content={<CustomTooltip />} />
-            {/* Leyenda del gráfico para identificar las series de datos */}
-            <Legend wrapperStyle={{ position: 'relative', bottom: 0, left: 0, right: 0, display: 'flex', justifyContent: 'center', paddingTop: '10px' }} />
-
-            {/* Eje Y principal para el Precio (VISIBLE): Orientado a la derecha */}
             <YAxis
-              orientation="right"
-              dataKey="closePrice"
-              domain={['auto', 'auto']}
+              orientation="right" dataKey="closePrice" domain={['auto', 'auto']}
               tickFormatter={(value) => isValidNumber(value) ? value.toFixed(pricePrecision) : ''}
-              width={80}
-              tick={{ fill: '#6b7280', fontSize: 10 }}
-              axisLine={{ stroke: '#4b5563' }}
-              tickLine={{ stroke: '#4b5563' }}
-              mirror={false}
-              yAxisId="priceAxis"
+              width={80} tick={{ fill: '#6b7280', fontSize: 10 }}
+              axisLine={{ stroke: '#4b5563' }} tickLine={{ stroke: '#4b5563' }}
+              mirror={false} yAxisId="priceAxis"
             />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: '20px' }} />
 
-            {/* Eje Y para el Volumen (OCULTO): Se utiliza para escalar el volumen correctamente */}
-            <YAxis
-              orientation="left"
-              dataKey="volume"
-              domain={[0, 'auto']}
-              tickFormatter={(value) => isValidNumber(value) ? value.toFixed(amountPrecision) : ''}
-              width={0} /* Ancho cero para ocultarlo */
-              hide={true} /* Oculta completamente el eje */
-              yAxisId="volumeAxis"
-            />
+            {/* Zonas de Estrategia */}
+            {renderStrategyReferenceAreas()}
 
-            {/* Eje Y para RSI (OCULTO): Se utiliza para escalar el RSI correctamente (0-100) */}
-            <YAxis
-              orientation="left"
-              domain={[0, 100]}
-              width={0} /* Ancho cero para ocultarlo */
-              hide={true} /* Oculta completamente el eje */
-              yAxisId="rsiAxis"
-            />
+            {/* Velas Japonesas (como barras de error para mechas) */}
+            <Bar dataKey="closePrice" yAxisId="priceAxis" name="Velas" isAnimationActive={false}>
+              {cleanedData.map((entry, index) => {
+                const color = entry.openPrice <= entry.closePrice ? chartColors.signalBuy : chartColors.signalSell;
+                return (
+                  <Cell key={`cell-${index}`} fill={color} stroke={color}>
+                    <ReferenceDot x={entry.timestamp} y={entry.highPrice} yAxisId="priceAxis" r={0} shape={() => <line x1={0} y1={0} x2={0} y2={entry.closePrice - entry.highPrice} stroke={color} strokeWidth={1} />} />
+                    <ReferenceDot x={entry.timestamp} y={entry.lowPrice} yAxisId="priceAxis" r={0} shape={() => <line x1={0} y1={0} x2={0} y2={entry.openPrice - entry.lowPrice} stroke={color} strokeWidth={1} />} />
+                  </Cell>
+                );
+              })}
+            </Bar>
 
-            {/* Eje Y para MACD (OCULTO): Se utiliza para escalar el MACD correctamente */}
-            <YAxis
-              orientation="left"
-              domain={['auto', 'auto']} /* Escala automática para MACD */
-              width={0} /* Ancho cero para ocultarlo */
-              hide={true} /* Oculta completamente el eje */
-              yAxisId="macdAxis"
-            />
+            {/* Líneas de Indicadores */}
+            <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={chartColors.sma10} dot={false} strokeWidth={2} name="SMA10" />
+            <Line yAxisId="priceAxis" type="monotone" dataKey="sma20" stroke={chartColors.sma20} dot={false} strokeWidth={2} name="SMA20" />
+            <Line yAxisId="priceAxis" type="monotone" dataKey="sma50" stroke={chartColors.sma50} dot={false} strokeWidth={1.5} name="SMA50" />
+            <Area yAxisId="priceAxis" type="monotone" dataKey="upperBollingerBand" stackId="bb" stroke={chartColors.bollingerBands} fill="none" name="BB Superior" />
+            <Area yAxisId="priceAxis" type="monotone" dataKey="lowerBollingerBand" stackId="bb" stroke={chartColors.bollingerBands} fill={chartColors.bollingerBands} name="BB Inferior" />
 
             {/* Líneas de Referencia para Señales de Compra/Venta */}
             {strategyLogs.map((log) => {
               if (log.details?.action === 'buy') {
-                return (
-                  <ReferenceLine
-                    key={`buy-signal-${log.timestamp}`}
-                    x={log.timestamp}
-                    stroke={chartColors.signalBuy}
-                    strokeWidth={2}
-                    strokeDasharray="3 3"
-                    yAxisId="priceAxis"
-                    label={{ value: 'COMPRA', position: 'insideTop', fill: chartColors.signalBuy, fontSize: 10, fontWeight: 'bold' }}
-                    name="Señal de Compra"
-                  />
-                );
+                return ( <ReferenceLine key={`buy-${log.timestamp}`} x={log.timestamp} stroke={chartColors.signalBuy} strokeWidth={2} strokeDasharray="3 3" yAxisId="priceAxis" label={{ value: 'COMPRA', position: 'insideTopLeft', fill: chartColors.signalBuy, fontSize: 10 }} /> );
               }
               if (log.details?.action === 'sell') {
-                return (
-                  <ReferenceLine
-                    key={`sell-signal-${log.timestamp}`}
-                    x={log.timestamp}
-                    stroke={chartColors.signalSell}
-                    strokeWidth={2}
-                    strokeDasharray="3 3"
-                    yAxisId="priceAxis"
-                    label={{ value: 'VENTA', position: 'insideTop', fill: chartColors.signalSell, fontSize: 10, fontWeight: 'bold' }}
-                    name="Señal de Venta"
-                  />
-                );
+                return ( <ReferenceLine key={`sell-${log.timestamp}`} x={log.timestamp} stroke={chartColors.signalSell} strokeWidth={2} strokeDasharray="3 3" yAxisId="priceAxis" label={{ value: 'VENTA', position: 'insideBottomLeft', fill: chartColors.signalSell, fontSize: 10 }} /> );
               }
               return null;
             })}
 
-            {/* Velas Japonesas usando Scatter con CustomCandleShape */}
-            <Scatter
-              data={cleanedData}
-              x="timestamp"
-              y="closePrice" /* Scatter mapea el dataKey al eje Y. CustomCandleShape usa cx, cy y payload. */
-              yAxisId="priceAxis"
-              name="Velas Japonesas"
-              shape={CustomCandleShape} /* Pasa la función de forma personalizada para dibujar las velas */
-              isAnimationActive={false} /* Deshabilita animaciones para un mejor rendimiento */
-            />
+            {/* Sección de Indicadores Inferiores (RSI, MACD) */}
+            <YAxis yAxisId="rsiAxis" domain={[0, 100]} hide={true} />
+            <Line yAxisId="rsiAxis" type="monotone" dataKey="rsi" stroke={chartColors.rsi} dot={false} strokeWidth={1.5} name="RSI" hide={true}/>
 
-            {/* Líneas de Media Móvil Simple (SMA10, SMA20) */}
-            <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={chartColors.sma10} dot={false} strokeWidth={2.5} name="SMA10" />
-            <Line yAxisId="priceAxis" type="monotone" dataKey="sma20" stroke={chartColors.sma20} dot={false} strokeWidth={2.5} name="SMA20" />
-            <Line yAxisId="priceAxis" type="monotone" dataKey="sma50" stroke="#f97316" dot={false} strokeWidth={1.5} name="SMA50" />
-            
-            {/* Bandas de Bollinger */}
-            <Line yAxisId="priceAxis" type="monotone" dataKey="upperBollingerBand" stroke="#a78bfa" strokeDasharray="3 3" dot={false} strokeWidth={1} name="BB Superior" />
-            <Line yAxisId="priceAxis" type="monotone" dataKey="lowerBollingerBand" stroke="#a78bfa" strokeDasharray="3 3" dot={false} strokeWidth={1} name="BB Inferior" />
-
-            {/* Volumen (como barras) - ahora en el mismo ComposedChart, usando su propio Y-Axis oculto */}
-            <Bar
-              yAxisId="volumeAxis" /* Asigna al eje Y de volumen oculto */
-              dataKey="volume"
-              barSize={2} /* Tamaño de barra muy pequeño para que se vea como una línea de fondo */
-              fill="#8884d8" /* Color de relleno */
-              name="Volumen"
-              opacity={0.2} /* Opacidad reducida para no competir con el precio */
-            />
-            {/* Línea de SMA de 20 periodos para el volumen - también en el ComposedChart */}
-            <Line yAxisId="volumeAxis" type="monotone" dataKey="volumeSMA20" stroke={chartColors.volumeSMA} dot={false} strokeWidth={1} opacity={0.3} name="Volumen SMA20" />
-
-
-            {/* Línea del RSI - en el mismo ComposedChart, usando su propio Y-Axis oculto */}
-            <Line yAxisId="rsiAxis" type="monotone" dataKey="rsi" stroke={chartColors.rsi} dot={false} strokeWidth={1.5} name="RSI" />
-            
-            {/* Líneas MACD y Signal - en el mismo ComposedChart, usando su propio Y-Axis oculto */}
-            <Line yAxisId="macdAxis" type="monotone" dataKey="macdLine" stroke={chartColors.macdLine} dot={false} strokeWidth={1.5} name="MACD Line" />
-            <Line yAxisId="macdAxis" type="monotone" dataKey="signalLine" stroke={chartColors.signalLine} dot={false} strokeWidth={1.5} name="Signal Line" />
-            {/* Histograma MACD: Usando Bar con Cell para coloreado dinámico */}
-            <Bar
-                yAxisId="macdAxis" /* Asigna al eje Y de MACD oculto */
-                dataKey="macdHistogram"
-                isAnimationActive={false}
-                name="MACD Histograma"
-                barSize={2} /* Tamaño de barra muy pequeño */
-            >
-                {/* Asigna color a cada barra del histograma (positivo/negativo) */}
-                {cleanedData.map((entry, index) => (
-                    <Cell
-                      key={`macd-hist-cell-${index}`}
-                      fill={isValidNumber(entry.macdHistogram) && entry.macdHistogram >= 0 ? chartColors.macdHistogramPositive : chartColors.macdHistogramNegative}
-                    />
-                  ))}
+            <YAxis yAxisId="macdAxis" domain={['auto', 'auto']} hide={true} />
+            <Line yAxisId="macdAxis" type="monotone" dataKey="macdLine" stroke={chartColors.macdLine} dot={false} strokeWidth={1.5} name="MACD" hide={true}/>
+            <Line yAxisId="macdAxis" type="monotone" dataKey="signalLine" stroke={chartColors.signalLine} dot={false} strokeWidth={1.5} name="Signal" hide={true}/>
+            <Bar yAxisId="macdAxis" dataKey="macdHistogram" name="Histograma" hide={true}>
+              {cleanedData.map((entry, index) => (
+                <Cell key={`cell-macd-${index}`} fill={isValidNumber(entry.macdHistogram) && entry.macdHistogram >= 0 ? chartColors.macdHistogramPositive : chartColors.macdHistogramNegative} />
+              ))}
             </Bar>
-           
+            
           </ComposedChart>
         </ResponsiveContainer>}
       </div>

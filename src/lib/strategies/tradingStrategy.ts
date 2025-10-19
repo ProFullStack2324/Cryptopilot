@@ -12,6 +12,7 @@ import {
 export interface StrategyDecision {
     action: TradeAction;
     orderData?: OrderFormData;
+    details?: any; // Para pasar información adicional, como el conteo de condiciones
 }
 
 export const decideTradeActionAndAmount = (params: {
@@ -52,6 +53,7 @@ export const decideTradeActionAndAmount = (params: {
     }
 
     const quoteAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.quoteAsset)?.free || 0;
+    const baseAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.baseAsset)?.free || 0;
 
     // --- LÓGICA DE VENTA (Si tenemos una posición abierta) ---
     if (botOpenPosition) {
@@ -79,26 +81,36 @@ export const decideTradeActionAndAmount = (params: {
 
     // --- LÓGICA DE COMPRA (Si NO tenemos posición abierta) ---
     else {
-        const priceCondition = currentPrice <= lowerBollingerBand!;
-        const rsiCondition = rsi! <= 35;
-        const macdCondition = macdHistogram! > 0 && prevMacdHistogram! <= 0;
-        const conditionsMet = [priceCondition, rsiCondition, macdCondition].filter(Boolean).length;
+        const buyPriceCondition = currentPrice <= lowerBollingerBand!;
+        const buyRsiCondition = rsi! <= 35;
+        const buyMacdCondition = macdHistogram! > 0 && prevMacdHistogram! <= 0;
         
-        // La acción es BUY si se cumplen las condiciones, independientemente del saldo.
-        if (conditionsMet >= 2) {
-            log(`Señal de COMPRA detectada.`, { priceCondition, rsiCondition, macdCondition });
+        const conditionsForBuyMet = [buyPriceCondition, buyRsiCondition, buyMacdCondition];
+        const buyConditionsCount = conditionsForBuyMet.filter(Boolean).length;
+        
+        const decisionDetails = {
+            buyConditionsMet,
+            buyConditionsCount,
+            conditions: {
+                price: buyPriceCondition,
+                rsi: buyRsiCondition,
+                macd: buyMacdCondition
+            }
+        };
+
+        if (buyConditionsCount >= 2) {
+            log(`Señal de COMPRA detectada.`, decisionDetails);
             
-            // Ahora, validamos si se puede ejecutar la orden con el saldo disponible
-            const capitalToRisk = quoteAssetBalance * 0.95; // Usar el 95% del capital
+            const capitalToRisk = quoteAssetBalance * 0.95;
             let quantityToBuy = capitalToRisk / currentPrice;
 
             const minNotional = selectedMarketRules.minNotional.minNotional;
             if (quantityToBuy * currentPrice < minNotional) {
                 if (quoteAssetBalance < minNotional) {
-                    log(`Fondos Insuficientes: Balance de ${selectedMarket.quoteAsset} (${quoteAssetBalance.toFixed(2)}) es menor que el nocional mínimo (${minNotional}).`, { balance: quoteAssetBalance, minNotional });
-                    return { action: 'hold' }; // No se puede ni ajustar, se queda en HOLD
+                    log(`Fondos Insuficientes para nocional mínimo.`, { balance: quoteAssetBalance, minNotional });
+                    return { action: 'hold', details: decisionDetails };
                 }
-                quantityToBuy = minNotional / currentPrice * 1.01; // Ajustar para asegurar que supera el mínimo
+                quantityToBuy = minNotional / currentPrice * 1.01;
             }
 
             const stepSize = selectedMarketRules.lotSize.stepSize;
@@ -108,16 +120,15 @@ export const decideTradeActionAndAmount = (params: {
             quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarket.precision.amount));
             
             if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
-                log(`Cantidad Inválida: La cantidad calculada (${quantityToBuy}) es menor al mínimo permitido (${selectedMarketRules.lotSize.minQty}).`);
-                return { action: 'hold' };
+                log(`Cantidad inválida tras ajuste.`, { quantityToBuy });
+                return { action: 'hold', details: decisionDetails };
             }
 
             if (quantityToBuy * currentPrice > quoteAssetBalance) {
-                log(`Fondos Insuficientes: La cantidad final a comprar (${quantityToBuy}) excede el balance disponible.`);
-                return { action: 'hold' };
+                log(`Fondos Insuficientes tras ajuste.`);
+                return { action: 'hold', details: decisionDetails };
             }
 
-            // Si todas las validaciones de saldo y cantidad pasan, se crea la orden
             return {
                 action: 'buy',
                 orderData: {
@@ -126,11 +137,11 @@ export const decideTradeActionAndAmount = (params: {
                     orderType: 'MARKET',
                     quantity: quantityToBuy,
                     price: currentPrice
-                }
+                },
+                details: decisionDetails
             };
         }
-        return { action: 'hold' };
+        
+        return { action: 'hold', details: decisionDetails };
     }
 };
-
-    
