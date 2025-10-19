@@ -61,6 +61,39 @@ export const CHART_COLORS = {
   sellZoneStrong: 'rgba(239, 68, 68, 0.25)', // Rojo más intenso
 };
 
+// Componente para la leyenda personalizada
+const CustomLegend = (props: any) => {
+    const { payload } = props;
+    const customLegendItems = [
+      { color: CHART_COLORS.buyZoneWeak, value: "Zona Compra Débil" },
+      { color: CHART_COLORS.buyZoneStrong, value: "Zona Compra Fuerte" },
+      { color: CHART_COLORS.sellZoneWeak, value: "Zona Venta" },
+    ];
+  
+    return (
+      <div className="flex justify-center items-center flex-wrap gap-x-4 gap-y-1 pt-4 text-xs text-muted-foreground">
+        {payload.map((entry: any, index: number) => {
+             // Ocultar elementos que no queremos en la leyenda, como las mechas o el cuerpo de las velas
+             if (entry.dataKey === 'closePrice' || entry.dataKey === 'non_existent_key_1' || entry.dataKey === 'non_existent_key_2' || entry.dataKey === 'non_existent_key_3' ) {
+                 return null;
+             }
+            return (
+                <div key={`item-${index}`} className="flex items-center gap-2">
+                    <span style={{ backgroundColor: entry.color, width: '10px', height: '10px', display: 'inline-block' }}></span>
+                    <span>{entry.value}</span>
+                </div>
+            )
+        })}
+        {customLegendItems.map((item, index) => (
+             <div key={`custom-item-${index}`} className="flex items-center gap-2">
+                <span style={{ backgroundColor: item.color, width: '10px', height: '10px', display: 'inline-block' }}></span>
+                <span>{item.value}</span>
+             </div>
+        ))}
+      </div>
+    );
+};
+
 
 // Componente principal del gráfico de mercado
 export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, strategyLogs, chartColors }) => {
@@ -197,14 +230,10 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
               mirror={false} yAxisId="priceAxis"
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: '20px' }} />
+            <Legend content={<CustomLegend />} verticalAlign="bottom" wrapperStyle={{ paddingTop: '20px' }} />
 
             {/* Zonas de Estrategia */}
             {renderStrategyReferenceAreas()}
-             {/* Leyenda para las Zonas */}
-             <Area type="monotone" dataKey="non_existent_key_1" name="Zona Compra Débil" fill={chartColors.buyZoneWeak} stroke={chartColors.buyZoneWeak} />
-             <Area type="monotone" dataKey="non_existent_key_2" name="Zona Compra Fuerte" fill={chartColors.buyZoneStrong} stroke={chartColors.buyZoneStrong} />
-             <Area type="monotone" dataKey="non_existent_key_3" name="Zona Venta" fill={chartColors.sellZoneWeak} stroke={chartColors.sellZoneWeak} />
 
             {/* Velas Japonesas (como Scatter para mechas, y Bar para cuerpo) */}
             <Scatter
@@ -212,24 +241,22 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
               name="Velas"
               data={cleanedData}
               shape={({ x, y, payload }) => {
-                if (x === undefined || y === undefined || !isValidNumber(payload.highPrice) || !isValidNumber(payload.lowPrice)) return null;
+                if (x === undefined || !isValidNumber(y) || !isValidNumber(payload.highPrice) || !isValidNumber(payload.lowPrice)) return null;
                 const { openPrice, closePrice, highPrice, lowPrice } = payload;
                 const isGreen = openPrice <= closePrice;
                 const color = isGreen ? chartColors.signalBuy : chartColors.signalSell;
                 
-                // Calcular la posición y del cuerpo de la vela
-                const yBody = isGreen ? y - (closePrice - openPrice) : y;
+                const y_min = y - (highPrice - lowPrice) * (y / lowPrice) ;
+                const y_max = y;
                 
                 return (
-                  <g stroke={color} strokeWidth={1}>
-                    {/* Mecha */}
+                  <g stroke={color} fill={color} strokeWidth={1}>
                     <line x1={x} y1={y-(highPrice-lowPrice)} x2={x} y2={y} />
-                    {/* Cuerpo (se dibujará por el componente Bar, esto es solo una referencia de mecha) */}
                   </g>
                 );
               }}
               isAnimationActive={false}
-            />
+              />
             <Bar dataKey="closePrice" yAxisId="priceAxis" name="Precio" isAnimationActive={false} barSize={4}>
                {cleanedData.map((entry, index) => {
                  const color = entry.openPrice <= entry.closePrice ? chartColors.signalBuy : chartColors.signalSell;
