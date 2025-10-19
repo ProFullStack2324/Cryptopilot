@@ -202,18 +202,26 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
             {/* Zonas de Estrategia */}
             {renderStrategyReferenceAreas()}
 
-            {/* Velas Japonesas (como barras de error para mechas) */}
-            <Bar dataKey="closePrice" yAxisId="priceAxis" name="Velas" isAnimationActive={false}>
-              {cleanedData.map((entry, index) => {
-                const color = entry.openPrice <= entry.closePrice ? chartColors.signalBuy : chartColors.signalSell;
-                return (
-                  <Cell key={`cell-${index}`} fill={color} stroke={color}>
-                    <ReferenceDot x={entry.timestamp} y={entry.highPrice} yAxisId="priceAxis" r={0} shape={() => <line x1={0} y1={0} x2={0} y2={entry.closePrice - entry.highPrice} stroke={color} strokeWidth={1} />} />
-                    <ReferenceDot x={entry.timestamp} y={entry.lowPrice} yAxisId="priceAxis" r={0} shape={() => <line x1={0} y1={0} x2={0} y2={entry.openPrice - entry.lowPrice} stroke={color} strokeWidth={1} />} />
-                  </Cell>
-                );
-              })}
-            </Bar>
+            {/* Velas Japonesas (como Scatter para mechas, y Bar para cuerpo) */}
+            <Scatter
+              yAxisId="priceAxis"
+              name="Velas"
+              data={cleanedData}
+              shape={({ x, y, payload }) => {
+                const { highPrice, lowPrice } = payload;
+                if (x === undefined || y === undefined || !isValidNumber(highPrice) || !isValidNumber(lowPrice)) return null;
+                const color = payload.openPrice <= payload.closePrice ? chartColors.signalBuy : chartColors.signalSell;
+                return <line x1={x} y1={y} x2={x} y2={y - (highPrice - lowPrice)} stroke={color} strokeWidth={1} />;
+              }}
+              isAnimationActive={false}
+            />
+            <Bar dataKey="closePrice" yAxisId="priceAxis" name="Cuerpo Vela" isAnimationActive={false} barSize={4}>
+               {cleanedData.map((entry, index) => {
+                 const color = entry.openPrice <= entry.closePrice ? chartColors.signalBuy : chartColors.signalSell;
+                 return <Cell key={`cell-${index}`} fill={color} />;
+               })}
+             </Bar>
+
 
             {/* Líneas de Indicadores */}
             <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={chartColors.sma10} dot={false} strokeWidth={2} name="SMA10" />
