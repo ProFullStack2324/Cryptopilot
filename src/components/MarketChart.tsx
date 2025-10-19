@@ -13,7 +13,8 @@ import {
   ReferenceArea,
   Legend,
   Scatter, // Necesario para dibujar las velas japonesas y señales de estrategia
-  CartesianGrid // Rejilla de fondo para el gráfico
+  CartesianGrid, // Rejilla de fondo para el gráfico
+  ReferenceLine // Para las líneas de señales de compra/venta
 } from 'recharts';
 import { Market, MarketPriceDataPoint } from '@/lib/types';
 import clsx from 'clsx';
@@ -75,9 +76,8 @@ export const getChartLegendItems = (colors: typeof CHART_COLORS) => [
   { value: 'Cruce SMA (Venta)', type: 'dot', color: colors.crossoverSell, id: 'smaCrossoverSell' },
   { value: 'Cruce MACD (Compra)', type: 'dot', color: colors.crossoverBuy, id: 'macdCrossoverBuy' },
   { value: 'Cruce MACD (Venta)', type: 'dot', color: colors.crossoverSell, id: 'macdCrossoverSell' },
-  { value: 'Señal de Compra', type: 'dot', color: colors.signalBuy, id: 'signalBuy' },
-  { value: 'Señal de Venta', type: 'dot', color: colors.signalSell, id: 'signalSell' },
-  { value: 'Señal de Hold', type: 'dot', color: colors.signalHold, id: 'signalHold' },
+  { value: 'Señal de Compra', type: 'line', color: colors.signalBuy, id: 'signalBuy' },
+  { value: 'Señal de Venta', type: 'line', color: colors.signalSell, id: 'signalSell' },
   { value: 'Zona de Estrategia', type: 'rect', color: colors.highlightArea, id: 'strategyZone' },
   { value: 'RSI > 70 (Sobrecompra)', type: 'dot', color: colors.crossoverSell, id: 'rsiOverbought' },
   { value: 'RSI < 30 (Sobreventa)', type: 'dot', color: colors.crossoverBuy, id: 'rsiOversold' },
@@ -386,19 +386,38 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
               yAxisId="macdAxis"
             />
 
-            {/* Área de referencia para resaltar las últimas 3 velas (zona de estrategia) */}
-            {cleanedData.length >= 3 && (
-                <ReferenceArea
-                    x1={cleanedData[cleanedData.length - 3].timestamp}
-                    x2={cleanedData[cleanedData.length - 1].timestamp}
-                    yAxisId="priceAxis"
-                    fill={chartColors.highlightArea}
-                    stroke="rgba(255, 255, 0, 0.6)"
+            {/* Líneas de Referencia para Señales de Compra/Venta */}
+            {strategyLogs.map((log) => {
+              if (log.details?.action === 'buy') {
+                return (
+                  <ReferenceLine
+                    key={`buy-signal-${log.timestamp}`}
+                    x={log.timestamp}
+                    stroke={chartColors.signalBuy}
+                    strokeWidth={2}
                     strokeDasharray="3 3"
-                    label={{ value: "Últimas 3 Velas (Estrategia)", position: "top", fill: "#facc15", fontSize: 10 }}
-                    name="Zona de Estrategia"
-                />
-            )}
+                    yAxisId="priceAxis"
+                    label={{ value: 'COMPRA', position: 'insideTop', fill: chartColors.signalBuy, fontSize: 10, fontWeight: 'bold' }}
+                    name="Señal de Compra"
+                  />
+                );
+              }
+              if (log.details?.action === 'sell') {
+                return (
+                  <ReferenceLine
+                    key={`sell-signal-${log.timestamp}`}
+                    x={log.timestamp}
+                    stroke={chartColors.signalSell}
+                    strokeWidth={2}
+                    strokeDasharray="3 3"
+                    yAxisId="priceAxis"
+                    label={{ value: 'VENTA', position: 'insideTop', fill: chartColors.signalSell, fontSize: 10, fontWeight: 'bold' }}
+                    name="Señal de Venta"
+                  />
+                );
+              }
+              return null;
+            })}
 
             {/* Velas Japonesas usando Scatter con CustomCandleShape */}
             <Scatter
@@ -414,102 +433,11 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
             {/* Líneas de Media Móvil Simple (SMA10, SMA20) */}
             <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={chartColors.sma10} dot={false} strokeWidth={2.5} name="SMA10" />
             <Line yAxisId="priceAxis" type="monotone" dataKey="sma20" stroke={chartColors.sma20} dot={false} strokeWidth={2.5} name="SMA20" />
-
-            {/* VISUALIZACIÓN DE CRUCES SMA como ReferenceDot */}
-            {crossoverPoints.filter(p => p.type.startsWith('sma')).map((point, index) => (
-                <ReferenceDot
-                    key={`sma-crossover-${index}-${point.timestamp}`}
-                    x={point.timestamp}
-                    y={point.value}
-                    yAxisId="priceAxis"
-                    r={8}
-                    fill={point.type === 'smaBuy' ? chartColors.crossoverBuy : chartColors.crossoverSell}
-                    stroke={point.type === 'smaBuy' ? chartColors.crossoverBuy : chartColors.crossoverSell}
-                    strokeWidth={2}
-                    /* Función content con validación de x e y para el label */
-                    label={{
-                      value: point.type === 'smaBuy' ? '▲ SMA' : '▼ SMA',
-                      position: 'top',
-                      fontSize: 10,
-                      fill: '#fff',
-                      fontWeight: 'bold',
-                      /* 'content' es una función de renderizado para el label.
-                         Sus props (x, y) pueden ser 'undefined' si no hay espacio o son inválidos. */
-                      content: (props: any) => {
-                         const { value, x, y } = props;
-                         /* Aseguramos que x e y son números antes de operar aritméticamente */
-                         if (!isValidNumber(x) || !isValidNumber(y)) {
-                             return null; /* Retorna null si las coordenadas no son válidas */
-                         }
-                         return (
-                            <g>
-                              {/* Dibuja el texto del label ajustando la posición Y */}
-                              <text x={x} y={y - 10} textAnchor="middle" fill="#fff" fontSize={10} fontWeight="bold">{value}</text>
-                            </g>
-                          );
-                       }
-                    }}
-                    name={point.type === 'smaBuy' ? "Cruce SMA (Compra)" : "Cruce SMA (Venta)"}
-                />
-            ))}
-
-            {/* Puntos de Señal de Estrategia (BUY/SELL/HOLD) como ReferenceDot */}
-            {/* Iteramos sobre los datos limpios para encontrar las señales y dibujarlas como ReferenceDots */}
-            {cleanedData.map((entry) => {
-                const signal = strategySignalsMap.get(entry.timestamp);
-                if (signal === 'buy') {
-                    return (
-                        <ReferenceDot
-                            key={`buy-${entry.timestamp}`}
-                            x={entry.timestamp}
-                            /* Posiciona la señal de compra 1% debajo del precio mínimo de la vela */
-                            y={isValidNumber(entry.lowPrice) ? entry.lowPrice * 0.99 : 0}
-                            yAxisId="priceAxis"
-                            r={15} /* Radio de la señal */
-                            fill={chartColors.signalBuy}
-                            stroke={chartColors.signalBuy}
-                            strokeWidth={4}
-                            label={{ value: 'COMPRA', position: 'insideBottom', fontSize: 15, fill: '#fff', fontWeight: 'bold' }}
-                            name="Señal de Compra"
-                        />
-                    );
-                }
-                if (signal === 'sell') {
-                    return (
-                        <ReferenceDot
-                            key={`sell-${entry.timestamp}`}
-                            x={entry.timestamp}
-                            /* Posiciona la señal de venta 1% encima del precio máximo de la vela */
-                            y={isValidNumber(entry.highPrice) ? entry.highPrice * 1.01 : 0}
-                            yAxisId="priceAxis"
-                            r={15} /* Radio de la señal */
-                            fill={chartColors.signalSell}
-                            stroke={chartColors.signalSell}
-                            strokeWidth={4}
-                            label={{ value: 'VENTA', position: 'insideTop', fontSize: 15, fill: '#fff', fontWeight: 'bold' }}
-                            name="Señal de Venta"
-                        />
-                    );
-                }
-                if (signal === 'hold') {
-                    return (
-                        <ReferenceDot
-                            key={`hold-${entry.timestamp}`}
-                            x={entry.timestamp}
-                            /* Posiciona la señal de hold en el precio de cierre */
-                            y={isValidNumber(entry.closePrice) ? entry.closePrice : 0}
-                            yAxisId="priceAxis"
-                            r={12} /* Radio de la señal */
-                            fill={chartColors.signalHold}
-                            stroke={chartColors.signalHold}
-                            strokeWidth={3}
-                            label={{ value: 'HOLD', position: 'middle', fontSize: 12, fill: '#333', fontWeight: 'bold' }}
-                            name="Señal de Hold"
-                        />
-                    );
-                }
-                return null; /* No dibuja nada si no hay señal o es inválida */
-            })}
+            <Line yAxisId="priceAxis" type="monotone" dataKey="sma50" stroke="#f97316" dot={false} strokeWidth={1.5} name="SMA50" />
+            
+            {/* Bandas de Bollinger */}
+            <Line yAxisId="priceAxis" type="monotone" dataKey="upperBollingerBand" stroke="#a78bfa" strokeDasharray="3 3" dot={false} strokeWidth={1} name="BB Superior" />
+            <Line yAxisId="priceAxis" type="monotone" dataKey="lowerBollingerBand" stroke="#a78bfa" strokeDasharray="3 3" dot={false} strokeWidth={1} name="BB Inferior" />
 
             {/* Volumen (como barras) - ahora en el mismo ComposedChart, usando su propio Y-Axis oculto */}
             <Bar
@@ -526,36 +454,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
 
             {/* Línea del RSI - en el mismo ComposedChart, usando su propio Y-Axis oculto */}
             <Line yAxisId="rsiAxis" type="monotone" dataKey="rsi" stroke={chartColors.rsi} dot={false} strokeWidth={1.5} name="RSI" />
-            {/* Puntos de referencia para niveles de sobrecompra (RSI > 70) y sobreventa (RSI < 30) */}
-            {latestDataPoint && isValidNumber(latestDataPoint.rsi) && (
-              <>
-                {latestDataPoint.rsi > 70 && (
-                    <ReferenceDot
-                        x={latestDataPoint.timestamp}
-                        y={70}
-                        r={6}
-                        fill={chartColors.crossoverSell}
-                        stroke={chartColors.crossoverSell}
-                        yAxisId="rsiAxis" /* Asigna al eje Y de RSI oculto */
-                        name="RSI > 70 (Sobrecompra)"
-                        label={{ value: "SOBRECOMPRA", position: "top", fontSize: 10, fill: chartColors.crossoverSell, fontWeight: 'bold' }}
-                    />
-                )}
-                {latestDataPoint.rsi < 30 && (
-                    <ReferenceDot
-                        x={latestDataPoint.timestamp}
-                        y={30}
-                        r={6}
-                        fill={chartColors.crossoverBuy}
-                        stroke={chartColors.crossoverBuy}
-                        yAxisId="rsiAxis" /* Asigna al eje Y de RSI oculto */
-                        name="RSI < 30 (Sobreventa)"
-                        label={{ value: "SOBREVENTA", position: "bottom", fontSize: 10, fill: chartColors.crossoverBuy, fontWeight: 'bold' }}
-                    />
-                )}
-              </>
-            )}
-
+            
             {/* Líneas MACD y Signal - en el mismo ComposedChart, usando su propio Y-Axis oculto */}
             <Line yAxisId="macdAxis" type="monotone" dataKey="macdLine" stroke={chartColors.macdLine} dot={false} strokeWidth={1.5} name="MACD Line" />
             <Line yAxisId="macdAxis" type="monotone" dataKey="signalLine" stroke={chartColors.signalLine} dot={false} strokeWidth={1.5} name="Signal Line" />
@@ -575,22 +474,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                     />
                   ))}
             </Bar>
-            {/* VISUALIZACIÓN DE CRUCES MACD como ReferenceDot */}
-            {crossoverPoints.filter(p => p.type.startsWith('macd')).map((point, index) => (
-                <ReferenceDot
-                    key={`macd-crossover-${index}-${point.timestamp}`}
-                    x={point.timestamp}
-                    y={point.value}
-                    yAxisId="macdAxis" /* Asigna al eje Y de MACD oculto */
-                    r={6}
-                    fill={point.type === 'macdBuy' ? chartColors.crossoverBuy : chartColors.crossoverSell}
-                    stroke={point.type === 'macdBuy' ? chartColors.crossoverBuy : chartColors.crossoverSell}
-                    strokeWidth={2}
-                    /* Label para los cruces MACD. */
-                    label={{ value: point.type === 'macdBuy' ? '▲ MACD' : '▼ MACD', position: 'top', fontSize: 10, fill: '#fff', fontWeight: 'bold' }}
-                    name={point.type === 'macdBuy' ? "Cruce MACD (Compra)" : "Cruce MACD (Venta)"}
-                />
-            ))}
+           
           </ComposedChart>
         </ResponsiveContainer>}
       </div>
