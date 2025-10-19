@@ -1,6 +1,6 @@
 "use client"
 
-// Inspiredbyreact -hot-toa stlibrar y
+// Inspiredbyreact-hot-toa stlibrar y
 import * as React from "react"
 
 import type {
