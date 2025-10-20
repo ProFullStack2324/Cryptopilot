@@ -240,19 +240,23 @@ export default function TradingBotControlPanel() {
             const { action, details } = lastDecisionLog.data;
             const { buyConditionsCount, conditions } = details?.decisionDetails || {};
             
-            const fulfilledBuyConditions = [];
-            if (conditions?.price) fulfilledBuyConditions.push("Precio en BB Inferior");
-            if (conditions?.rsi) fulfilledBuyConditions.push("RSI en Sobreventa");
-            if (conditions?.macd) fulfilledBuyConditions.push("Cruce MACD alcista");
+            const fulfilledBuy: string[] = [];
+            const missingBuy: string[] = [];
+
+            if (conditions) {
+                if (conditions.price) fulfilledBuy.push("Precio en BB Inferior"); else missingBuy.push("Precio en BB Inferior");
+                if (conditions.rsi) fulfilledBuy.push("RSI en Sobreventa"); else missingBuy.push("RSI en Sobreventa");
+                if (conditions.macd) fulfilledBuy.push("Cruce MACD alcista"); else missingBuy.push("Cruce MACD alcista");
+            }
     
             if (action === 'buy') {
-                strategyDesc = ` | Conclusión del Bot: COMPRA. Se cumplieron ${buyConditionsCount} de 2 condiciones: ${fulfilledBuyConditions.join(', ')}.`;
+                strategyDesc = ` | Conclusión del Bot: COMPRA. Se cumplieron ${buyConditionsCount}/2 condiciones: [${fulfilledBuy.join(', ')}].`;
             } else if (action === 'sell') {
                 strategyDesc = " | Conclusión del Bot: VENTA. La estrategia detectó una o más condiciones de salida.";
-            } else if (isValidNumber(buyConditionsCount) && buyConditionsCount > 0) {
-                strategyDesc = ` | Conclusión del Bot: MANTENER. Se cumplió ${buyConditionsCount} de 2 condiciones de compra: [${fulfilledBuyConditions.join(' / ')}]. Esperando una señal más clara.`;
+            } else if (isValidNumber(buyConditionsCount)) {
+                 strategyDesc = ` | Conclusión: MANTENER. Cumplidas ${buyConditionsCount}/2: [${fulfilledBuy.map(c => `✅ ${c}`).join(' ')}]. Faltó: [${missingBuy.map(c => `❌ ${c}`).join(' ')}].`;
             } else {
-                 strategyDesc = " | Conclusión del Bot: MANTENER. Ninguna condición de entrada o salida se cumple. Monitoreando.";
+                 strategyDesc = " | Conclusión: MANTENER. Ninguna condición de entrada o salida se cumple. Monitoreando.";
             }
         }
         
