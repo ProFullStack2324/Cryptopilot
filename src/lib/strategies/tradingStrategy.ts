@@ -1,4 +1,4 @@
-// src/lib/strategies/tradingStrategy.ts
+// ruta  src/lib/strategies/tradingStrategy.ts
 import {
     Market,
     MarketRules,
