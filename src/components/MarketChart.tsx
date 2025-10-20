@@ -1,4 +1,3 @@
-
 import React, { useMemo } from 'react';
 import {
   ResponsiveContainer,
@@ -214,7 +213,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                 
                 <Line yAxisId="rsiAxis" type="monotone" dataKey="rsi" stroke={CHART_COLORS.rsi} strokeWidth={1.5} dot={false} name="RSI" />
                 <ReferenceLine yAxisId="rsiAxis" y={70} label={{ value: "Sobrecompra", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))", fontSize: 10 }} stroke="hsl(var(--destructive))" strokeDasharray="3 3" />
-                <ReferenceLine yAxisId="rsiAxis" y={30} label={{ value: "Sobreventa", position: "insideBottomLeft", fill: "hsl(var(--muted-foreground))", fontSize: 10 }} stroke="hsl(var(--chart-1))" strokeDasharray="3 3" />
+                <ReferenceLine yAxisId="rsiAxis" y={30} label={{ value: "Sobreventa", position: "insideBottomLeft", fill: "hsl(var(--chart-1))", fontSize: 10 }} stroke="hsl(var(--chart-1))" strokeDasharray="3 3" />
                 
                 <Line yAxisId="macdAxis" type="monotone" dataKey="macdLine" stroke={CHART_COLORS.macdLine} strokeWidth={1.5} dot={false} name="MACD" />
                 <Line yAxisId="macdAxis" type="monotone" dataKey="signalLine" stroke={CHART_COLORS.signalLine} strokeWidth={1.5} dot={false} name="Signal" />
