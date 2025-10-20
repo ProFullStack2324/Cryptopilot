@@ -21,6 +21,16 @@ import { calculateSMA, calculateRSI, calculateMACD, calculateBollingerBands } fr
 
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
+// ======================================================================================================
+// CONFIGURACIÓN DE LA ESTRATEGIA DE SCALPING
+// Estos son los parámetros que definen el comportamiento del bot.
+// ======================================================================================================
+const SCALPING_CONFIG = {
+    takeProfitPercentage: 0.008, // Vender con una ganancia del 0.8%
+    stopLossPercentage: 0.004,   // Vender con una pérdida del 0.4%
+};
+
+
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
     allBinanceBalances: BinanceBalance[];
@@ -48,6 +58,46 @@ export const useTradingBot = (props: {
     const logAction = useCallback((message: string, success: boolean, type: BotActionDetails['type'], details?: any, data?: any) => {
         onBotAction({ type, success, message, details, data, timestamp: Date.now() });
     }, [onBotAction]);
+
+    const executeOrder = useCallback(async (orderData: OrderFormData) => {
+        if (isPlacingOrder) return;
+        setIsPlacingOrder(true);
+        setPlaceOrderError(null);
+
+        logAction(`Intento de orden: ${orderData.side} ${orderData.quantity} ${orderData.symbol}`, true, 'order_placed', orderData);
+
+        try {
+            const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderData) });
+            const result: TradeEndpointResponse = await response.json();
+            
+            if (!response.ok || !result.success) {
+                const errorMessage = result.message || result.details || "Error desconocido al colocar la orden.";
+                setPlaceOrderError(errorMessage);
+                logAction(`FALLO al colocar orden: ${errorMessage}`, false, 'order_failed', { error: errorMessage, orderData });
+                toast({ title: "Error al colocar orden", description: errorMessage, variant: "destructive" });
+                return false; // Indicar fallo
+            } else {
+                setBotLastActionTimestamp(Date.now());
+                if (orderData.side === 'BUY') {
+                    setBotOpenPosition({ marketId: selectedMarket!.id, entryPrice: currentPrice!, amount: orderData.quantity, type: 'buy', timestamp: Date.now() });
+                    toast({ title: "¡Orden de Compra Exitosa!", variant: "default" });
+                } else if (orderData.side === 'SELL') {
+                    setBotOpenPosition(null); // Se cierra la posición
+                    toast({ title: "¡Orden de Venta Exitosa!", variant: "default" });
+                }
+                logAction(`ÉXITO al colocar orden ${orderData.side}`, true, 'order_placed', result.data);
+                return true; // Indicar éxito
+            }
+        } catch (error: any) {
+            const errorMessage = error.message || "Error de conexión con la API.";
+            setPlaceOrderError(errorMessage);
+            logAction(`FALLO de red al colocar orden: ${errorMessage}`, false, 'order_failed', { error: errorMessage, orderData });
+            toast({ title: "Error de conexión", description: errorMessage, variant: "destructive" });
+            return false; // Indicar fallo
+        } finally {
+            if (isMounted.current) setIsPlacingOrder(false);
+        }
+    }, [isPlacingOrder, logAction, toast, currentPrice, selectedMarket]);
 
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
         if (!klines || klines.length === 0) return [];
@@ -121,7 +171,43 @@ export const useTradingBot = (props: {
         if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < 30 || !selectedMarketRules || isPlacingOrder) {
             return;
         }
+
+        // --- Lógica de Salida (Take Profit / Stop Loss) ---
+        if (botOpenPosition) {
+            const { entryPrice, amount } = botOpenPosition;
+            const takeProfitPrice = entryPrice * (1 + SCALPING_CONFIG.takeProfitPercentage);
+            const stopLossPrice = entryPrice * (1 - SCALPING_CONFIG.stopLossPercentage);
+            
+            let sellReason: 'take_profit' | 'stop_loss' | null = null;
+            if (currentPrice >= takeProfitPrice) sellReason = 'take_profit';
+            else if (currentPrice <= stopLossPrice) sellReason = 'stop_loss';
+
+            if (sellReason) {
+                logAction(`Señal de VENTA por ${sellReason}.`, true, 'strategy_decision', { reason: sellReason, currentPrice, target: sellReason === 'take_profit' ? takeProfitPrice : stopLossPrice });
+                
+                let quantityToSell = amount;
+                 // Ajustar cantidad a las reglas del mercado
+                const stepSize = selectedMarketRules.lotSize.stepSize;
+                if (stepSize > 0) {
+                    quantityToSell = Math.floor(quantityToSell / stepSize) * stepSize;
+                }
+                quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarketRules.precision.amount));
+
+                if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
+                    await executeOrder({
+                        symbol: selectedMarket.symbol,
+                        side: 'SELL',
+                        orderType: 'MARKET',
+                        quantity: quantityToSell,
+                    });
+                } else {
+                    logAction(`FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.`, false, 'order_failed', { quantityToSell });
+                }
+                return; // Termina el ciclo de estrategia tras una acción de venta
+            }
+        }
         
+        // --- Lógica de Entrada (Compra) ---
         const decision = decideTradeActionAndAmount({
             selectedMarket,
             currentMarketPriceHistory,
@@ -132,48 +218,13 @@ export const useTradingBot = (props: {
             logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
         });
         
-        logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()}`, true, 'strategy_decision', { decisionDetails: (decision as any).details }, { data: decision });
+        logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()}`, true, 'strategy_decision', decision.details, { action: decision.action });
 
-        if (decision.action !== 'hold' && decision.orderData) {
-            if (isPlacingOrder) return;
-            setIsPlacingOrder(true);
-            setPlaceOrderError(null);
-            
-            const { symbol, side, orderType, quantity, price } = decision.orderData;
-            const orderDetails: Partial<OrderFormData> = { symbol, side, type: orderType, amount: quantity, price };
-
-            logAction(`Intento de orden: ${side} ${quantity} ${symbol}`, true, 'order_placed', orderDetails);
-            
-            try {
-                const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderDetails) });
-                const result: TradeEndpointResponse = await response.json();
-                
-                if (!response.ok || !result.success) {
-                    const errorMessage = result.message || result.details || "Error desconocido al colocar la orden.";
-                    setPlaceOrderError(errorMessage);
-                    logAction(`FALLO al colocar orden: ${errorMessage}`, false, 'order_failed', { error: errorMessage, orderData: orderDetails });
-                    toast({ title: "Error al colocar orden", description: errorMessage, variant: "destructive" });
-                } else {
-                    setBotLastActionTimestamp(Date.now());
-                    if (decision.action === 'buy') {
-                        setBotOpenPosition({ marketId: selectedMarket.id, entryPrice: currentPrice, amount: quantity, type: 'buy', timestamp: Date.now() });
-                        toast({ title: "¡Orden de Compra Exitosa!", variant: "default" });
-                    } else if (decision.action === 'sell') {
-                        setBotOpenPosition(null);
-                        toast({ title: "¡Orden de Venta Exitosa!", variant: "default" });
-                    }
-                    logAction(`ÉXITO al colocar orden ${decision.action.toUpperCase()}`, true, 'order_placed', result.data);
-                }
-            } catch (error: any) {
-                const errorMessage = error.message || "Error de conexión con la API.";
-                setPlaceOrderError(errorMessage);
-                logAction(`FALLO de red al colocar orden: ${errorMessage}`, false, 'order_failed', { error: errorMessage, orderData: orderDetails });
-                toast({ title: "Error de conexión", description: errorMessage, variant: "destructive" });
-            } finally {
-                if(isMounted.current) setIsPlacingOrder(false);
-            }
+        if (decision.action === 'buy' && decision.orderData) {
+            await executeOrder(decision.orderData);
         }
-    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, isPlacingOrder, toast, logAction ]);
+
+    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
 
     useEffect(() => {
         isMounted.current = true;
