@@ -1,4 +1,3 @@
-
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -205,7 +204,7 @@ export default function TradingBotControlPanel() {
         const { closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50 } = latestDataPointForStrategy;
     
         if (![closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50].every(isValidNumber)) {
-            return "Datos insuficientes para un análisis completo.";
+            return "Datos de indicadores insuficientes para un análisis completo.";
         }
     
         let trend = "lateral";
@@ -215,39 +214,37 @@ export default function TradingBotControlPanel() {
         else if (sma10 < sma20) trend = "bajista";
     
         const volatility = (upperBollingerBand! - lowerBollingerBand!) / closePrice! * 100;
-        let volatilityDesc = `La volatilidad es ${volatility.toFixed(2)}%.`;
-        if (volatility < 1) volatilityDesc += " El mercado está muy comprimido, posible movimiento brusco inminente.";
-        if (volatility > 4) volatilityDesc += " El mercado está muy volátil, operar con precaución.";
+        let volatilityDesc = `volatilidad del ${volatility.toFixed(2)}%.`;
+        if (volatility < 1) volatilityDesc += " Mercado comprimido.";
+        if (volatility > 4) volatilityDesc += " Alta volatilidad.";
     
-        let momentum = `El RSI en ${rsi!.toFixed(1)} indica una fuerza de mercado neutral.`;
-        if (rsi! > 70) momentum = `El RSI en ${rsi!.toFixed(1)} sugiere que el mercado está sobrecomprado.`;
-        if (rsi! < 30) momentum = `El RSI en ${rsi!.toFixed(1)} sugiere que el mercado está sobrevendido.`;
+        let momentum = `RSI en ${rsi!.toFixed(1)} (neutral).`;
+        if (rsi! > 70) momentum = `RSI en ${rsi!.toFixed(1)} (sobrecompra).`;
+        if (rsi! < 30) momentum = `RSI en ${rsi!.toFixed(1)} (sobreventa).`;
     
-        return `Actualmente, el mercado presenta una tendencia ${trend}. ${volatilityDesc} ${momentum}`;
+        return `Tendencia ${trend} con ${volatilityDesc} ${momentum}`;
     };
     
     const StrategyAnalysisDescription = () => {
         if (!latestDataPointForStrategy) return "Esperando datos para analizar la estrategia...";
     
         const decision = lastStrategyDecision;
-    
-        if (decision === 'buy') {
-            return "Conclusión del Bot: Señal de COMPRA activa. La estrategia ha identificado una confluencia de indicadores que sugieren una alta probabilidad de reversión alcista. Se ha procedido a ejecutar una orden de compra.";
-        }
-        if (decision === 'sell') {
-            return "Conclusión del Bot: Señal de VENTA activa. La estrategia ha detectado condiciones que indican un potencial agotamiento de la tendencia alcista o una reversión bajista. Se ha procedido a cerrar la posición.";
-        }
-        
-        // Análisis del HOLD
         const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
         const decisionDetails = lastDecisionLog?.data?.decisionDetails || {};
-        const { conditionsForBuyMet, buyConditionsCount } = decisionDetails;
+        const { buyConditionsCount } = decisionDetails;
+    
+        if (decision === 'buy') {
+            return "Conclusión del Bot: COMPRA. La estrategia identificó una confluencia de indicadores alcistas.";
+        }
+        if (decision === 'sell') {
+            return "Conclusión del Bot: VENTA. La estrategia detectó condiciones para cerrar la posición.";
+        }
         
-        if (buyConditionsCount > 0) {
-            return `Conclusión del Bot: MANTENER (HOLD). Aunque se ha(n) cumplido ${buyConditionsCount} de 2 condiciones de compra necesarias, no es suficiente para confirmar una entrada con alta probabilidad. El bot permanece a la espera de una señal más clara para minimizar riesgos.`;
+        if (isValidNumber(buyConditionsCount) && buyConditionsCount > 0) {
+            return `Conclusión del Bot: MANTENER. Se cumplió ${buyConditionsCount} de 2 condiciones de compra. Esperando una señal más clara.`;
         }
     
-        return "Conclusión del Bot: MANTENER (HOLD). Ninguna de las condiciones de entrada (compra) o salida (venta) de la estrategia se cumple actualmente. El bot está monitoreando activamente el mercado en espera de una oportunidad clara.";
+        return "Conclusión del Bot: MANTENER. Ninguna condición de entrada o salida se cumple. Monitoreando mercado.";
     };
 
     return (
