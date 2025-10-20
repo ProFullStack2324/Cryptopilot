@@ -112,13 +112,8 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
     const amountPrecision = selectedMarket?.precision.amount || 2;
 
     const cleanedData = useMemo(() => {
-        return data.map(dp => ({
-            ...dp,
-            candleBody: [dp.openPrice, dp.closePrice],
-            candleWhisker: [dp.lowPrice, dp.highPrice]
-        })).filter(dp => 
-            dp && typeof dp === 'object' &&
-            [dp.timestamp, ...dp.candleBody, ...dp.candleWhisker].every(isValidNumber)
+        return data.filter(dp => 
+            dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
         );
     }, [data]);
 
@@ -154,7 +149,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
     
             if ((end.buyConditionsMet || 0) >= 2) fill = CHART_COLORS.buyZoneStrong;
             else if ((end.buyConditionsMet || 0) === 1) fill = CHART_COLORS.buyZoneWeak;
-            else if ((end.sellConditionsMet || 0) >= 1) fill = CHART_COLORS.sellZoneStrong; // Simplificado para que cualquier condición de venta pinte la zona
+            else if ((end.sellConditionsMet || 0) >= 1) fill = CHART_COLORS.sellZoneStrong;
             
             if (fill !== 'transparent') {
                 areas.push(
@@ -173,6 +168,12 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
         <div style={{ width: '100%', height: '600px' }}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={cleanedData} margin={{ top: 20, right: 60, left: 60, bottom: 20 }}>
+                <defs>
+                  <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={CHART_COLORS.priceUp} stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor={CHART_COLORS.priceUp} stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis 
                     dataKey="timestamp" 
@@ -194,13 +195,8 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                 {renderStrategyReferenceAreas()}
                 
                 {/* --- Elementos ligados al EJE DE PRECIO (Derecha) --- */}
-                <Bar dataKey="candleBody" yAxisId="priceAxis" name="Precio" fill={CHART_COLORS.priceUp} hide>
-                    {cleanedData.map((entry, index) => (
-                        <Bar key={`cell-candle-${index}`} fill={entry.closePrice >= entry.openPrice ? CHART_COLORS.priceUp : CHART_COLORS.priceDown} />
-                    ))}
-                </Bar>
-                <Line dataKey="highPrice" yAxisId="priceAxis" stroke="transparent" dot={false} activeDot={false} hide errorY="candleWhisker" strokeWidth={1} />
-
+                <Area type="monotone" dataKey="closePrice" yAxisId="priceAxis" stroke={CHART_COLORS.priceUp} fillOpacity={1} fill="url(#colorPrice)" name="Precio" />
+                
                 <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={CHART_COLORS.sma10} strokeWidth={2} dot={false} name="SMA 10" />
                 <Line yAxisId="priceAxis" type="monotone" dataKey="sma20" stroke={CHART_COLORS.sma20} strokeWidth={2} dot={false} name="SMA 20" />
                 <Line yAxisId="priceAxis" type="monotone" dataKey="sma50" stroke={CHART_COLORS.sma50} strokeWidth={2} dot={false} name="SMA 50" />
@@ -217,7 +213,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                 
                 <Line yAxisId="macdAxis" type="monotone" dataKey="macdLine" stroke={CHART_COLORS.macdLine} strokeWidth={1.5} dot={false} name="MACD" />
                 <Line yAxisId="macdAxis" type="monotone" dataKey="signalLine" stroke={CHART_COLORS.signalLine} strokeWidth={1.5} dot={false} name="Signal" />
-                <Bar yAxisId="macdAxis" dataKey="macdHistogram" barSize={4} name="MACD Hist." fillOpacity={0.6}>
+                <Bar yAxisId="macdAxis" dataKey="macdHistogram" barSize={4} name="MACD Hist.">
                     {cleanedData.map((entry, index) => (
                         <Bar key={`cell-macd-${index}`} fill={entry.macdHistogram && entry.macdHistogram > 0 ? CHART_COLORS.macdHistogramUp : CHART_COLORS.macdHistogramDown} />
                     ))}
