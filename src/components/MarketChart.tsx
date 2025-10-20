@@ -32,11 +32,12 @@ interface MarketChartProps {
   data: MarketPriceDataPoint[];
   selectedMarket: Market | null;
   strategyLogs: StrategyLog[];
+  chartColors: typeof CHART_COLORS;
 }
 
 export const CHART_COLORS = {
-  priceUp: '#22c55e', // green-500
-  priceDown: '#ef4444', // red-500
+  priceUp: '#22c55e',
+  priceDown: '#ef4444',
   sma10: '#34d399', // emerald-400
   sma20: '#8b5cf6', // violet-500
   sma50: '#f97316', // orange-500
@@ -46,6 +47,7 @@ export const CHART_COLORS = {
   macdHistogramDown: 'rgba(236, 72, 153, 0.4)',
   rsi: '#a855f7', // purple-500
   bollingerBands: 'rgba(107, 114, 128, 0.2)', // gray-500
+  // Nueva paleta para zonas de estrategia
   buyZoneWeak: 'rgba(59, 130, 246, 0.1)', // blue-500/10
   buyZoneStrong: 'rgba(59, 130, 246, 0.25)', // blue-500/25
   sellZoneWeak: 'rgba(192, 38, 211, 0.1)', // fuchsia-600/10
@@ -67,7 +69,7 @@ const CustomLegend = (props: any) => {
       <div className="flex justify-center items-center flex-wrap gap-x-4 gap-y-1 pt-4 text-xs text-muted-foreground">
         {payload.map((entry: any, index: number) => (
           <div key={`item-${index}`} className="flex items-center gap-2">
-            <span style={{ backgroundColor: entry.color, width: '10px', height: entry.type === 'line' || entry.payload.type === 'line' ? '2px' : '10px', display: 'inline-block' }}></span>
+            <span style={{ backgroundColor: entry.color, width: '10px', height: entry.type === 'line' ? '2px' : '10px', display: 'inline-block' }}></span>
             <span>{entry.value}</span>
           </div>
         ))}
@@ -152,7 +154,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
     
             if ((end.buyConditionsMet || 0) >= 2) fill = CHART_COLORS.buyZoneStrong;
             else if ((end.buyConditionsMet || 0) === 1) fill = CHART_COLORS.buyZoneWeak;
-            else if ((end.sellConditionsMet || 0) >= 1) fill = CHART_COLORS.sellZoneStrong;
+            else if ((end.sellConditionsMet || 0) >= 1) fill = CHART_COLORS.sellZoneStrong; // Simplificado para que cualquier condición de venta pinte la zona
             
             if (fill !== 'transparent') {
                 areas.push(
@@ -197,7 +199,6 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                         <Bar key={`cell-candle-${index}`} fill={entry.closePrice >= entry.openPrice ? CHART_COLORS.priceUp : CHART_COLORS.priceDown} />
                     ))}
                 </Bar>
-                {/* Esta línea es un truco para dibujar las mechas de las velas */}
                 <Line dataKey="highPrice" yAxisId="priceAxis" stroke="transparent" dot={false} activeDot={false} hide errorY="candleWhisker" strokeWidth={1} />
 
                 <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={CHART_COLORS.sma10} strokeWidth={2} dot={false} name="SMA 10" />
@@ -211,7 +212,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                 {/* --- Elementos ligados a otros EJES (Izquierda) --- */}
                 
                 <Line yAxisId="rsiAxis" type="monotone" dataKey="rsi" stroke={CHART_COLORS.rsi} strokeWidth={1.5} dot={false} name="RSI" />
-                <ReferenceLine yAxisId="rsiAxis" y={70} label={{ value: "Sobrecompra", position: "insideTopLeft", fill: "hsl(var(--destructive))", fontSize: 10 }} stroke="hsl(var(--destructive))" strokeDasharray="3 3" />
+                <ReferenceLine yAxisId="rsiAxis" y={70} label={{ value: "Sobrecompra", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))", fontSize: 10 }} stroke="hsl(var(--destructive))" strokeDasharray="3 3" />
                 <ReferenceLine yAxisId="rsiAxis" y={30} label={{ value: "Sobreventa", position: "insideBottomLeft", fill: "hsl(var(--chart-1))", fontSize: 10 }} stroke="hsl(var(--chart-1))" strokeDasharray="3 3" />
                 
                 <Line yAxisId="macdAxis" type="monotone" dataKey="macdLine" stroke={CHART_COLORS.macdLine} strokeWidth={1.5} dot={false} name="MACD" />

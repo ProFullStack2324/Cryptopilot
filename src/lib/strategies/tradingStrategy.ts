@@ -61,13 +61,7 @@ export const decideTradeActionAndAmount = (params: {
         const takeProfitRsiCondition = rsi! >= 65;
 
         if (takeProfitPriceCondition || takeProfitRsiCondition) {
-            let quantityToSell = botOpenPosition.amount;
-
-            const stepSizeNum = selectedMarketRules.lotSize.stepSize;
-            quantityToSell = Math.floor(quantityToSell / stepSizeNum) * stepSizeNum;
-            // FIX: Corrected property access from selectedMarket.precision.amount to selectedMarket.amountPrecision
-            quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarket.amountPrecision));
-
+            const quantityToSell = botOpenPosition.amount;
             if (quantityToSell < selectedMarketRules.lotSize.minQty) {
                 return { action: 'hold' };
             }
@@ -110,20 +104,20 @@ export const decideTradeActionAndAmount = (params: {
             const capitalToRisk = quoteAssetBalance * 0.95;
             let quantityToBuy = capitalToRisk / currentPrice;
 
-            const minNotionalValue = selectedMarketRules.minNotional.minNotional;
-            if (quantityToBuy * currentPrice < minNotionalValue) {
-                if (quoteAssetBalance < minNotionalValue) {
-                    log(`Fondos Insuficientes para nocional mínimo.`, { balance: quoteAssetBalance, minNotional: minNotionalValue });
+            const minNotional = selectedMarketRules.minNotional.minNotional;
+            if (quantityToBuy * currentPrice < minNotional) {
+                if (quoteAssetBalance < minNotional) {
+                    log(`Fondos Insuficientes para nocional mínimo.`, { balance: quoteAssetBalance, minNotional });
                     return { action: 'hold', details: decisionDetails };
                 }
-                quantityToBuy = (minNotionalValue / currentPrice) * 1.01;
+                quantityToBuy = minNotional / currentPrice * 1.01;
             }
 
             const stepSize = selectedMarketRules.lotSize.stepSize;
             if (stepSize > 0) {
                 quantityToBuy = Math.floor(quantityToBuy / stepSize) * stepSize;
             }
-            quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarket.amountPrecision));
+            quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarket.precision.amount));
             
             if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
                 log(`Cantidad inválida tras ajuste.`, { quantityToBuy });
