@@ -199,64 +199,64 @@ export default function TradingBotControlPanel() {
         return lastDecisionLog?.data?.action || 'hold';
     }, [operationLogs]);
 
-    const MarketAnalysisDescription = () => {
-        if (!latestDataPointForStrategy) return "Cargando análisis de mercado...";
-    
-        const { closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50 } = latestDataPointForStrategy;
-    
-        if (![closePrice, sma10, sma20].every(isValidNumber)) {
-            return "Datos de tendencia insuficientes.";
-        }
-    
-        let trend = "lateral";
-        if (isValidNumber(sma50) && sma10 > sma20 && sma20 > sma50) trend = "alcista fuerte";
-        else if (sma10 > sma20) trend = "alcista";
-        else if (isValidNumber(sma50) && sma10 < sma20 && sma20 < sma50) trend = "bajista fuerte";
-        else if (sma10 < sma20) trend = "bajista";
-    
-        let volatilityDesc = "";
-        if (isValidNumber(upperBollingerBand) && isValidNumber(lowerBollingerBand)) {
-            const volatility = (upperBollingerBand - lowerBollingerBand) / closePrice * 100;
-            volatilityDesc = `Volatilidad del ${volatility.toFixed(2)}%.`;
-            if (volatility < 1) volatilityDesc += " Mercado comprimido.";
-            if (volatility > 4) volatilityDesc += " Alta volatilidad.";
-        }
-    
-        let momentum = "";
-        if (isValidNumber(rsi)) {
-            momentum = `RSI en ${rsi.toFixed(1)} (neutral).`;
-            if (rsi > 70) momentum = `RSI en ${rsi.toFixed(1)} (sobrecompra).`;
-            if (rsi < 30) momentum = `RSI en ${rsi.toFixed(1)} (sobreventa).`;
-        }
-    
-        return `Tendencia ${trend}. ${volatilityDesc} ${momentum}`;
-    };
-    
-    const StrategyAnalysisDescription = () => {
+    const CombinedAnalysisDescription = () => {
         const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
-        if (!lastDecisionLog?.data?.details) return "Conclusión del Bot: MANTENER. Monitoreando mercado.";
+    
+        // --- Análisis de Mercado ---
+        let marketDesc = "Cargando análisis de mercado...";
+        if (latestDataPointForStrategy) {
+            const { closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50 } = latestDataPointForStrategy;
+    
+            if ([closePrice, sma10, sma20].every(isValidNumber)) {
+                let trend = "lateral";
+                if (isValidNumber(sma50) && sma10 > sma20 && sma20 > sma50) trend = "alcista fuerte";
+                else if (sma10 > sma20) trend = "alcista";
+                else if (isValidNumber(sma50) && sma10 < sma20 && sma20 < sma50) trend = "bajista fuerte";
+                else if (sma10 < sma20) trend = "bajista";
+    
+                let volatilityDesc = "";
+                if (isValidNumber(upperBollingerBand) && isValidNumber(lowerBollingerBand)) {
+                    const volatility = (upperBollingerBand - lowerBollingerBand) / closePrice * 100;
+                    volatilityDesc = `Volatilidad del ${volatility.toFixed(2)}%.`;
+                    if (volatility < 1) volatilityDesc += " Mercado comprimido.";
+                    if (volatility > 4) volatilityDesc += " Alta volatilidad.";
+                }
+    
+                let momentum = "";
+                if (isValidNumber(rsi)) {
+                    momentum = `RSI en ${rsi.toFixed(1)} (neutral).`;
+                    if (rsi > 70) momentum = `RSI en ${rsi.toFixed(1)} (sobrecompra).`;
+                    if (rsi < 30) momentum = `RSI en ${rsi.toFixed(1)} (sobreventa).`;
+                }
+                marketDesc = `Tendencia ${trend}. ${volatilityDesc} ${momentum}.`;
+            } else {
+                marketDesc = "Datos de tendencia insuficientes.";
+            }
+        }
+    
+        // --- Análisis de Estrategia ---
+        let strategyDesc = " | Conclusión del Bot: MANTENER. Monitoreando mercado.";
+        if (lastDecisionLog?.data?.details) {
+            const { action, details } = lastDecisionLog.data;
+            const { buyConditionsCount, conditions } = details?.decisionDetails || {};
+            
+            const fulfilledBuyConditions = [];
+            if (conditions?.price) fulfilledBuyConditions.push("Precio en BB Inferior");
+            if (conditions?.rsi) fulfilledBuyConditions.push("RSI en Sobreventa");
+            if (conditions?.macd) fulfilledBuyConditions.push("Cruce MACD alcista");
+    
+            if (action === 'buy') {
+                strategyDesc = ` | Conclusión del Bot: COMPRA. Se cumplieron ${buyConditionsCount} de 2 condiciones: ${fulfilledBuyConditions.join(', ')}.`;
+            } else if (action === 'sell') {
+                strategyDesc = " | Conclusión del Bot: VENTA. La estrategia detectó una o más condiciones de salida.";
+            } else if (isValidNumber(buyConditionsCount) && buyConditionsCount > 0) {
+                strategyDesc = ` | Conclusión del Bot: MANTENER. Se cumplió ${buyConditionsCount} de 2 condiciones de compra: [${fulfilledBuyConditions.join(' / ')}]. Esperando una señal más clara.`;
+            } else {
+                 strategyDesc = " | Conclusión del Bot: MANTENER. Ninguna condición de entrada o salida se cumple. Monitoreando.";
+            }
+        }
         
-        const { action, details } = lastDecisionLog.data;
-        const { buyConditionsCount, conditions } = details?.decisionDetails || {};
-    
-        const fulfilledBuyConditions = [];
-        if (conditions?.price) fulfilledBuyConditions.push("Precio en BB Inferior");
-        if (conditions?.rsi) fulfilledBuyConditions.push("RSI en Sobreventa");
-        if (conditions?.macd) fulfilledBuyConditions.push("Cruce MACD alcista");
-    
-        if (action === 'buy') {
-            return `Conclusión del Bot: COMPRA. Se cumplieron ${buyConditionsCount} de 2 condiciones: ${fulfilledBuyConditions.join(', ')}.`;
-        }
-        if (action === 'sell') {
-            // Se puede mejorar la lógica de venta para ser más detallada aquí también
-            return "Conclusión del Bot: VENTA. La estrategia detectó una o más condiciones de salida.";
-        }
-        
-        if (isValidNumber(buyConditionsCount) && buyConditionsCount > 0) {
-            return `Conclusión del Bot: MANTENER. Se cumplió ${buyConditionsCount} de 2 condiciones de compra: [${fulfilledBuyConditions.join(' / ')}]. Esperando una señal más clara.`;
-        }
-    
-        return "Conclusión del Bot: MANTENER. Ninguna condición de entrada o salida se cumple. Monitoreando mercado.";
+        return `${marketDesc}${strategyDesc}`;
     };
 
     return (
@@ -355,7 +355,7 @@ export default function TradingBotControlPanel() {
                             />
                         </CardContent>
                         <CardFooter>
-                            <p className="text-xs text-muted-foreground"><MarketAnalysisDescription /></p>
+                            <p className="text-xs text-muted-foreground"><CombinedAnalysisDescription /></p>
                         </CardFooter>
                     </Card>
                 )}
@@ -383,9 +383,6 @@ export default function TradingBotControlPanel() {
                         <CardContent className="pt-6">
                             <StrategyConditionChart data={annotatedHistory} />
                         </CardContent>
-                        <CardFooter>
-                             <p className="text-xs text-muted-foreground"><StrategyAnalysisDescription /></p>
-                        </CardFooter>
                     </Card>
                 )}
                 {chartDisplayError && (
