@@ -112,7 +112,7 @@ const CombinedAnalysisDescription = ({ latest, prev, decision, botOpenPosition, 
         }
     }
 
-    const priceChange = priceHistory.length > 1 ? closePrice - priceHistory[0].closePrice : 0;
+    const priceChange = priceHistory.length > 1 ? latest.closePrice - priceHistory[0].closePrice : 0;
     const trendDirection = sma10 > sma50 ? 'Alcista' : 'Bajista';
     const trendStrength = Math.abs(sma10 - sma50) / sma50 > 0.01 ? 'Fuerte' : 'Débil';
     const volatility = upperBollingerBand - lowerBollingerBand;
@@ -287,3 +287,5 @@ export default function DashboardPage() {
         </>
     );
 }
+
+    
