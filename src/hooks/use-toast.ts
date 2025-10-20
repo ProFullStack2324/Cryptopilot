@@ -1,6 +1,6 @@
 "use client"
 
-// I nsp   ir e    dbyrea c t-h  ot-toa stlib  rar y
+// I nsp  ir e    dbyrea c t-h  ot-toa stlib  rar y
 import * as React from "react"
 
 import type {
