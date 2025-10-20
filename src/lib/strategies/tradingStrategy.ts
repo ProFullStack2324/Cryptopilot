@@ -104,13 +104,13 @@ export const decideTradeActionAndAmount = (params: {
             const capitalToRisk = quoteAssetBalance * 0.95;
             let quantityToBuy = capitalToRisk / currentPrice;
 
-            const minNotional = selectedMarketRules.minNotional.minNotional;
-            if (quantityToBuy * currentPrice < minNotional) {
-                if (quoteAssetBalance < minNotional) {
-                    log(`Fondos Insuficientes para nocional mínimo.`, { balance: quoteAssetBalance, minNotional });
+            const minNotionalValue = selectedMarketRules.minNotional.minNotional;
+            if (quantityToBuy * currentPrice < minNotionalValue) {
+                if (quoteAssetBalance < minNotionalValue) {
+                    log(`Fondos Insuficientes para nocional mínimo.`, { balance: quoteAssetBalance, minNotional: minNotionalValue });
                     return { action: 'hold', details: decisionDetails };
                 }
-                quantityToBuy = minNotional / currentPrice * 1.01;
+                quantityToBuy = (minNotionalValue / currentPrice) * 1.01;
             }
 
             const stepSize = selectedMarketRules.lotSize.stepSize;
