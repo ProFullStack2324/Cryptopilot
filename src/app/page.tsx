@@ -111,7 +111,24 @@ export default function TradingBotControlPanel() {
                 logEntry.message = `Orden de Compra NO REALIZADA: Saldo insuficiente. Requerido: ~$${details.data.details.required.toFixed(2)}, Disponible: $${details.data.details.available.toFixed(2)}`;
                 logEntry.success = false; // Marcar como no exitoso
             }
-             setTradeExecutionLogs(prev => [logEntry, ...prev.slice(0, 99)]);
+             setTradeExecutionLogs(prev => {
+                const updatedLogs = [logEntry, ...prev.slice(0, 99)];
+                
+                // Enviar el log más reciente a la base de datos
+                (async () => {
+                    try {
+                        await fetch('/api/logs/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(logEntry)
+                        });
+                    } catch (e) {
+                        console.error("Failed to save log to database", e);
+                    }
+                })();
+
+                return updatedLogs;
+            });
         }
     }, []);
 
@@ -293,8 +310,3 @@ export default function TradingBotControlPanel() {
         </div>
     );
 }
-
-
-    
-
-    
