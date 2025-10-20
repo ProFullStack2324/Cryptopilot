@@ -12,6 +12,7 @@ import {
   Legend,
   ReferenceArea,
   ReferenceLine,
+  Cell, // Importar Cell
 } from 'recharts';
 import { Market, MarketPriceDataPoint } from '@/lib/types';
 import clsx from 'clsx';
@@ -215,7 +216,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                 <Line yAxisId="macdAxis" type="monotone" dataKey="signalLine" stroke={CHART_COLORS.signalLine} strokeWidth={1.5} dot={false} name="Signal" />
                 <Bar yAxisId="macdAxis" dataKey="macdHistogram" barSize={4} name="MACD Hist.">
                     {cleanedData.map((entry, index) => (
-                        <Bar key={`cell-macd-${index}`} fill={entry.macdHistogram && entry.macdHistogram > 0 ? CHART_COLORS.macdHistogramUp : CHART_COLORS.macdHistogramDown} />
+                        <Cell key={`cell-macd-${index}`} fill={entry.macdHistogram && entry.macdHistogram > 0 ? CHART_COLORS.macdHistogramUp : CHART_COLORS.macdHistogramDown} />
                     ))}
                 </Bar>
                 
