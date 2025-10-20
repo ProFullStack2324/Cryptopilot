@@ -1,3 +1,4 @@
+
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -203,26 +204,32 @@ export default function TradingBotControlPanel() {
     
         const { closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50 } = latestDataPointForStrategy;
     
-        if (![closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50].every(isValidNumber)) {
-            return "Datos de indicadores insuficientes para un análisis completo.";
+        if (![closePrice, sma10, sma20].every(isValidNumber)) {
+            return "Datos de tendencia insuficientes.";
         }
     
         let trend = "lateral";
-        if (sma10 > sma20 && sma20 > sma50) trend = "alcista fuerte";
+        if (isValidNumber(sma50) && sma10 > sma20 && sma20 > sma50) trend = "alcista fuerte";
         else if (sma10 > sma20) trend = "alcista";
-        else if (sma10 < sma20 && sma20 < sma50) trend = "bajista fuerte";
+        else if (isValidNumber(sma50) && sma10 < sma20 && sma20 < sma50) trend = "bajista fuerte";
         else if (sma10 < sma20) trend = "bajista";
     
-        const volatility = (upperBollingerBand! - lowerBollingerBand!) / closePrice! * 100;
-        let volatilityDesc = `volatilidad del ${volatility.toFixed(2)}%.`;
-        if (volatility < 1) volatilityDesc += " Mercado comprimido.";
-        if (volatility > 4) volatilityDesc += " Alta volatilidad.";
+        let volatilityDesc = "";
+        if (isValidNumber(upperBollingerBand) && isValidNumber(lowerBollingerBand)) {
+            const volatility = (upperBollingerBand - lowerBollingerBand) / closePrice * 100;
+            volatilityDesc = `Volatilidad del ${volatility.toFixed(2)}%.`;
+            if (volatility < 1) volatilityDesc += " Mercado comprimido.";
+            if (volatility > 4) volatilityDesc += " Alta volatilidad.";
+        }
     
-        let momentum = `RSI en ${rsi!.toFixed(1)} (neutral).`;
-        if (rsi! > 70) momentum = `RSI en ${rsi!.toFixed(1)} (sobrecompra).`;
-        if (rsi! < 30) momentum = `RSI en ${rsi!.toFixed(1)} (sobreventa).`;
+        let momentum = "";
+        if (isValidNumber(rsi)) {
+            momentum = `RSI en ${rsi.toFixed(1)} (neutral).`;
+            if (rsi > 70) momentum = `RSI en ${rsi.toFixed(1)} (sobrecompra).`;
+            if (rsi < 30) momentum = `RSI en ${rsi.toFixed(1)} (sobreventa).`;
+        }
     
-        return `Tendencia ${trend} con ${volatilityDesc} ${momentum}`;
+        return `Tendencia ${trend}. ${volatilityDesc} ${momentum}`;
     };
     
     const StrategyAnalysisDescription = () => {
@@ -230,8 +237,8 @@ export default function TradingBotControlPanel() {
     
         const decision = lastStrategyDecision;
         const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
-        const decisionDetails = lastDecisionLog?.data?.decisionDetails || {};
-        const { buyConditionsCount } = decisionDetails;
+        const decisionDetails = lastDecisionLog?.data?.decisionDetails;
+        const buyConditionsCount = decisionDetails?.buyConditionsCount;
     
         if (decision === 'buy') {
             return "Conclusión del Bot: COMPRA. La estrategia identificó una confluencia de indicadores alcistas.";
