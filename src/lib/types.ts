@@ -46,10 +46,9 @@ export interface Market {
         };
     };
     info: any; // Información bruta del exchange, si es necesaria
-    pricePrecision: number; // Por conveniencia, se añade aquí para simplificar el uso
-    amountPrecision: number;
-
-    latestPrice: number | null; // Precio actual (se actualizará con el closePrice de la última vela)
+    pricePrecision: number; 
+    amountPrecision: number; 
+    latestPrice: number | null; 
     change24h: number | null; 
 }
 
@@ -214,11 +213,9 @@ export interface BotActionDetails {
     timestamp: number;
     message?: string;
     details?: any;
-    data?: {
-        action?: 'buy' | 'sell' | 'hold';
-        [key: string]: any;
-    };
+    data?: any;
 }
+
 
 export type TradeAction = 'buy' | 'sell' | 'hold';
 

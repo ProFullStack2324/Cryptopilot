@@ -6,14 +6,14 @@ import {
     Market,
     MarketRules,
     BinanceBalance,
-    OrderFormData,
     BotOpenPosition,
     BotActionDetails,
     MarketPriceDataPoint,
     PRICE_HISTORY_POINTS_TO_KEEP,
     ApiResult,
     KLine,
-    TradeEndpointResponse
+    TradeEndpointResponse,
+    OrderFormData
 } from '@/lib/types';
 
 import { decideTradeActionAndAmount } from '@/lib/strategies/tradingStrategy';
@@ -110,7 +110,6 @@ export const useTradingBot = (props: {
                 upperBollingerBand: bb.upper,
                 middleBollingerBand: bb.middle,
                 lowerBollingerBand: bb.lower,
-                // --- Nuevos campos de conteo ---
                 buyConditionsMet,
                 sellConditionsMet,
             });
@@ -140,15 +139,10 @@ export const useTradingBot = (props: {
             setIsPlacingOrder(true);
             setPlaceOrderError(null);
             
-            const orderDetails = {
-                symbol: decision.orderData.symbol,
-                side: decision.orderData.side,
-                type: decision.orderData.orderType,
-                amount: decision.orderData.quantity,
-                price: decision.orderData.price
-            };
-            
-            logAction(`Intento de orden: ${orderDetails.side} ${orderDetails.amount} ${orderDetails.symbol}`, true, 'order_placed', orderDetails);
+            const { symbol, side, orderType, quantity, price } = decision.orderData;
+            const orderDetails: Partial<OrderFormData> = { symbol, side, type: orderType, amount: quantity, price };
+
+            logAction(`Intento de orden: ${side} ${quantity} ${symbol}`, true, 'order_placed', orderDetails);
             
             try {
                 const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderDetails) });
@@ -162,7 +156,7 @@ export const useTradingBot = (props: {
                 } else {
                     setBotLastActionTimestamp(Date.now());
                     if (decision.action === 'buy') {
-                        setBotOpenPosition({ marketId: selectedMarket.id, entryPrice: currentPrice, amount: orderDetails.amount, type: 'buy', timestamp: Date.now() });
+                        setBotOpenPosition({ marketId: selectedMarket.id, entryPrice: currentPrice, amount: quantity, type: 'buy', timestamp: Date.now() });
                         toast({ title: "¡Orden de Compra Exitosa!", variant: "default" });
                     } else if (decision.action === 'sell') {
                         setBotOpenPosition(null);
@@ -306,7 +300,6 @@ export const useTradingBot = (props: {
     useEffect(() => {
         if (isBotRunning && isDataLoaded) {
             botIntervalRef.current = setInterval(executeBotStrategy, botIntervalMs);
-            executeBotStrategy();
         } else {
             if (botIntervalRef.current) clearInterval(botIntervalRef.current);
         }
