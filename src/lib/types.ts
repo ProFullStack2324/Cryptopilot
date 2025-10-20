@@ -3,7 +3,7 @@
 
 import type { ChartConfig } from "@/components/ui/chart";
 
-export const PRICE_HISTORY_POINTS_TO_KEEP = 51; // Número de puntos de historial a mantener
+export const PRICE_HISTORY_POINTS_TO_KEEP = 200; // Aumentado para dar más contexto a los indicadores
 
 // INTERFAZ DE TRADE
 export interface Trade {
@@ -21,36 +21,16 @@ export interface Trade {
 // INTERFAZ DE MARKET
 export interface Market {
     id: string;
-    symbol: string;
+    symbol: string; // Formato CCXT: BTC/USDT
+    name: string; // Formato legible: BTC/USDT
     baseAsset: string;
     quoteAsset: string;
-    active: boolean;
-    
-    precision: {
-        amount: number;
-        price: number;
-        base: number;
-        quote: number;
-    };
-    limits: {
-        amount: {
-            min: number;
-            max: number;
-        };
-        price: {
-            min: number;
-            max: number;
-        };
-        cost: {
-            min: number; // minNotional
-        };
-    };
-    info: any; // Información bruta del exchange, si es necesaria
-    pricePrecision: number; // Por conveniencia, se añade aquí para simplificar el uso
-
-    latestPrice: number | null; // Precio actual (se actualizará con el closePrice de la última vela)
-    change24h: number | null; 
+    latestPrice: number | null; 
+    pricePrecision: number;
+    amountPrecision: number;
+    // La precisión ya no se anidará en un objeto `precision` para simplificar
 }
+
 
 // INTERFAZ DE MARKET RULES (para las reglas de Binance)
 export interface MarketRules {
@@ -135,7 +115,7 @@ export interface SignalItem {
 
 export type ParsedSignals = SignalItem[];
 
-// INTERFAZ OrderFormData
+// INTERFAZ OrderFormData - CORREGIDA
 export interface OrderFormData {
     symbol: string;
     side: 'BUY' | 'SELL'; 
@@ -143,6 +123,7 @@ export interface OrderFormData {
     quantity: number;
     price?: number; 
 }
+
 
 export interface PerformanceDataPoint {
     date: string;
@@ -226,5 +207,3 @@ export interface BinanceBalancesDisplayProps {
     isLoading: boolean;
     error: string | null;
 }
-
-    
