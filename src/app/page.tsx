@@ -233,21 +233,19 @@ export default function TradingBotControlPanel() {
     };
     
     const StrategyAnalysisDescription = () => {
-        if (!latestDataPointForStrategy) return "Esperando datos para analizar la estrategia...";
-    
         const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
-        if (!lastDecisionLog) return "Conclusión del Bot: MANTENER. Monitoreando mercado.";
+        if (!lastDecisionLog?.data?.details) return "Conclusión del Bot: MANTENER. Monitoreando mercado.";
+        
+        const { action, details } = lastDecisionLog.data;
+        const { buyConditionsCount, conditions } = details?.decisionDetails || {};
     
-        const { action, decisionDetails } = lastDecisionLog.data || {};
-        const buyConditionsCount = decisionDetails?.buyConditionsCount;
         const fulfilledBuyConditions = [];
-    
-        if (decisionDetails?.conditions?.price) fulfilledBuyConditions.push("Precio en BB Inferior");
-        if (decisionDetails?.conditions?.rsi) fulfilledBuyConditions.push("RSI en Sobreventa");
-        if (decisionDetails?.conditions?.macd) fulfilledBuyConditions.push("Cruce MACD alcista");
+        if (conditions?.price) fulfilledBuyConditions.push("Precio en BB Inferior");
+        if (conditions?.rsi) fulfilledBuyConditions.push("RSI en Sobreventa");
+        if (conditions?.macd) fulfilledBuyConditions.push("Cruce MACD alcista");
     
         if (action === 'buy') {
-            return `Conclusión del Bot: COMPRA. Se cumplieron ${buyConditionsCount} condiciones: ${fulfilledBuyConditions.join(', ')}.`;
+            return `Conclusión del Bot: COMPRA. Se cumplieron ${buyConditionsCount} de 2 condiciones: ${fulfilledBuyConditions.join(', ')}.`;
         }
         if (action === 'sell') {
             // Se puede mejorar la lógica de venta para ser más detallada aquí también
