@@ -1,4 +1,4 @@
-// src/components/FinancialChart.tsx
+//  esta es la  ruta      src/components/FinancialChart.tsx   
 "use client";
 
 import React, { useState, useEffect } from 'react';
