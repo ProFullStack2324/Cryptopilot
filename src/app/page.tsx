@@ -235,20 +235,27 @@ export default function TradingBotControlPanel() {
     const StrategyAnalysisDescription = () => {
         if (!latestDataPointForStrategy) return "Esperando datos para analizar la estrategia...";
     
-        const decision = lastStrategyDecision;
         const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
-        const decisionDetails = lastDecisionLog?.data?.decisionDetails;
-        const buyConditionsCount = decisionDetails?.buyConditionsCount;
+        if (!lastDecisionLog) return "Conclusión del Bot: MANTENER. Monitoreando mercado.";
     
-        if (decision === 'buy') {
-            return "Conclusión del Bot: COMPRA. La estrategia identificó una confluencia de indicadores alcistas.";
+        const { action, decisionDetails } = lastDecisionLog.data || {};
+        const buyConditionsCount = decisionDetails?.buyConditionsCount;
+        const fulfilledBuyConditions = [];
+    
+        if (decisionDetails?.conditions?.price) fulfilledBuyConditions.push("Precio en BB Inferior");
+        if (decisionDetails?.conditions?.rsi) fulfilledBuyConditions.push("RSI en Sobreventa");
+        if (decisionDetails?.conditions?.macd) fulfilledBuyConditions.push("Cruce MACD alcista");
+    
+        if (action === 'buy') {
+            return `Conclusión del Bot: COMPRA. Se cumplieron ${buyConditionsCount} condiciones: ${fulfilledBuyConditions.join(', ')}.`;
         }
-        if (decision === 'sell') {
-            return "Conclusión del Bot: VENTA. La estrategia detectó condiciones para cerrar la posición.";
+        if (action === 'sell') {
+            // Se puede mejorar la lógica de venta para ser más detallada aquí también
+            return "Conclusión del Bot: VENTA. La estrategia detectó una o más condiciones de salida.";
         }
         
         if (isValidNumber(buyConditionsCount) && buyConditionsCount > 0) {
-            return `Conclusión del Bot: MANTENER. Se cumplió ${buyConditionsCount} de 2 condiciones de compra. Esperando una señal más clara.`;
+            return `Conclusión del Bot: MANTENER. Se cumplió ${buyConditionsCount} de 2 condiciones de compra: [${fulfilledBuyConditions.join(' / ')}]. Esperando una señal más clara.`;
         }
     
         return "Conclusión del Bot: MANTENER. Ninguna condición de entrada o salida se cumple. Monitoreando mercado.";
