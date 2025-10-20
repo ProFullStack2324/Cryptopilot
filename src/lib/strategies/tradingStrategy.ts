@@ -89,7 +89,7 @@ export const decideTradeActionAndAmount = (params: {
         const buyConditionsCount = conditionsForBuyMet.filter(Boolean).length;
         
         const decisionDetails = {
-            buyConditionsMet,
+            conditionsForBuyMet,
             buyConditionsCount,
             conditions: {
                 price: buyPriceCondition,
