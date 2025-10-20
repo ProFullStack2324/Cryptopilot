@@ -148,7 +148,7 @@ export default function TradingBotControlPanel() {
             } else if (latest.sma10 < latest.sma20 && latest.sma20 < latest.sma50) {
                 trend = "bajista fuerte";
                 trendReason = "Las medias móviles están en una formación bajista clara, indicando una presión de venta consolidada en todos los plazos.";
-            } else if (latest.sma10 < latestsma20) {
+            } else if (latest.sma10 < latest.sma20) {
                 trend = "bajista";
                 trendReason = "La media móvil de corto plazo (10) está por debajo de la de mediano plazo (20), sugiriendo una debilidad en el precio a corto plazo.";
             }
@@ -156,24 +156,24 @@ export default function TradingBotControlPanel() {
     
         let rsiContext = "El RSI está en una zona neutral, sin indicar sobrecompra ni sobreventa.";
         if (isValidNumber(latest.rsi)) {
-            if (latest.rsi > 70) {
-                rsiContext = `El RSI (${latest.rsi.toFixed(1)}) está en zona de sobrecompra. El activo podría estar 'caro' y es propenso a una corrección a la baja, una condición que la estrategia considera para vender.`;
-            } else if (latest.rsi < 30) {
-                rsiContext = `El RSI (${latest.rsi.toFixed(1)}) está en zona de sobreventa. Esto significa que el activo podría estar 'barato', una condición clave que la estrategia busca para iniciar una compra.`;
+            if (latest.rsi > 65) { // Límite para venta
+                rsiContext = `El RSI (${latest.rsi.toFixed(1)}) está en zona de sobrecompra. El activo podría estar 'caro' y es propenso a una corrección a la baja, una condición que la estrategia considera para VENDER.`;
+            } else if (latest.rsi < 35) { // Límite para compra
+                rsiContext = `El RSI (${latest.rsi.toFixed(1)}) está en zona de sobreventa. Esto significa que el activo podría estar 'barato', una condición clave que la estrategia busca para COMPRAR.`;
             } else {
-                 rsiContext = `El RSI (${latest.rsi.toFixed(1)}) se encuentra en territorio neutral, lo que no proporciona una señal clara de compra o venta por sí solo en este momento.`;
+                 rsiContext = `El RSI (${latest.rsi.toFixed(1)}) se encuentra en territorio neutral. Debido a que no está ni en sobrecompra (>65) ni en sobreventa (<35), no proporciona una señal clara para la estrategia actual.`;
             }
         }
     
-        const macdHistogramContext = isValidNumber(latest.macdHistogram) 
-            ? latest.macdHistogram > 0 
-                ? "El histograma MACD es positivo, lo que confirma el impulso alcista." 
-                : "El histograma MACD es negativo, confirmando el impulso bajista."
-            : "El MACD aún no se ha calculado.";
+        const macdHistogramContext = (isValidNumber(latest.macdHistogram) && latest.macdHistogram !== 0)
+            ? latest.macdHistogram > 0
+                ? "El histograma MACD es positivo, lo que confirma un impulso alcista reciente."
+                : "El histograma MACD es negativo, confirmando un impulso bajista reciente."
+            : "El MACD aún no muestra una divergencia clara.";
     
         const botDecisionContext = lastStrategyDecision === 'hold'
-            ? "Actualmente, el bot está en modo de espera (HOLD), ya que no se cumplen todas las condiciones necesarias de la estrategia para ejecutar una compra o venta con una probabilidad de éxito favorable."
-            : `El bot ha tomado una acción de ${lastStrategyDecision.toUpperCase()} basada en la confluencia de las señales analizadas.`;
+            ? "Conclusión del Bot: MANTENER (HOLD). Aunque la tendencia es " + trend + ", no se cumplen todas las condiciones necesarias (especialmente la del RSI) para ejecutar una compra o venta con una probabilidad de éxito favorable según las reglas actuales. El bot esperará a un punto de entrada más claro."
+            : `Conclusión del Bot: ${lastStrategyDecision.toUpperCase()}. El bot ha tomado esta acción basada en la confluencia de las señales analizadas, cumpliendo con el mínimo de condiciones requeridas por la estrategia.`;
     
         return `Análisis de la Situación: La tendencia actual es ${trend}. ${trendReason} ${rsiContext} ${macdHistogramContext} ${botDecisionContext}`;
     };
@@ -286,5 +286,7 @@ export default function TradingBotControlPanel() {
     );
 }
 
+
+    
 
     

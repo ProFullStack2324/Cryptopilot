@@ -76,8 +76,8 @@ const CustomLegend = (props: any) => {
     const customLegendItems = [
       { color: CHART_COLORS.buyZoneWeak, value: "Zona Compra Débil (1 condición)" },
       { color: CHART_COLORS.buyZoneStrong, value: "Zona Compra Fuerte (>=2 condiciones)" },
-      { color: CHART_COLORS.sellZoneWeak, value: "Zona Venta Débil" },
-      { color: CHART_COLORS.sellZoneStrong, value: "Zona Venta Fuerte" },
+      { color: CHART_COLORS.sellZoneWeak, value: "Zona Venta Débil (1 condición)" },
+      { color: CHART_COLORS.sellZoneStrong, value: "Zona Venta Fuerte (>=1 condición)" },
     ];
   
     return (
@@ -169,7 +169,8 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
     
             if ((end.buyConditionsMet || 0) >= 2) fill = CHART_COLORS.buyZoneStrong;
             else if ((end.buyConditionsMet || 0) === 1) fill = CHART_COLORS.buyZoneWeak;
-            else if ((end.sellConditionsMet || 0) >= 1) fill = CHART_COLORS.sellZoneStrong;
+            else if ((end.sellConditionsMet || 0) >= 2) fill = CHART_COLORS.sellZoneStrong; // Suponiendo que 2+ condiciones de venta es "fuerte"
+            else if ((end.sellConditionsMet || 0) === 1) fill = CHART_COLORS.sellZoneWeak;
             
             if (fill !== 'transparent') {
                 areas.push(
@@ -255,5 +256,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
         </div>
       );
 };
+
+    
 
     
