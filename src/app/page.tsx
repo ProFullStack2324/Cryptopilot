@@ -352,7 +352,6 @@ export default function TradingBotControlPanel() {
                                 data={annotatedHistory}
                                 selectedMarket={selectedMarket}
                                 strategyLogs={operationLogs}
-                                chartColors={CHART_COLORS}
                             />
                         </CardContent>
                         <CardFooter>

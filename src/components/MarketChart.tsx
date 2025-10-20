@@ -32,7 +32,6 @@ interface MarketChartProps {
   data: MarketPriceDataPoint[];
   selectedMarket: Market | null;
   strategyLogs: StrategyLog[];
-  chartColors: typeof CHART_COLORS;
 }
 
 export const CHART_COLORS = {
