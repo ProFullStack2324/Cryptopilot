@@ -144,7 +144,7 @@ export const useTradingBot = (props: {
                 symbol: decision.orderData.symbol,
                 side: decision.orderData.side,
                 type: decision.orderData.orderType,
-                amount: decision.orderData.quantity, // <--- CORRECCIÓN IMPORTANTE
+                amount: decision.orderData.quantity,
                 price: decision.orderData.price
             };
             

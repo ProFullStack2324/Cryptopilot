@@ -49,8 +49,8 @@ export default function TestTradePage() {
     setError(null);
     setResponse(null);
     try {
-      console.log('Enviando POST a /api/binance/trade-testnet con:', tradeParams);
-      const res = await fetch('/api/binance/trade-testnet', {
+      console.log('Enviando POST a /api/binance/trade-mainnet con:', tradeParams);
+      const res = await fetch('/api/binance/trade-mainnet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(tradeParams),
@@ -62,7 +62,7 @@ export default function TestTradePage() {
       } else {
         setResponse(data);
         // Refrescar balance tras la orden
-        const balRes = await fetch('/api/binance/trade-testnet?balance=true');
+        const balRes = await fetch('/api/binance/trade-mainnet?balance=true');
         const balData = await balRes.json();
         if (balRes.ok && balData.balance) setBalance(balData.balance);
       }
