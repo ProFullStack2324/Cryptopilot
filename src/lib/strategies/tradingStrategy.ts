@@ -61,7 +61,13 @@ export const decideTradeActionAndAmount = (params: {
         const takeProfitRsiCondition = rsi! >= 65;
 
         if (takeProfitPriceCondition || takeProfitRsiCondition) {
-            const quantityToSell = botOpenPosition.amount;
+            let quantityToSell = botOpenPosition.amount;
+
+            const stepSizeNum = selectedMarketRules.lotSize.stepSize;
+            quantityToSell = Math.floor(quantityToSell / stepSizeNum) * stepSizeNum;
+            // FIX: Corrected property access from selectedMarket.precision.amount to selectedMarket.amountPrecision
+            quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarket.amountPrecision));
+
             if (quantityToSell < selectedMarketRules.lotSize.minQty) {
                 return { action: 'hold' };
             }
@@ -117,7 +123,7 @@ export const decideTradeActionAndAmount = (params: {
             if (stepSize > 0) {
                 quantityToBuy = Math.floor(quantityToBuy / stepSize) * stepSize;
             }
-            quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarket.precision.amount));
+            quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarket.amountPrecision));
             
             if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
                 log(`Cantidad inválida tras ajuste.`, { quantityToBuy });
