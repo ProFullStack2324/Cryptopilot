@@ -1,6 +1,6 @@
 "use client"
 
-// Insp    ir e dbyrea ct-hot-toa stlibrar y
+// Insp    ir e dbyrea ct-hot-toa stlib  rar y
 import * as React from "react"
 
 import type {
