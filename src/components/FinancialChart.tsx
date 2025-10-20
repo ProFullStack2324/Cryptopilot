@@ -1,7 +1,7 @@
 // src/components/FinancialChart.tsx
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { format } from "d3-format";
 import { timeFormat } from "d3-time-format";
 import { ChartCanvas, Chart } from "react-financial-charts";
@@ -17,6 +17,19 @@ interface FinancialChartProps {
 }
 
 const FinancialChart: React.FC<FinancialChartProps> = ({ data }) => {
+    const [chartWidth, setChartWidth] = useState(1200);
+    const [chartRatio, setChartRatio] = useState(1);
+
+    useEffect(() => {
+        const handleResize = () => {
+            setChartWidth(window.innerWidth > 1200 ? 1200 : window.innerWidth);
+            setChartRatio(window.innerWidth / 1200);
+        };
+        window.addEventListener('resize', handleResize);
+        handleResize(); // Set initial size
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     if (!data || data.length < 2) { // Requiere al menos 2 puntos para algunos cálculos
         return <div className="flex items-center justify-center h-full text-muted-foreground">Cargando datos del gráfico...</div>;
     }
@@ -57,8 +70,8 @@ const FinancialChart: React.FC<FinancialChartProps> = ({ data }) => {
     return (
         <ChartCanvas
             height={height}
-            ratio={window.innerWidth / 1200} // Ajusta el ratio para responsividad
-            width={1200} // Ancho de referencia
+            ratio={chartRatio} // Ajusta el ratio para responsividad
+            width={chartWidth} // Ancho de referencia
             margin={margin}
             data={chartData}
             displayXAccessor={displayXAccessor}

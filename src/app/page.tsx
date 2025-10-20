@@ -1,3 +1,4 @@
+
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -39,6 +40,7 @@ const MOCK_MARKETS: Market[] = [
         limits: { amount: { min: 0.00001, max: 100 }, price: { min: 0.01, max: 1000000 } , cost: { min: 10 } },
         info: {},
         pricePrecision: 2,
+        amountPrecision: 5,
         latestPrice: null,
         change24h: null,
     },
@@ -52,6 +54,7 @@ const MOCK_MARKETS: Market[] = [
         limits: { amount: { min: 0.0001, max: 1000 }, price: { min: 0.01, max: 10000 } , cost: { min: 10 } },
         info: {},
         pricePrecision: 2,
+        amountPrecision: 4,
         latestPrice: null,
         change24h: null,
     },
@@ -464,6 +467,6 @@ export default function TradingBotControlPanel() {
         </div>
     );
 
-    
-
 }
+
+    

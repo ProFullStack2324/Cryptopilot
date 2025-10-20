@@ -47,6 +47,7 @@ export interface Market {
     };
     info: any; // Información bruta del exchange, si es necesaria
     pricePrecision: number; // Por conveniencia, se añade aquí para simplificar el uso
+    amountPrecision: number;
 
     latestPrice: number | null; // Precio actual (se actualizará con el closePrice de la última vela)
     change24h: number | null; 
@@ -226,5 +227,3 @@ export interface BinanceBalancesDisplayProps {
     isLoading: boolean;
     error: string | null;
 }
-
-    

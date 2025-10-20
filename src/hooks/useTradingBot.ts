@@ -133,7 +133,7 @@ export const useTradingBot = (props: {
             logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
         });
         
-        logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()}`, true, 'strategy_decision', { decisionDetails: (decision as any).details }, { action: decision.action });
+        logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()}`, true, 'strategy_decision', { decisionDetails: (decision as any).details }, { data: decision });
 
         if (decision.action !== 'hold' && decision.orderData) {
             if (isPlacingOrder) return;
@@ -144,7 +144,7 @@ export const useTradingBot = (props: {
                 symbol: decision.orderData.symbol,
                 side: decision.orderData.side,
                 type: decision.orderData.orderType,
-                amount: decision.orderData.quantity, // <--- CORRECCIÓN IMPORTANTE
+                amount: decision.orderData.quantity,
                 price: decision.orderData.price
             };
             
