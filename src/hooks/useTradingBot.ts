@@ -319,3 +319,5 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory
     };
 };
+
+    
