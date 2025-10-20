@@ -1,3 +1,4 @@
+
 // hola
 import React, { useMemo } from 'react';
 import {
@@ -60,21 +61,38 @@ export const CHART_COLORS = {
 
 const CustomLegend = (props: any) => {
     const { payload } = props;
+    const legendItemsMap = {
+        'closePrice': 'Precio de Cierre',
+        'sma10': 'SMA 10 (Tendencia Corto Plazo)',
+        'sma20': 'SMA 20 (Tendencia Mediano Plazo)',
+        'sma50': 'SMA 50 (Tendencia Largo Plazo)',
+        'upperBollingerBand': 'Bandas de Bollinger (Volatilidad)',
+        'rsi': 'RSI (Fuerza Relativa)',
+        'macdLine': 'Línea MACD (Momento)',
+        'signalLine': 'Línea de Señal (MACD)',
+        'macdHistogram': 'Histograma MACD (Divergencia)',
+    };
+
     const customLegendItems = [
-      { color: CHART_COLORS.buyZoneWeak, value: "Zona Compra Débil" },
-      { color: CHART_COLORS.buyZoneStrong, value: "Zona Compra Fuerte" },
+      { color: CHART_COLORS.buyZoneWeak, value: "Zona Compra Débil (1 condición)" },
+      { color: CHART_COLORS.buyZoneStrong, value: "Zona Compra Fuerte (>=2 condiciones)" },
       { color: CHART_COLORS.sellZoneWeak, value: "Zona Venta Débil" },
       { color: CHART_COLORS.sellZoneStrong, value: "Zona Venta Fuerte" },
     ];
   
     return (
       <div className="flex justify-center items-center flex-wrap gap-x-4 gap-y-1 pt-4 text-xs text-muted-foreground">
-        {payload.map((entry: any, index: number) => (
-          <div key={`item-${index}`} className="flex items-center gap-2">
-            <span style={{ backgroundColor: entry.color, width: '10px', height: entry.type === 'line' ? '2px' : '10px', display: 'inline-block' }}></span>
-            <span>{entry.value}</span>
-          </div>
-        ))}
+        {payload.map((entry: any, index: number) => {
+          const name = legendItemsMap[entry.dataKey as keyof typeof legendItemsMap] || entry.value;
+          if (entry.dataKey === 'lowerBollingerBand') return null; // Ocultar de la leyenda
+
+          return (
+            <div key={`item-${index}`} className="flex items-center gap-2">
+                <span style={{ backgroundColor: entry.color, width: '10px', height: entry.type === 'line' ? '2px' : '10px', display: 'inline-block' }}></span>
+                <span>{name}</span>
+            </div>
+          );
+        })}
         {customLegendItems.map((item, index) => (
           <div key={`custom-item-${index}`} className="flex items-center gap-2">
             <span style={{ backgroundColor: item.color, width: '10px', height: '10px', display: 'inline-block' }}></span>
@@ -210,7 +228,7 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                 {/* --- Elementos ligados a otros EJES (Izquierda) --- */}
                 
                 <Line yAxisId="rsiAxis" type="monotone" dataKey="rsi" stroke={CHART_COLORS.rsi} strokeWidth={1.5} dot={false} name="RSI" />
-                <ReferenceLine yAxisId="rsiAxis" y={70} label={{ value: "Sobrecompra", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))", fontSize: 10 }} stroke="hsl(var(--destructive))" strokeDasharray="3 3" />
+                <ReferenceLine yAxisId="rsiAxis" y={70} label={{ value: "Sobrecompra", position: "insideTopLeft", fill: "hsl(var(--destructive))", fontSize: 10 }} stroke="hsl(var(--destructive))" strokeDasharray="3 3" />
                 <ReferenceLine yAxisId="rsiAxis" y={30} label={{ value: "Sobreventa", position: "insideBottomLeft", fill: "hsl(var(--chart-1))", fontSize: 10 }} stroke="hsl(var(--chart-1))" strokeDasharray="3 3" />
                 
                 <Line yAxisId="macdAxis" type="monotone" dataKey="macdLine" stroke={CHART_COLORS.macdLine} strokeWidth={1.5} dot={false} name="MACD" />
@@ -237,3 +255,5 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
         </div>
       );
 };
+
+    

@@ -1,3 +1,4 @@
+
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -129,32 +130,52 @@ export default function TradingBotControlPanel() {
     const lastStrategyDecision = useMemo(() => operationLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [operationLogs]);
 
     const CombinedAnalysisDescription = () => {
-        if (!latestDataPointForStrategy || annotatedHistory.length < 2) return "Cargando análisis...";
+        if (!latestDataPointForStrategy || annotatedHistory.length < 2) {
+            return "Análisis en espera: se necesitan más datos de mercado para generar un resumen contextual.";
+        }
+    
         const latest = latestDataPointForStrategy;
-        
         let trend = "lateral";
-        if (isValidNumber(latest.sma50) && isValidNumber(latest.sma10) && isValidNumber(latest.sma20) && latest.sma10 > latest.sma20 && latest.sma20 > latest.sma50) trend = "alcista fuerte";
-        else if (isValidNumber(latest.sma10) && isValidNumber(latest.sma20) && latest.sma10 > latest.sma20) trend = "alcista";
-        else if (isValidNumber(latest.sma50) && isValidNumber(latest.sma10) && isValidNumber(latest.sma20) && latest.sma10 < latest.sma20 && latest.sma20 < latest.sma50) trend = "bajista fuerte";
-        else if (isValidNumber(latest.sma10) && isValidNumber(latest.sma20) && latest.sma10 < latest.sma20) trend = "bajista";
-        
-        let volatilityDesc = "";
-        if (isValidNumber(latest.upperBollingerBand) && isValidNumber(latest.lowerBollingerBand) && latest.closePrice > 0) {
-            const volatility = (latest.upperBollingerBand - latest.lowerBollingerBand) / latest.closePrice * 100;
-            volatilityDesc = `Volatilidad del ${volatility.toFixed(2)}%.`;
+        let trendReason = "Las medias móviles no muestran una dirección clara.";
+    
+        if (isValidNumber(latest.sma50) && isValidNumber(latest.sma10) && isValidNumber(latest.sma20)) {
+            if (latest.sma10 > latest.sma20 && latest.sma20 > latest.sma50) {
+                trend = "alcista fuerte";
+                trendReason = "Las medias móviles de corto (10), mediano (20) y largo plazo (50) están alineadas en una formación alcista óptima, sugiriendo un impulso positivo consolidado.";
+            } else if (latest.sma10 > latest.sma20) {
+                trend = "alcista";
+                trendReason = "La media móvil de corto plazo (10) ha cruzado por encima de la de mediano plazo (20), lo que indica un posible inicio de impulso alcista.";
+            } else if (latest.sma10 < latest.sma20 && latest.sma20 < latest.sma50) {
+                trend = "bajista fuerte";
+                trendReason = "Las medias móviles están en una formación bajista clara, indicando una presión de venta consolidada en todos los plazos.";
+            } else if (latest.sma10 < latestsma20) {
+                trend = "bajista";
+                trendReason = "La media móvil de corto plazo (10) está por debajo de la de mediano plazo (20), sugiriendo una debilidad en el precio a corto plazo.";
+            }
         }
-
-        let momentum = "";
+    
+        let rsiContext = "El RSI está en una zona neutral, sin indicar sobrecompra ni sobreventa.";
         if (isValidNumber(latest.rsi)) {
-            if (latest.rsi > 70) momentum = `RSI en ${latest.rsi.toFixed(1)} (sobrecompra).`;
-            else if (latest.rsi < 30) momentum = `RSI en ${latest.rsi.toFixed(1)} (sobreventa).`;
-            else momentum = `RSI en ${latest.rsi.toFixed(1)} (neutral).`;
+            if (latest.rsi > 70) {
+                rsiContext = `El RSI (${latest.rsi.toFixed(1)}) está en zona de sobrecompra. El activo podría estar 'caro' y es propenso a una corrección a la baja, una condición que la estrategia considera para vender.`;
+            } else if (latest.rsi < 30) {
+                rsiContext = `El RSI (${latest.rsi.toFixed(1)}) está en zona de sobreventa. Esto significa que el activo podría estar 'barato', una condición clave que la estrategia busca para iniciar una compra.`;
+            } else {
+                 rsiContext = `El RSI (${latest.rsi.toFixed(1)}) se encuentra en territorio neutral, lo que no proporciona una señal clara de compra o venta por sí solo en este momento.`;
+            }
         }
-        
-        const priceChange = annotatedHistory.length > 1 ? latest.closePrice - annotatedHistory[0].closePrice : 0;
-        const pnlSummary = `P&L 24h (sim): ${priceChange.toFixed(2)} USDT (${((priceChange / annotatedHistory[0].closePrice) * 100).toFixed(2)}%).`;
-
-        return `Tendencia ${trend}. ${volatilityDesc} ${momentum} ${pnlSummary}`;
+    
+        const macdHistogramContext = isValidNumber(latest.macdHistogram) 
+            ? latest.macdHistogram > 0 
+                ? "El histograma MACD es positivo, lo que confirma el impulso alcista." 
+                : "El histograma MACD es negativo, confirmando el impulso bajista."
+            : "El MACD aún no se ha calculado.";
+    
+        const botDecisionContext = lastStrategyDecision === 'hold'
+            ? "Actualmente, el bot está en modo de espera (HOLD), ya que no se cumplen todas las condiciones necesarias de la estrategia para ejecutar una compra o venta con una probabilidad de éxito favorable."
+            : `El bot ha tomado una acción de ${lastStrategyDecision.toUpperCase()} basada en la confluencia de las señales analizadas.`;
+    
+        return `Análisis de la Situación: La tendencia actual es ${trend}. ${trendReason} ${rsiContext} ${macdHistogramContext} ${botDecisionContext}`;
     };
 
     return (
@@ -264,3 +285,6 @@ export default function TradingBotControlPanel() {
         </div>
     );
 }
+
+
+    
