@@ -185,12 +185,20 @@ export default function TradingBotControlPanel() {
 
     const annotatedHistory = useMemo(() => {
         return (currentMarketPriceHistory || []).map(dp => {
-            return {
+            const dataPoint: any = { // Usamos 'any' temporalmente para añadir 'date'
                 ...dp,
-                date: new Date(dp.timestamp), // Asegurarse que react-financial-charts recibe un objeto Date
-            }
+                date: new Date(dp.timestamp),
+            };
+            // Asegurarse de que los campos OHLCV existen
+            if (dp.openPrice) dataPoint.open = dp.openPrice;
+            if (dp.highPrice) dataPoint.high = dp.highPrice;
+            if (dp.lowPrice) dataPoint.low = dp.lowPrice;
+            if (dp.closePrice) dataPoint.close = dp.closePrice;
+            if (dp.volume) dataPoint.volume = dp.volume;
+            
+            return dataPoint;
         }).filter(dp =>
-            dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
+            dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.close)
         );
     }, [currentMarketPriceHistory]);
     
@@ -209,9 +217,9 @@ export default function TradingBotControlPanel() {
     
         let marketDesc = "Cargando análisis de mercado...";
         if (latestDataPointForStrategy) {
-            const { closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50 } = latestDataPointForStrategy;
+            const { close, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50 } = latestDataPointForStrategy;
     
-            if ([closePrice, sma10, sma20].every(isValidNumber)) {
+            if ([close, sma10, sma20].every(isValidNumber)) {
                 let trend = "lateral";
                 if (isValidNumber(sma50) && sma10 > sma20 && sma20 > sma50) trend = "alcista fuerte";
                 else if (sma10 > sma20) trend = "alcista";
@@ -220,7 +228,7 @@ export default function TradingBotControlPanel() {
     
                 let volatilityDesc = "";
                 if (isValidNumber(upperBollingerBand) && isValidNumber(lowerBollingerBand)) {
-                    const volatility = (upperBollingerBand - lowerBollingerBand) / closePrice * 100;
+                    const volatility = (upperBollingerBand - lowerBollingerBand) / close * 100;
                     volatilityDesc = `Volatilidad del ${volatility.toFixed(2)}%.`;
                     if (volatility < 1) volatilityDesc += " Mercado comprimido.";
                     if (volatility > 4) volatilityDesc += " Alta volatilidad.";
@@ -241,7 +249,8 @@ export default function TradingBotControlPanel() {
         let strategyDesc = " | Conclusión del Bot: MANTENER. Monitoreando mercado.";
         if (lastDecisionLog?.details?.decisionDetails) {
             const { action } = lastDecisionLog.data;
-            const { buyConditionsCount, conditions } = lastDecisionLog.details.decisionDetails;
+            const { conditions } = lastDecisionLog.details.decisionDetails;
+            const buyConditionsCount = conditions ? Object.values(conditions).filter(c => c).length : 0;
             
             const fulfilledBuy: string[] = [];
             const missingBuy: string[] = [];
@@ -256,10 +265,8 @@ export default function TradingBotControlPanel() {
                 strategyDesc = ` | Conclusión del Bot: COMPRA. Se cumplieron ${buyConditionsCount}/2 condiciones: [${fulfilledBuy.join(', ')}].`;
             } else if (action === 'sell') {
                 strategyDesc = " | Conclusión del Bot: VENTA. La estrategia detectó una o más condiciones de salida.";
-            } else if (isValidNumber(buyConditionsCount)) {
-                 strategyDesc = ` | Conclusión: MANTENER. Cumplidas ${buyConditionsCount}/2: [${fulfilledBuy.map(c => `✅ ${c}`).join(' ')}]. Faltó: [${missingBuy.map(c => `❌ ${c}`).join(' ')}].`;
             } else {
-                 strategyDesc = " | Conclusión: MANTENER. Ninguna condición de entrada o salida se cumple. Monitoreando.";
+                 strategyDesc = ` | Conclusión: MANTENER. Cumplidas ${buyConditionsCount}/2: [${fulfilledBuy.map(c => `✅ ${c}`).join(' ')}]. Faltó: [${missingBuy.map(c => `❌ ${c}`).join(' ')}].`;
             }
         }
         
