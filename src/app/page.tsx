@@ -228,7 +228,7 @@ export default function TradingBotControlPanel() {
                     if (rsi > 70) momentum = `RSI en ${rsi.toFixed(1)} (sobrecompra).`;
                     if (rsi < 30) momentum = `RSI en ${rsi.toFixed(1)} (sobreventa).`;
                 }
-                marketDesc = `Tendencia ${trend}. ${volatilityDesc} ${momentum}.`;
+                marketDesc = `Tendencia ${trend}. ${volatilityDesc} ${momentum}`;
             } else {
                 marketDesc = "Datos de tendencia insuficientes.";
             }
@@ -236,9 +236,9 @@ export default function TradingBotControlPanel() {
     
         // --- Análisis de Estrategia ---
         let strategyDesc = " | Conclusión del Bot: MANTENER. Monitoreando mercado.";
-        if (lastDecisionLog?.data?.details) {
-            const { action, details } = lastDecisionLog.data;
-            const { buyConditionsCount, conditions } = details?.decisionDetails || {};
+        if (lastDecisionLog?.details?.decisionDetails) {
+            const { action } = lastDecisionLog.data;
+            const { buyConditionsCount, conditions } = lastDecisionLog.details.decisionDetails;
             
             const fulfilledBuy: string[] = [];
             const missingBuy: string[] = [];
@@ -466,3 +466,5 @@ export default function TradingBotControlPanel() {
     
 
 }
+
+    
