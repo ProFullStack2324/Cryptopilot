@@ -1,4 +1,3 @@
-
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -23,8 +22,8 @@ import {
 import { Badge } from "@/components/ui/badge"; // Para mostrar el estado del bot
 import { ScrollArea } from "@/components/ui/scroll-area"; // Para el área de historial de precios
 
-// IMPORTACIÓN ÚNICA DE GRÁFICA: SOLO MarketChart encapsula toda la lógica de Recharts.
-import { CHART_COLORS, MarketChart } from '@/components/MarketChart';
+// IMPORTACIÓN DEL GRÁFICO FINANCIERO CORRECTO
+import FinancialChart from '@/components/FinancialChart'; // Usa la librería profesional para velas
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
 import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
 
@@ -184,7 +183,12 @@ export default function TradingBotControlPanel() {
     }, [currentMarketPriceHistory, chartDisplayError]);
 
     const annotatedHistory = useMemo(() => {
-        return (currentMarketPriceHistory || []).filter(dp =>
+        return (currentMarketPriceHistory || []).map(dp => {
+            return {
+                ...dp,
+                date: new Date(dp.timestamp), // Asegurarse que react-financial-charts recibe un objeto Date
+            }
+        }).filter(dp =>
             dp && typeof dp === 'object' && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)
         );
     }, [currentMarketPriceHistory]);
@@ -202,7 +206,6 @@ export default function TradingBotControlPanel() {
     const CombinedAnalysisDescription = () => {
         const lastDecisionLog = operationLogs.find(log => log.type === 'strategy_decision');
     
-        // --- Análisis de Mercado ---
         let marketDesc = "Cargando análisis de mercado...";
         if (latestDataPointForStrategy) {
             const { closePrice, rsi, upperBollingerBand, lowerBollingerBand, sma10, sma20, sma50 } = latestDataPointForStrategy;
@@ -234,7 +237,6 @@ export default function TradingBotControlPanel() {
             }
         }
     
-        // --- Análisis de Estrategia ---
         let strategyDesc = " | Conclusión del Bot: MANTENER. Monitoreando mercado.";
         if (lastDecisionLog?.details?.decisionDetails) {
             const { action } = lastDecisionLog.data;
@@ -351,12 +353,8 @@ export default function TradingBotControlPanel() {
                 {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-2 shadow-lg rounded-xl">
                         <CardHeader><CardTitle>Gráfica de Mercado</CardTitle></CardHeader>
-                        <CardContent>
-                            <MarketChart
-                                data={annotatedHistory}
-                                selectedMarket={selectedMarket}
-                                strategyLogs={operationLogs}
-                            />
+                        <CardContent className='h-[700px]'>
+                            <FinancialChart data={annotatedHistory} />
                         </CardContent>
                         <CardFooter>
                             <p className="text-xs text-muted-foreground"><CombinedAnalysisDescription /></p>
@@ -462,9 +460,4 @@ export default function TradingBotControlPanel() {
             </div>
         </div>
     );
-
-    
-
 }
-
-    
