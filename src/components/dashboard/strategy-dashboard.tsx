@@ -17,14 +17,30 @@ interface StrategyDashboardProps {
   priceHistory: MarketPriceDataPoint[];
 }
 
-// Componente individual para una condición de la estrategia
-const ConditionStatus = ({ label, value, conditionMet }: { label: string, value: string, conditionMet: boolean }) => (
-  <li className="flex justify-between items-center text-sm">
-    <span>{label}: <span className="font-mono">{value}</span></span>
-    <span className={clsx("font-bold text-lg", conditionMet ? "text-green-500" : "text-red-500")}>
-      {conditionMet ? '✅' : '❌'}
-    </span>
-  </li>
+// Componente individual para una condición de la estrategia MEJORADO
+const ConditionStatus = ({
+    label,
+    value,
+    conditionMet,
+    expected,
+}: {
+    label: string;
+    value: string;
+    conditionMet: boolean;
+    expected: string;
+}) => (
+    <li className="flex justify-between items-center text-sm py-1 border-b border-border/50 last:border-b-0">
+        <div className="flex flex-col">
+            <span className="font-semibold">{label}</span>
+            <span className="text-xs text-muted-foreground">{expected}</span>
+        </div>
+        <div className="flex items-center gap-2">
+            <span className="font-mono text-foreground">{value}</span>
+            <span className={clsx("font-bold text-lg", conditionMet ? "text-green-500" : "text-red-500")}>
+                {conditionMet ? '✅' : '❌'}
+            </span>
+        </div>
+    </li>
 );
 
 export function StrategyDashboard({ latest, decision, selectedMarket, priceHistory }: StrategyDashboardProps) {
@@ -81,22 +97,25 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Condiciones de Compra</CardTitle>
-          <CardDescription>2 de 3 condiciones requeridas.</CardDescription>
+          <CardDescription>Se requieren 2 de 3 condiciones.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             <ConditionStatus 
-              label="Precio <= BB Inferior"
-              value={isValidNumber(price) && isValidNumber(lowerBB) ? `${price.toFixed(pricePrecision)} <= ${lowerBB.toFixed(pricePrecision)}` : "N/A"}
+              label="Precio vs BB"
+              expected={`Precio <= BB Inf. (${isValidNumber(lowerBB) ? lowerBB.toFixed(pricePrecision) : 'N/A'})`}
+              value={isValidNumber(price) ? price.toFixed(pricePrecision) : "N/A"}
               conditionMet={buyPriceCondition}
             />
             <ConditionStatus 
-              label="RSI <= 35"
+              label="RSI"
+              expected="RSI <= 35"
               value={isValidNumber(rsi) ? rsi.toFixed(2) : "N/A"}
               conditionMet={buyRsiCondition}
             />
             <ConditionStatus 
-              label="MACD Hist. cruza a > 0"
+              label="Cruce MACD"
+              expected="Histograma > 0"
               value={isValidNumber(macdHist) ? macdHist.toFixed(4) : "N/A"}
               conditionMet={buyMacdCondition}
             />
@@ -108,17 +127,19 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Condiciones de Venta</CardTitle>
-          <CardDescription>1 de 2 condiciones requeridas.</CardDescription>
+          <CardDescription>Se requiere 1 de 2 condiciones.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             <ConditionStatus 
-              label="Precio >= BB Superior"
-              value={isValidNumber(price) && isValidNumber(upperBB) ? `${price.toFixed(pricePrecision)} >= ${upperBB.toFixed(pricePrecision)}` : "N/A"}
+              label="Precio vs BB"
+              expected={`Precio >= BB Sup. (${isValidNumber(upperBB) ? upperBB.toFixed(pricePrecision) : 'N/A'})`}
+              value={isValidNumber(price) ? price.toFixed(pricePrecision) : "N/A"}
               conditionMet={sellPriceCondition}
             />
             <ConditionStatus 
-              label="RSI >= 65"
+              label="RSI"
+              expected="RSI >= 65"
               value={isValidNumber(rsi) ? rsi.toFixed(2) : "N/A"}
               conditionMet={sellRsiCondition}
             />
