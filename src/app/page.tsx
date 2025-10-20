@@ -105,7 +105,7 @@ export default function TradingBotControlPanel() {
         const isBuySellAction = details.data?.action === 'buy' || details.data?.action === 'sell';
         const isInsufficientFunds = details.data?.action === 'hold_insufficient_funds';
 
-        if (details.type === 'order_placed' || details.type === 'order_failed' || (details.type === 'strategy_decision' && (isBuySellAction || isInsufficientFunds))) {
+        if (details.type === 'order_placed' || details.type === 'order_failed' || (details.type === 'strategy_decision' && isInsufficientFunds)) {
             let logEntry = { ...newLog };
             if (isInsufficientFunds) {
                 logEntry.message = `Orden de Compra NO REALIZADA: Saldo insuficiente. Requerido: ~$${details.data.details.required.toFixed(2)}, Disponible: $${details.data.details.available.toFixed(2)}`;
