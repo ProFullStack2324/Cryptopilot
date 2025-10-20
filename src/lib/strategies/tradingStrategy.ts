@@ -117,7 +117,7 @@ export const decideTradeActionAndAmount = (params: {
             // Comprobación final de saldo
             if (amountInQuote > quoteAssetBalance) {
                 log(`HOLD: Saldo insuficiente (${quoteAssetBalance.toFixed(2)} ${selectedMarket.quoteAsset}) para cubrir la orden mínima de ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}.`);
-                return { action: 'hold', details: decisionDetails };
+                return { action: 'hold_insufficient_funds', details: { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance } };
             }
 
             let quantityToBuy = amountInQuote / currentPrice;

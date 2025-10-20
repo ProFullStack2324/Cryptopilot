@@ -217,7 +217,7 @@ export interface BotActionDetails {
 }
 
 
-export type TradeAction = 'buy' | 'sell' | 'hold';
+export type TradeAction = 'buy' | 'sell' | 'hold' | 'hold_insufficient_funds';
 
 export interface BinanceBalancesDisplayProps {
     balances: Record<string, Balance>;

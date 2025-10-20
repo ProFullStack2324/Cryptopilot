@@ -101,9 +101,17 @@ export default function TradingBotControlPanel() {
     const onBotAction = useCallback((details: any) => {
         const newLog = { ...details, timestamp: Date.now() + Math.random() };
         setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
-        const isExecutionLog = (details.type === 'order_placed' || details.type === 'order_failed' || (details.type === 'strategy_decision' && details.data?.action !== 'hold'));
-        if (isExecutionLog) {
-            setTradeExecutionLogs(prev => [newLog, ...prev.slice(0, 99)]);
+        
+        const isBuySellAction = details.data?.action === 'buy' || details.data?.action === 'sell';
+        const isInsufficientFunds = details.data?.action === 'hold_insufficient_funds';
+
+        if (details.type === 'order_placed' || details.type === 'order_failed' || (details.type === 'strategy_decision' && (isBuySellAction || isInsufficientFunds))) {
+            let logEntry = { ...newLog };
+            if (isInsufficientFunds) {
+                logEntry.message = `Orden de Compra NO REALIZADA: Saldo insuficiente. Requerido: ~$${details.data.details.required.toFixed(2)}, Disponible: $${details.data.details.available.toFixed(2)}`;
+                logEntry.success = false; // Marcar como no exitoso
+            }
+             setTradeExecutionLogs(prev => [logEntry, ...prev.slice(0, 99)]);
         }
     }, []);
 
