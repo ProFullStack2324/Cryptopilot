@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -48,6 +48,7 @@ export const CHART_COLORS = {
   macdHistogramDown: 'rgba(236, 72, 153, 0.4)',
   rsi: '#a855f7', // purple-500
   bollingerBands: 'rgba(107, 114, 128, 0.2)', // gray-500
+  // Nueva paleta para zonas de estrategia
   buyZoneWeak: 'rgba(59, 130, 246, 0.1)', // blue-500/10
   buyZoneStrong: 'rgba(59, 130, 246, 0.25)', // blue-500/25
   sellZoneWeak: 'rgba(192, 38, 211, 0.1)', // fuchsia-600/10
@@ -114,7 +115,6 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
     const cleanedData = useMemo(() => {
         return data.map(dp => ({
             ...dp,
-            // Datos para la vela japonesa
             candleBody: [dp.openPrice, dp.closePrice],
             candleWhisker: [dp.lowPrice, dp.highPrice]
         })).filter(dp => 
@@ -124,20 +124,23 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
     }, [data]);
 
     const domains = useMemo(() => {
-        if (cleanedData.length === 0) return { price: ['auto', 'auto'], indicator: ['auto', 'auto'], macd: ['auto', 'auto'] };
+        if (cleanedData.length === 0) return { price: ['auto', 'auto'], rsi: [0, 100], macd: ['auto', 'auto'] };
         
         const priceValues = cleanedData.flatMap(d => [d.highPrice, d.lowPrice, d.sma10, d.sma20, d.sma50, d.upperBollingerBand, d.lowerBollingerBand]).filter(isValidNumber);
-        const rsiValues = cleanedData.map(d => d.rsi).filter(isValidNumber);
         const macdValues = cleanedData.flatMap(d => [d.macdLine, d.signalLine, d.macdHistogram]).filter(isValidNumber);
 
         const priceMin = Math.min(...priceValues);
         const priceMax = Math.max(...priceValues);
         const priceMargin = (priceMax - priceMin) * 0.1;
 
+        const macdMin = Math.min(...macdValues);
+        const macdMax = Math.max(...macdValues);
+        const macdMargin = (macdMax - macdMin) * 0.1;
+
         return {
             price: [priceMin - priceMargin, priceMax + priceMargin],
-            indicator: [0, 100],
-            macd: [Math.min(...macdValues) * 1.1, Math.max(...macdValues) * 1.1]
+            rsi: [0, 100],
+            macd: [macdMin - macdMargin, macdMax + macdMargin]
         };
     }, [cleanedData]);
     
@@ -182,32 +185,9 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
                 />
 
-                {/* Eje Y Derecho para el Precio */}
-                <YAxis 
-                    yAxisId="priceAxis" 
-                    orientation="right" 
-                    domain={domains.price}
-                    tickFormatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: pricePrecision, maximumFractionDigits: pricePrecision})}`}
-                    width={80}
-                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-                />
-
-                {/* Eje Y Izquierdo para Indicadores (RSI/MACD) */}
-                <YAxis 
-                    yAxisId="indicatorAxis" 
-                    orientation="left" 
-                    domain={domains.indicator}
-                    ticks={[0, 30, 70, 100]}
-                    tickFormatter={(value) => value.toString()}
-                    width={40}
-                    tick={{ fill: CHART_COLORS.rsi, fontSize: 10 }}
-                />
-                 <YAxis 
-                    yAxisId="macdAxis"
-                    orientation="left"
-                    domain={domains.macd}
-                    hide={true} // Oculto, solo para escala de MACD
-                />
+                <YAxis yAxisId="priceAxis" orientation="right" domain={domains.price} tickFormatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: pricePrecision, maximumFractionDigits: pricePrecision})}`} width={80} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+                <YAxis yAxisId="rsiAxis" orientation="left" domain={domains.rsi} ticks={[0, 30, 70, 100]} tickFormatter={(value) => value.toString()} width={40} tick={{ fill: CHART_COLORS.rsi, fontSize: 10 }} />
+                <YAxis yAxisId="macdAxis" orientation="left" domain={domains.macd} hide={true} />
 
                 <Tooltip content={<CustomTooltip pricePrecision={pricePrecision} amountPrecision={amountPrecision} />} />
                 <Legend content={<CustomLegend />} verticalAlign="top" wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px' }} />
@@ -215,34 +195,27 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                 {renderStrategyReferenceAreas()}
                 
                 {/* --- Elementos ligados al EJE DE PRECIO (Derecha) --- */}
-
-                {/* Velas Japonesas (usando Bar para cuerpo y error bar para mechas) */}
-                <Bar dataKey="candleBody" yAxisId="priceAxis" name="Precio" hide>
+                <Bar dataKey="candleBody" yAxisId="priceAxis" name="Precio" fill={CHART_COLORS.priceUp} hide>
                     {cleanedData.map((entry, index) => (
                         <Bar key={`cell-candle-${index}`} fill={entry.closePrice >= entry.openPrice ? CHART_COLORS.priceUp : CHART_COLORS.priceDown} />
                     ))}
                 </Bar>
-                 {/* Mechas de las velas - truco con Line de strokeWidth 0 y error bars */}
-                <Line dataKey="closePrice" yAxisId="priceAxis" stroke="transparent" dot={false} activeDot={false} hide errorY="candleWhisker" />
+                <Line dataKey="highPrice" yAxisId="priceAxis" stroke="transparent" dot={false} activeDot={false} hide errorY="candleWhisker" strokeWidth={1} />
 
-                {/* SMAs */}
                 <Line yAxisId="priceAxis" type="monotone" dataKey="sma10" stroke={CHART_COLORS.sma10} strokeWidth={2} dot={false} name="SMA 10" />
                 <Line yAxisId="priceAxis" type="monotone" dataKey="sma20" stroke={CHART_COLORS.sma20} strokeWidth={2} dot={false} name="SMA 20" />
                 <Line yAxisId="priceAxis" type="monotone" dataKey="sma50" stroke={CHART_COLORS.sma50} strokeWidth={2} dot={false} name="SMA 50" />
                 
-                {/* Bandas de Bollinger */}
-                <Area yAxisId="priceAxis" type="monotone" dataKey="upperBollingerBand" stroke={CHART_COLORS.bollingerBands} fill="none" name="Bandas Bollinger" strokeDasharray="3 3" />
-                <Line yAxisId="priceAxis" type="monotone" dataKey="lowerBollingerBand" stroke={CHART_COLORS.bollingerBands} fill="none" hide={true} />
+                <Area yAxisId="priceAxis" type="monotone" dataKey="upperBollingerBand" stroke={CHART_COLORS.bollingerBands} fill={CHART_COLORS.bollingerBands} name="Bandas Bollinger" strokeDasharray="3 3" />
+                <Area yAxisId="priceAxis" type="monotone" dataKey="lowerBollingerBand" stroke={CHART_COLORS.bollingerBands} fill={CHART_COLORS.bollingerBands} hide={true} />
 
 
-                {/* --- Elementos ligados al EJE DE INDICADORES (Izquierda) --- */}
+                {/* --- Elementos ligados a otros EJES (Izquierda) --- */}
                 
-                {/* RSI */}
-                <Line yAxisId="indicatorAxis" type="monotone" dataKey="rsi" stroke={CHART_COLORS.rsi} strokeWidth={1.5} dot={false} name="RSI" />
-                <ReferenceLine yAxisId="indicatorAxis" y={70} label={{ value: "Sobrecompra", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))", fontSize: 10 }} stroke="hsl(var(--destructive))" strokeDasharray="3 3" />
-                <ReferenceLine yAxisId="indicatorAxis" y={30} label={{ value: "Sobreventa", position: "insideBottomLeft", fill: "hsl(var(--muted-foreground))", fontSize: 10 }} stroke="hsl(var(--chart-1))" strokeDasharray="3 3" />
+                <Line yAxisId="rsiAxis" type="monotone" dataKey="rsi" stroke={CHART_COLORS.rsi} strokeWidth={1.5} dot={false} name="RSI" />
+                <ReferenceLine yAxisId="rsiAxis" y={70} label={{ value: "Sobrecompra", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))", fontSize: 10 }} stroke="hsl(var(--destructive))" strokeDasharray="3 3" />
+                <ReferenceLine yAxisId="rsiAxis" y={30} label={{ value: "Sobreventa", position: "insideBottomLeft", fill: "hsl(var(--muted-foreground))", fontSize: 10 }} stroke="hsl(var(--chart-1))" strokeDasharray="3 3" />
                 
-                {/* MACD */}
                 <Line yAxisId="macdAxis" type="monotone" dataKey="macdLine" stroke={CHART_COLORS.macdLine} strokeWidth={1.5} dot={false} name="MACD" />
                 <Line yAxisId="macdAxis" type="monotone" dataKey="signalLine" stroke={CHART_COLORS.signalLine} strokeWidth={1.5} dot={false} name="Signal" />
                 <Bar yAxisId="macdAxis" dataKey="macdHistogram" barSize={4} name="MACD Hist." fillOpacity={0.6}>
@@ -251,7 +224,6 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                     ))}
                 </Bar>
                 
-                {/* --- Líneas de Señal de Trade --- */}
                 {strategyLogs.filter(log => log.details?.action === 'buy' || log.details?.action === 'sell').map((log, index) => (
                     <ReferenceLine
                         key={`signal-line-${index}`}
@@ -260,17 +232,8 @@ export const MarketChart: React.FC<MarketChartProps> = ({ data, selectedMarket, 
                         stroke={log.details?.action === 'buy' ? CHART_COLORS.signalBuyLine : CHART_COLORS.signalSellLine}
                         strokeDasharray="4 4"
                         strokeWidth={2}
-                    >
-                        <Legend type="none" />
-                        <Tooltip content={
-                            <div className="bg-background/90 p-2 border rounded text-xs shadow-lg">
-                               <p className={clsx("font-bold", log.details?.action === 'buy' ? 'text-green-500' : 'text-red-500')}>
-                                {log.details?.action?.toUpperCase()} @ {log.details?.price?.toFixed(pricePrecision)}
-                               </p>
-                               <p className="text-muted-foreground">{new Date(log.timestamp).toLocaleTimeString()}</p>
-                            </div>
-                        } />
-                    </ReferenceLine>
+                        label={{ value: log.details?.action?.toUpperCase(), position: 'top', fill: log.details?.action === 'buy' ? CHART_COLORS.signalBuyLine : CHART_COLORS.signalSellLine }}
+                    />
                 ))}
             </ComposedChart>
           </ResponsiveContainer>
