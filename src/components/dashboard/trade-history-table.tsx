@@ -27,7 +27,7 @@ export function TradeHistoryTable({ logs, title, emptyLogMessage }: TradeHistory
                         <div key={log.timestamp} className="text-xs border-b py-2">
                             <p>
                                 <span className="font-bold mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                                <span className={`font-semibold ${log.success ? 'text-primary' : 'text-destructive'}`}>{log.message}</span>
+                                <span className={`font-semibold ${log.success === false ? 'text-destructive' : 'text-primary'}`}>{log.message}</span>
                             </p>
                             {log.details && (
                                 <pre className="text-[10px] bg-muted/50 p-1 mt-1 whitespace-pre-wrap break-words">
@@ -41,3 +41,5 @@ export function TradeHistoryTable({ logs, title, emptyLogMessage }: TradeHistory
         </Card>
     );
 }
+
+    

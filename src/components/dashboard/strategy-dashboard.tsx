@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MarketPriceDataPoint, Market } from '@/lib/types';
+import { MarketPriceDataPoint, Market, BotOpenPosition } from '@/lib/types';
 import clsx from 'clsx';
 
 // Helper para validar si un valor es un número válido
@@ -15,6 +15,8 @@ interface StrategyDashboardProps {
   decision: string;
   selectedMarket: Market | null;
   priceHistory: MarketPriceDataPoint[];
+  botOpenPosition?: BotOpenPosition | null; // Opcional
+  strategyMode: 'scalping' | 'sniper'; // Para configurar el modo
 }
 
 // Componente individual para una condición de la estrategia MEJORADO
@@ -43,7 +45,7 @@ const ConditionStatus = ({
     </li>
 );
 
-export function StrategyDashboard({ latest, decision, selectedMarket, priceHistory }: StrategyDashboardProps) {
+export function StrategyDashboard({ latest, decision, selectedMarket, priceHistory, botOpenPosition, strategyMode }: StrategyDashboardProps) {
   if (!latest || !selectedMarket || priceHistory.length < 2) {
     return (
       <Card>
@@ -59,20 +61,27 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
   const prev = priceHistory[priceHistory.length - 2];
   
   // Extraer valores de los indicadores de la vela actual y previa
-  const rsi = latest.rsi;
-  const price = latest.closePrice;
-  const lowerBB = latest.lowerBollingerBand;
-  const upperBB = latest.upperBollingerBand;
-  const macdHist = latest.macdHistogram;
-  const prevMacdHist = prev?.macdHistogram;
+  const { rsi, closePrice, lowerBollingerBand, upperBollingerBand, macdHistogram } = latest;
+  const prevMacdHistogram = prev?.macdHistogram;
 
   // Definir las condiciones de la estrategia para visualización
-  const buyPriceCondition = isValidNumber(price) && isValidNumber(lowerBB) && price <= lowerBB;
+  const buyPriceCondition = isValidNumber(closePrice) && isValidNumber(lowerBollingerBand) && closePrice <= lowerBollingerBand;
   const buyRsiCondition = isValidNumber(rsi) && rsi <= 35;
-  const buyMacdCondition = isValidNumber(macdHist) && isValidNumber(prevMacdHist) && macdHist > 0 && prevMacdHist <= 0;
+  const buyMacdCondition = isValidNumber(macdHistogram) && isValidNumber(prevMacdHistogram) && macdHistogram > 0 && prevMacdHistogram <= 0;
 
-  const sellPriceCondition = isValidNumber(price) && isValidNumber(upperBB) && price >= upperBB;
+  const sellPriceCondition = isValidNumber(closePrice) && isValidNumber(upperBollingerBand) && closePrice >= upperBollingerBand;
   const sellRsiCondition = isValidNumber(rsi) && rsi >= 65;
+
+  const getRequirementsText = () => {
+      if (strategyMode === 'scalping') {
+          if (botOpenPosition) {
+              return `Monitoreando salida: TP @ ${botOpenPosition.takeProfitPrice?.toFixed(pricePrecision)}, SL @ ${botOpenPosition.stopLossPrice?.toFixed(pricePrecision)}`;
+          }
+          return "Se requiere 1 de 3 condiciones para COMPRA.";
+      }
+      // Sniper mode
+      return "Se requieren 2 de 3 condiciones para COMPRA.";
+  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -86,9 +95,9 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
           <p className={clsx("text-3xl font-bold text-center", {
             'text-green-500': decision === 'buy',
             'text-red-500': decision === 'sell',
-            'text-muted-foreground': decision === 'hold'
+            'text-muted-foreground': decision === 'hold' || decision === 'hold_insufficient_funds'
           })}>
-            {decision.toUpperCase()}
+            {decision.toUpperCase().replace('_', ' ')}
           </p>
         </CardContent>
       </Card>
@@ -97,14 +106,14 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Condiciones de Compra</CardTitle>
-          <CardDescription>Se requieren 2 de 3 condiciones.</CardDescription>
+          <CardDescription>{getRequirementsText()}</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="space-y-1">
             <ConditionStatus 
               label="Precio vs BB"
-              expected={`Precio <= BB Inf. (${isValidNumber(lowerBB) ? lowerBB.toFixed(pricePrecision) : 'N/A'})`}
-              value={isValidNumber(price) ? price.toFixed(pricePrecision) : "N/A"}
+              expected={`Precio <= BB Inf. (${isValidNumber(lowerBollingerBand) ? lowerBollingerBand.toFixed(pricePrecision) : 'N/A'})`}
+              value={isValidNumber(closePrice) ? closePrice.toFixed(pricePrecision) : "N/A"}
               conditionMet={buyPriceCondition}
             />
             <ConditionStatus 
@@ -116,7 +125,7 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
             <ConditionStatus 
               label="Cruce MACD"
               expected="Histograma > 0"
-              value={isValidNumber(macdHist) ? macdHist.toFixed(4) : "N/A"}
+              value={isValidNumber(macdHistogram) ? macdHistogram.toFixed(4) : "N/A"}
               conditionMet={buyMacdCondition}
             />
           </ul>
@@ -127,14 +136,14 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Condiciones de Venta</CardTitle>
-          <CardDescription>Se requiere 1 de 2 condiciones.</CardDescription>
+          <CardDescription>El bot es "Long-Only" (no abre ventas en corto).</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="space-y-1">
             <ConditionStatus 
               label="Precio vs BB"
-              expected={`Precio >= BB Sup. (${isValidNumber(upperBB) ? upperBB.toFixed(pricePrecision) : 'N/A'})`}
-              value={isValidNumber(price) ? price.toFixed(pricePrecision) : "N/A"}
+              expected={`Precio >= BB Sup. (${isValidNumber(upperBollingerBand) ? upperBollingerBand.toFixed(pricePrecision) : 'N/A'})`}
+              value={isValidNumber(closePrice) ? closePrice.toFixed(pricePrecision) : "N/A"}
               conditionMet={sellPriceCondition}
             />
             <ConditionStatus 
@@ -149,3 +158,5 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
     </div>
   );
 }
+
+    

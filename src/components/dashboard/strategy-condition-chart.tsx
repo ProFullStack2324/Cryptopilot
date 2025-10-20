@@ -4,7 +4,6 @@
 import React from 'react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine } from 'recharts';
 import { MarketPriceDataPoint } from '@/lib/types';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 interface StrategyConditionChartProps {
   data: MarketPriceDataPoint[];
@@ -12,59 +11,42 @@ interface StrategyConditionChartProps {
 
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
-// Colores más distintivos para cada condición
-const BUY_CONDITION_PRICE_COLOR = "rgba(16, 185, 129, 0.7)"; // emerald-500
-const BUY_CONDITION_RSI_COLOR = "rgba(52, 211, 153, 0.7)"; // emerald-400
-const BUY_CONDITION_MACD_COLOR = "rgba(110, 231, 183, 0.7)"; // emerald-300
+// Colores para las condiciones
+const SCALPING_BUY_COLOR = "rgba(16, 185, 129, 0.4)"; // Verde claro para scalping
+const SNIPER_BUY_COLOR = "rgba(5, 150, 105, 0.8)"; // Verde oscuro para francotirador
 
-const SELL_CONDITION_PRICE_COLOR = "rgba(239, 68, 68, 0.7)"; // red-500
-const SELL_CONDITION_RSI_COLOR = "rgba(248, 113, 113, 0.7)"; // red-400
+const SCALPING_SELL_COLOR = "rgba(239, 68, 68, 0.4)"; // Rojo claro para scalping
+const SNIPER_SELL_COLOR = "rgba(190, 18, 60, 0.8)"; // Rojo oscuro para francotirador
 
 export function StrategyConditionChart({ data }: StrategyConditionChartProps) {
 
-  const processedData = data.map((dp, index) => {
-    if (index === 0) return { timestamp: dp.timestamp };
-    const prev = data[index - 1];
-
-    // --- Condiciones de Compra ---
-    const priceBuyMet = isValidNumber(dp.closePrice) && isValidNumber(dp.lowerBollingerBand) && dp.closePrice <= dp.lowerBollingerBand;
-    const rsiBuyMet = isValidNumber(dp.rsi) && dp.rsi <= 35;
-    const macdBuyMet = isValidNumber(dp.macdHistogram) && isValidNumber(prev.macdHistogram) && dp.macdHistogram > 0 && prev.macdHistogram <= 0;
-
-    // --- Condiciones de Venta ---
-    const priceSellMet = isValidNumber(dp.closePrice) && isValidNumber(dp.upperBollingerBand) && dp.closePrice >= dp.upperBollingerBand;
-    const rsiSellMet = isValidNumber(dp.rsi) && dp.rsi >= 65;
+  const processedData = data.map((dp) => {
+    // Usamos el conteo de condiciones que ya viene pre-calculado en el hook
+    const buyConditionsMet = dp.buyConditionsMet || 0;
+    const sellConditionsMet = dp.sellConditionsMet || 0;
 
     return {
       timestamp: dp.timestamp,
-      // Asigna 1 si la condición se cumple, 0 si no. La altura total mostrará cuántas se cumplen.
-      buyPriceCondition: priceBuyMet ? 1 : 0,
-      buyRsiCondition: rsiBuyMet ? 1 : 0,
-      buyMacdCondition: macdBuyMet ? 1 : 0,
-      // Valores negativos para que se apilen hacia abajo
-      sellPriceCondition: priceSellMet ? -1 : 0,
-      sellRsiCondition: rsiSellMet ? -1 : 0,
+      scalpingBuy: buyConditionsMet >= 1 ? 1 : 0,
+      sniperBuy: buyConditionsMet >= 2 ? 1 : 0, // Se apilará sobre el de scalping
+      scalpingSell: sellConditionsMet >= 1 ? -1 : 0,
+      sniperSell: sellConditionsMet >= 2 ? -1 : 0, // Se apilará sobre el de scalping (hacia abajo)
     };
   });
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const timestamp = new Date(label).toLocaleTimeString();
-      
-      const buyConditions = payload.filter(p => p.dataKey.startsWith('buy') && p.value > 0);
-      const sellConditions = payload.filter(p => p.dataKey.startsWith('sell') && p.value < 0);
+      const buyConditions = payload.find(p => p.dataKey === 'sniperBuy')?.payload.sniperBuy + payload.find(p => p.dataKey === 'scalpingBuy')?.payload.scalpingBuy || 0;
+      const sellConditions = Math.abs(payload.find(p => p.dataKey === 'sniperSell')?.payload.sniperSell + payload.find(p => p.dataKey === 'scalpingSell')?.payload.scalpingSell || 0);
 
       return (
         <div className="bg-background/90 p-3 border rounded-md shadow-lg text-foreground text-xs backdrop-blur-sm">
           <p className="font-bold mb-2">Hora: {timestamp}</p>
           <div className="space-y-1">
-             {buyConditions.length > 0 && <p className="font-semibold text-green-500">Condiciones de Compra ({buyConditions.length}):</p>}
-             {buyConditions.map(p => <p key={p.dataKey}>✅ {p.name}</p>)}
-
-             {sellConditions.length > 0 && <p className="font-semibold text-red-500 mt-2">Condiciones de Venta ({sellConditions.length}):</p>}
-             {sellConditions.map(p => <p key={p.dataKey}>✅ {p.name}</p>)}
-
-             {buyConditions.length === 0 && sellConditions.length === 0 && <p className="text-muted-foreground">Sin condiciones activas</p>}
+             {buyConditions > 0 && <p className="font-semibold text-green-500">Condiciones de Compra Cumplidas: {buyConditions}</p>}
+             {sellConditions > 0 && <p className="font-semibold text-red-500 mt-2">Condiciones de Venta Cumplidas: {sellConditions}</p>}
+             {buyConditions === 0 && sellConditions === 0 && <p className="text-muted-foreground">Sin condiciones activas</p>}
           </div>
         </div>
       );
@@ -78,7 +60,7 @@ export function StrategyConditionChart({ data }: StrategyConditionChartProps) {
             <AreaChart 
                 data={processedData} 
                 margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
-                stackOffset="sign" // Apila valores positivos hacia arriba y negativos hacia abajo
+                stackOffset="sign"
             >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis 
@@ -91,30 +73,29 @@ export function StrategyConditionChart({ data }: StrategyConditionChartProps) {
                 domain={[-3, 3]} 
                 allowDecimals={false}
                 tickCount={7}
-                tickFormatter={(value) => `${Math.abs(value)}`} // Muestra el número de condiciones
+                tickFormatter={(value) => `${Math.abs(value)}`}
                 label={{ value: 'Nº de Condiciones', angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                 tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend
                 verticalAlign="top"
-                align="right"
+                align="center"
                 iconType="circle"
-                wrapperStyle={{ fontSize: '12px', paddingBottom: '10px' }}
+                wrapperStyle={{ fontSize: '12px', paddingBottom: '20px' }}
             />
-            <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
+            <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={2} />
             
-            {/* Áreas de Compra */}
-            <Area type="monotone" dataKey="buyPriceCondition" stackId="buy" name="Precio <= BB Inf." stroke={BUY_CONDITION_PRICE_COLOR} fill={BUY_CONDITION_PRICE_COLOR} />
-            <Area type="monotone" dataKey="buyRsiCondition" stackId="buy" name="RSI <= 35" stroke={BUY_CONDITION_RSI_COLOR} fill={BUY_CONDITION_RSI_COLOR} />
-            <Area type="monotone" dataKey="buyMacdCondition" stackId="buy" name="Cruce MACD" stroke={BUY_CONDITION_MACD_COLOR} fill={BUY_CONDITION_MACD_COLOR} />
+            <Area type="monotone" dataKey="scalpingBuy" stackId="buy" name="Señal Compra Scalping (>=1)" stroke={SCALPING_BUY_COLOR} fill={SCALPING_BUY_COLOR} />
+            <Area type="monotone" dataKey="sniperBuy" stackId="buy" name="Señal Compra Francotirador (>=2)" stroke={SNIPER_BUY_COLOR} fill={SNIPER_BUY_COLOR} />
 
-            {/* Áreas de Venta */}
-            <Area type="monotone" dataKey="sellPriceCondition" stackId="sell" name="Precio >= BB Sup." stroke={SELL_CONDITION_PRICE_COLOR} fill={SELL_CONDITION_PRICE_COLOR} />
-            <Area type="monotone" dataKey="sellRsiCondition" stackId="sell" name="RSI >= 65" stroke={SELL_CONDITION_RSI_COLOR} fill={SELL_CONDITION_RSI_COLOR} />
+            <Area type="monotone" dataKey="scalpingSell" stackId="sell" name="Señal Venta Scalping (>=1)" stroke={SCALPING_SELL_COLOR} fill={SCALPING_SELL_COLOR} />
+            <Area type="monotone" dataKey="sniperSell" stackId="sell" name="Señal Venta Francotirador (>=2)" stroke={SNIPER_SELL_COLOR} fill={SNIPER_SELL_COLOR} />
 
             </AreaChart>
         </ResponsiveContainer>
     </div>
   );
 }
+
+    

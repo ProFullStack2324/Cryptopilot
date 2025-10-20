@@ -224,3 +224,5 @@ export interface BinanceBalancesDisplayProps {
     isLoading: boolean;
     error: string | null;
 }
+
+    

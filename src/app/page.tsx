@@ -13,15 +13,14 @@ import {
 // Importaciones de Componentes de Dashboard
 import { BotControls } from '@/components/dashboard/bot-controls';
 import { BinanceBalancesDisplay } from '@/components/dashboard/binance-balances-display';
-import { PerformanceChart } from '@/components/dashboard/performance-chart';
 import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
 import { MarketChart } from '@/components/MarketChart';
 import { CHART_COLORS } from '@/components/MarketChart';
+import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
 
 // Importaciones de UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
     Select,
     SelectContent,
@@ -29,8 +28,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 
 const MOCK_MARKETS: Market[] = [
@@ -100,21 +97,23 @@ export default function TradingBotControlPanel() {
 
     const onBotAction = useCallback((details: any) => {
         const newLog = { ...details, timestamp: Date.now() + Math.random() };
+        // Todos los logs van al registro de operaciones (el diario del bot)
         setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
         
         const isBuySellAction = details.data?.action === 'buy' || details.data?.action === 'sell';
         const isInsufficientFunds = details.data?.action === 'hold_insufficient_funds';
 
+        // Solo las acciones de transacción van al libro de órdenes
         if (details.type === 'order_placed' || details.type === 'order_failed' || (details.type === 'strategy_decision' && isInsufficientFunds)) {
             let logEntry = { ...newLog };
             if (isInsufficientFunds) {
                 logEntry.message = `Orden de Compra NO REALIZADA: Saldo insuficiente. Requerido: ~$${details.data.details.required.toFixed(2)}, Disponible: $${details.data.details.available.toFixed(2)}`;
-                logEntry.success = false; // Marcar como no exitoso
+                logEntry.success = false;
             }
              setTradeExecutionLogs(prev => {
                 const updatedLogs = [logEntry, ...prev.slice(0, 99)];
                 
-                // Enviar el log más reciente a la base de datos
+                // Enviar el log del libro de órdenes a la base de datos
                 (async () => {
                     try {
                         await fetch('/api/logs/save', {
@@ -141,6 +140,7 @@ export default function TradingBotControlPanel() {
         rulesLoading,
         rulesError,
         currentPrice,
+        botOpenPosition,
         currentMarketPriceHistory,
     } = useTradingBot({
         selectedMarket,
@@ -154,53 +154,33 @@ export default function TradingBotControlPanel() {
     const latestDataPointForStrategy = useMemo(() => annotatedHistory.at(-1) || null, [annotatedHistory]);
     const lastStrategyDecision = useMemo(() => operationLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [operationLogs]);
 
-    const CombinedAnalysisDescription = () => {
+    const ScalpingAnalysisDescription = () => {
         if (!latestDataPointForStrategy || annotatedHistory.length < 2) {
-            return "Análisis en espera: se necesitan más datos de mercado para generar un resumen contextual.";
+            return "Análisis de Scalping en espera: se necesitan más datos de mercado.";
         }
     
         const latest = latestDataPointForStrategy;
-        let trend = "lateral";
-        let trendReason = "Las medias móviles no muestran una dirección clara.";
+        const { rsi, closePrice, buyConditionsMet, sellConditionsMet } = latest;
     
-        if (isValidNumber(latest.sma50) && isValidNumber(latest.sma10) && isValidNumber(latest.sma20)) {
-            if (latest.sma10 > latest.sma20 && latest.sma20 > latest.sma50) {
-                trend = "alcista fuerte";
-                trendReason = "Las medias móviles de corto (10), mediano (20) y largo plazo (50) están alineadas en una formación alcista óptima, sugiriendo un impulso positivo consolidado.";
-            } else if (latest.sma10 > latest.sma20) {
-                trend = "alcista";
-                trendReason = "La media móvil de corto plazo (10) ha cruzado por encima de la de mediano plazo (20), lo que indica un posible inicio de impulso alcista.";
-            } else if (latest.sma10 < latest.sma20 && latest.sma20 < latest.sma50) {
-                trend = "bajista fuerte";
-                trendReason = "Las medias móviles están en una formación bajista clara, indicando una presión de venta consolidada en todos los plazos.";
-            } else if (latest.sma10 < latest.sma20) {
-                trend = "bajista";
-                trendReason = "La media móvil de corto plazo (10) está por debajo de la de mediano plazo (20), sugiriendo una debilidad en el precio a corto plazo.";
-            }
+        if (botOpenPosition) {
+            const { entryPrice, takeProfitPrice, stopLossPrice } = botOpenPosition;
+            return `Posición ABIERTA. Entrada: ${entryPrice.toFixed(2)}. Objetivo (Take Profit): ${takeProfitPrice?.toFixed(2) || 'N/A'}. Límite de Pérdida (Stop Loss): ${stopLossPrice?.toFixed(2) || 'N/A'}. El bot está monitoreando para cerrar la operación.`;
         }
     
-        let rsiContext = "El RSI está en una zona neutral, sin indicar sobrecompra ni sobreventa.";
-        if (isValidNumber(latest.rsi)) {
-            if (latest.rsi > 65) { // Límite para venta
-                rsiContext = `El RSI (${latest.rsi.toFixed(1)}) está en zona de sobrecompra. El activo podría estar 'caro' y es propenso a una corrección a la baja, una condición que la estrategia considera para VENDER.`;
-            } else if (latest.rsi < 35) { // Límite para compra
-                rsiContext = `El RSI (${latest.rsi.toFixed(1)}) está en zona de sobreventa. Esto significa que el activo podría estar 'barato', una condición clave que la estrategia busca para COMPRAR.`;
-            } else {
-                 rsiContext = `El RSI (${latest.rsi.toFixed(1)}) se encuentra en territorio neutral. Debido a que no está ni en sobrecompra (>65) ni en sobreventa (<35), no proporciona una señal clara para la estrategia actual.`;
+        if (buyConditionsMet && buyConditionsMet > 0) {
+            let reason = `El bot ha detectado una señal de COMPRA porque se cumple ${buyConditionsMet} de 1 condición requerida.`;
+            if (isValidNumber(rsi) && rsi <= 35) {
+                reason += ` Principalmente, el RSI (${rsi.toFixed(1)}) está en zona de sobreventa, indicando que el activo podría estar 'barato'.`;
             }
+            return reason;
         }
     
-        const macdHistogramContext = (isValidNumber(latest.macdHistogram) && latest.macdHistogram !== 0)
-            ? latest.macdHistogram > 0
-                ? "El histograma MACD es positivo, lo que confirma un impulso alcista reciente."
-                : "El histograma MACD es negativo, confirmando un impulso bajista reciente."
-            : "El MACD aún no muestra una divergencia clara.";
+        if (sellConditionsMet && sellConditionsMet > 0) {
+            // Recordar: el bot es "long-only", no venderá en corto.
+            return `Se detectan ${sellConditionsMet} condiciones de VENTA. Sin embargo, el bot no tiene una posición abierta para vender, por lo que se mantiene en espera (HOLD).`;
+        }
     
-        const botDecisionContext = lastStrategyDecision === 'hold'
-            ? "Conclusión del Bot: MANTENER (HOLD). Aunque la tendencia es " + trend + ", no se cumplen todas las condiciones necesarias (especialmente la del RSI) para ejecutar una compra o venta con una probabilidad de éxito favorable según las reglas actuales. El bot esperará a un punto de entrada más claro."
-            : `Conclusión del Bot: ${lastStrategyDecision.toUpperCase()}. El bot ha tomado esta acción basada en la confluencia de las señales analizadas, cumpliendo con el mínimo de condiciones requeridas por la estrategia.`;
-    
-        return `Análisis de la Situación: La tendencia actual es ${trend}. ${trendReason} ${rsiContext} ${macdHistogramContext} ${botDecisionContext}`;
+        return "Modo Scalping ACTIVO. Esperando la próxima oportunidad de entrada (RSI en sobreventa, cruce MACD o toque de Banda de Bollinger). El bot necesita solo 1 condición para actuar.";
     };
 
     return (
@@ -259,54 +239,62 @@ export default function TradingBotControlPanel() {
                         <CardContent>
                             <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
                         </CardContent>
-                        <CardFooter><p className="text-xs text-muted-foreground"><CombinedAnalysisDescription /></p></CardFooter>
+                        <CardFooter><p className="text-xs text-muted-foreground"><ScalpingAnalysisDescription /></p></CardFooter>
                     </Card>
                 )}
 
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-3">
-                        <CardHeader><CardTitle>Diagnóstico de Estrategia</CardTitle></CardHeader>
+                        <CardHeader><CardTitle>Diagnóstico de Estrategia (Scalping)</CardTitle></CardHeader>
                         <CardContent>
-                             <StrategyDashboard latest={latestDataPointForStrategy} decision={lastStrategyDecision} selectedMarket={selectedMarket} priceHistory={annotatedHistory} />
+                             <StrategyDashboard 
+                                latest={latestDataPointForStrategy} 
+                                decision={lastStrategyDecision} 
+                                selectedMarket={selectedMarket} 
+                                priceHistory={annotatedHistory}
+                                botOpenPosition={botOpenPosition}
+                                strategyMode="scalping"
+                             />
                         </CardContent>
                     </Card>
                 )}
-
+                
                 <Card className="lg:col-span-3">
-                    <CardHeader><CardTitle>Análisis de Condiciones</CardTitle></CardHeader>
+                    <CardHeader><CardTitle>Análisis de Condiciones (Scalping vs Francotirador)</CardTitle></CardHeader>
                     <CardContent>
                         <StrategyConditionChart data={annotatedHistory} />
                     </CardContent>
                 </Card>
                 
-                <Card className="lg:col-span-3">
-                    <CardHeader><CardTitle>Libro de Órdenes</CardTitle></CardHeader>
-                    <CardContent>
-                        <ScrollArea className="h-[200px] w-full pr-4">
-                            {tradeExecutionLogs.length > 0 ? tradeExecutionLogs.map(log => (
-                                <div key={log.timestamp} className="text-xs border-b py-2">
-                                    <p><span className="font-bold mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span><span className={`font-semibold ${log.success ? 'text-primary' : 'text-destructive'}`}>{log.message}</span></p>
-                                    {log.details && <pre className="text-[10px] bg-muted/50 p-1 mt-1">{typeof log.details === 'object' ? JSON.stringify(log.details, null, 2) : String(log.details)}</pre>}
-                                </div>
-                            )) : <p className="text-sm text-muted-foreground">Esperando la primera acción de compra o venta...</p>}
-                        </ScrollArea>
-                    </CardContent>
-                </Card>
+                <TradeHistoryTable 
+                    logs={tradeExecutionLogs}
+                    title="Libro de Órdenes"
+                    emptyLogMessage="Esperando la primera acción de compra o venta..."
+                />
 
-                <Card className="lg:col-span-3">
-                    <CardHeader><CardTitle>Registro de Operaciones</CardTitle></CardHeader>
-                    <CardContent>
-                        <ScrollArea className="h-[200px] w-full pr-4">
-                            {operationLogs.length > 0 ? operationLogs.map(log => (
-                                <div key={log.timestamp} className="text-xs border-b py-2">
-                                    <p><span className="font-bold mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span><span className={`font-semibold ${log.success ? 'text-primary' : 'text-destructive'}`}>{log.message}</span></p>
-                                    {log.details && <pre className="text-[10px] bg-muted/50 p-1 mt-1">{typeof log.details === 'object' ? JSON.stringify(log.details, null, 2) : String(log.details)}</pre>}
-                                </div>
-                            )) : <p className="text-sm text-muted-foreground">Esperando la primera acción del bot...</p>}
-                        </ScrollArea>
-                    </CardContent>
-                </Card>
+                <TradeHistoryTable 
+                    logs={operationLogs}
+                    title="Registro de Operaciones (Diario del Bot)"
+                    emptyLogMessage="Esperando la primera acción del bot..."
+                />
+
+                {annotatedHistory.length > 0 && (
+                    <Card className="lg:col-span-3">
+                        <CardHeader><CardTitle>Diagnóstico de Estrategia (Análisis Francotirador)</CardTitle></CardHeader>
+                        <CardContent>
+                             <StrategyDashboard 
+                                latest={latestDataPointForStrategy} 
+                                decision={lastStrategyDecision} 
+                                selectedMarket={selectedMarket} 
+                                priceHistory={annotatedHistory}
+                                strategyMode="sniper"
+                             />
+                        </CardContent>
+                    </Card>
+                )}
             </main>
         </div>
     );
 }
+
+    
