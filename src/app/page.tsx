@@ -7,7 +7,8 @@ import { useToast } from '@/hooks/use-toast';
 import {
     Market,
     BinanceBalance,
-    MarketPriceDataPoint
+    MarketPriceDataPoint,
+    PRICE_HISTORY_POINTS_TO_KEEP
 } from '@/lib/types'; 
 
 // Importaciones de Componentes de Dashboard
@@ -100,7 +101,6 @@ export default function TradingBotControlPanel() {
         // Todos los logs van al registro de operaciones (el diario del bot)
         setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
         
-        const isBuySellAction = details.data?.action === 'buy' || details.data?.action === 'sell';
         const isInsufficientFunds = details.data?.action === 'hold_insufficient_funds';
 
         // Solo las acciones de transacción van al libro de órdenes
@@ -148,15 +148,15 @@ export default function TradingBotControlPanel() {
         onBotAction,
     });
     
-    const requiredCandles = 51;
+    const requiredCandles = PRICE_HISTORY_POINTS_TO_KEEP;
 
     const annotatedHistory = useMemo(() => currentMarketPriceHistory.filter(dp => dp && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)), [currentMarketPriceHistory]);
     const latestDataPointForStrategy = useMemo(() => annotatedHistory.at(-1) || null, [annotatedHistory]);
     const lastStrategyDecision = useMemo(() => operationLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [operationLogs]);
 
     const ScalpingAnalysisDescription = () => {
-        if (!latestDataPointForStrategy || annotatedHistory.length < 2) {
-            return "Análisis de Scalping en espera: se necesitan más datos de mercado.";
+        if (!latestDataPointForStrategy || annotatedHistory.length < requiredCandles) {
+            return `Análisis de Scalping en espera: se necesitan ${requiredCandles} velas para iniciar. Actual: ${annotatedHistory.length}.`;
         }
     
         const latest = latestDataPointForStrategy;
@@ -297,4 +297,5 @@ export default function TradingBotControlPanel() {
     );
 }
 
+    
     

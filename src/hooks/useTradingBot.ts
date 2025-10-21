@@ -59,9 +59,6 @@ export const useTradingBot = (props: {
     const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
     const [botIntervalMs] = useState(5000); // Frecuencia de ejecución de la estrategia (5 segundos)
     
-    // El modo ya no es un estado fijo, se determinará dinámicamente.
-    // const [strategyMode] = useState<'scalping' | 'sniper'>('scalping'); 
-
     const { toast } = useToast();
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isMounted = useRef(false);
@@ -70,30 +67,28 @@ export const useTradingBot = (props: {
         onBotAction({ type, success, message, details, data, timestamp: Date.now() });
     }, [onBotAction]);
 
-    const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'price' | 'orderType'> & { symbol?: string; price?: number; orderType?: 'MARKET' | 'LIMIT' }, strategyForOrder: 'scalping' | 'sniper') => {
-        if (isPlacingOrder) return;
+    const executeOrder = useCallback(async (orderData: OrderFormData, strategyForOrder: 'scalping' | 'sniper') => {
+        if (isPlacingOrder) return false;
         if (!selectedMarket) {
             logAction("FALLO al colocar orden: No hay mercado seleccionado.", false, 'order_failed');
             return false;
         }
-
+    
         setIsPlacingOrder(true);
         setPlaceOrderError(null);
-
-        const finalOrderData: OrderFormData = {
-            symbol: orderData.symbol || selectedMarket.symbol,
-            side: orderData.side,
-            orderType: orderData.orderType || 'MARKET',
-            quantity: orderData.quantity,
-            price: orderData.price
+    
+        const finalOrderData = {
+            ...orderData,
+            symbol: selectedMarket.symbol,
+            orderType: 'MARKET', // Scalping y Sniper usan órdenes de mercado para rapidez
         };
-
+    
         logAction(`Intento de orden (${strategyForOrder}): ${finalOrderData.side} ${finalOrderData.quantity} ${finalOrderData.symbol}`, true, 'order_placed', finalOrderData);
-
+    
         try {
             const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(finalOrderData) });
             const result: TradeEndpointResponse = await response.json();
-            
+    
             if (!response.ok || !result.success) {
                 const errorMessage = result.message || result.details || "Error desconocido al colocar la orden.";
                 setPlaceOrderError(errorMessage);
@@ -106,15 +101,15 @@ export const useTradingBot = (props: {
                 if (finalOrderData.side === 'BUY' && currentPrice) {
                     const takeProfitPrice = currentPrice * (1 + config.takeProfitPercentage);
                     const stopLossPrice = currentPrice * (1 - config.stopLossPercentage);
-                    setBotOpenPosition({ 
-                        marketId: selectedMarket.id, 
-                        entryPrice: currentPrice, 
-                        amount: finalOrderData.quantity, 
-                        type: 'buy', 
+                    setBotOpenPosition({
+                        marketId: selectedMarket.id,
+                        entryPrice: currentPrice,
+                        amount: finalOrderData.quantity,
+                        type: 'buy',
                         timestamp: Date.now(),
                         takeProfitPrice,
                         stopLossPrice,
-                        strategy: strategyForOrder, // Guardar la estrategia usada
+                        strategy: strategyForOrder,
                     });
                     toast({ title: `¡Orden de Compra (${strategyForOrder}) Exitosa!`, variant: "default" });
                 } else if (finalOrderData.side === 'SELL') {
@@ -134,6 +129,7 @@ export const useTradingBot = (props: {
             if (isMounted.current) setIsPlacingOrder(false);
         }
     }, [isPlacingOrder, logAction, toast, currentPrice, selectedMarket]);
+    
 
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
         if (!klines || klines.length === 0) return [];
@@ -194,7 +190,7 @@ export const useTradingBot = (props: {
     }, []);
 
     const executeBotStrategy = useCallback(async () => {
-        if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < 30 || !selectedMarketRules || isPlacingOrder) {
+        if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < PRICE_HISTORY_POINTS_TO_KEEP || !selectedMarketRules || isPlacingOrder) {
             return;
         }
         
@@ -217,7 +213,7 @@ export const useTradingBot = (props: {
                 quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarketRules.precision.amount));
 
                 if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
-                    await executeOrder({ side: 'SELL', quantity: quantityToSell }, botOpenPosition.strategy || 'scalping');
+                    await executeOrder({ side: 'SELL', quantity: quantityToSell, orderType: 'MARKET', symbol: selectedMarket.symbol }, botOpenPosition.strategy || 'scalping');
                 } else {
                     logAction(`FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.`, false, 'order_failed', { quantityToSell });
                 }
@@ -386,3 +382,5 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory
     };
 };
+
+    
