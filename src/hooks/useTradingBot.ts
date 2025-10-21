@@ -39,7 +39,7 @@ const STRATEGY_CONFIG = {
     }
 };
 
-const MIN_REQUIRED_HISTORY_FOR_BOT = 30; // Requisito mínimo de velas para operar
+export const MIN_REQUIRED_HISTORY_FOR_BOT = 30; // Requisito mínimo de velas para operar
 
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
@@ -381,6 +381,8 @@ export const useTradingBot = (props: {
     return {
         isBotRunning, toggleBotStatus, botOpenPosition, botLastActionTimestamp,
         isPlacingOrder, placeOrderError, selectedMarketRules, rulesLoading, rulesError,
-        currentPrice, currentMarketPriceHistory
+        currentPrice, currentMarketPriceHistory, MIN_REQUIRED_HISTORY_FOR_BOT
     };
 };
+
+    

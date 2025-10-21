@@ -142,21 +142,20 @@ export default function TradingBotControlPanel() {
         currentPrice,
         botOpenPosition,
         currentMarketPriceHistory,
+        MIN_REQUIRED_HISTORY_FOR_BOT: requiredCandlesForStrategy, // Obtener el requisito del hook
     } = useTradingBot({
         selectedMarket,
         allBinanceBalances: currentBalances,
         onBotAction,
     });
     
-    const requiredCandles = 30; // Mínimo de velas necesarias para la estrategia
-
     const annotatedHistory = useMemo(() => currentMarketPriceHistory.filter(dp => dp && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)), [currentMarketPriceHistory]);
     const latestDataPointForStrategy = useMemo(() => annotatedHistory.at(-1) || null, [annotatedHistory]);
     const lastStrategyDecision = useMemo(() => operationLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [operationLogs]);
 
     const ScalpingAnalysisDescription = () => {
-        if (annotatedHistory.length < requiredCandles) {
-            return `Análisis en espera: se necesitan ${requiredCandles} velas para iniciar. Actual: ${annotatedHistory.length}.`;
+        if (annotatedHistory.length < requiredCandlesForStrategy) {
+            return `Análisis en espera: se necesitan ${requiredCandlesForStrategy} velas para iniciar. Actual: ${annotatedHistory.length}.`;
         }
     
         const latest = latestDataPointForStrategy;
@@ -203,7 +202,7 @@ export default function TradingBotControlPanel() {
                     </CardContent>
                     <CardFooter className="flex-col items-center text-xs text-muted-foreground space-y-1">
                         {selectedMarket && <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}</p>}
-                        {isBotRunning && currentMarketPriceHistory.length < requiredCandles && selectedMarket && <p className="text-orange-500">El bot necesita {requiredCandles} velas para iniciar. Actual: {currentMarketPriceHistory.length}.</p>}
+                        {isBotRunning && currentMarketPriceHistory.length < requiredCandlesForStrategy && selectedMarket && <p className="text-orange-500">El bot necesita {requiredCandlesForStrategy} velas para iniciar análisis. Actual: {currentMarketPriceHistory.length}.</p>}
                         {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
                         {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
                         {rulesLoading && <p className="text-blue-500">Cargando reglas del mercado...</p>}
@@ -296,4 +295,6 @@ export default function TradingBotControlPanel() {
 }
 
     
+    
+
     
