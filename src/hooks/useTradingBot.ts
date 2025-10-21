@@ -39,6 +39,8 @@ const STRATEGY_CONFIG = {
     }
 };
 
+const MIN_REQUIRED_HISTORY_FOR_BOT = 30; // Requisito mínimo de velas para operar
+
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
     allBinanceBalances: BinanceBalance[];
@@ -190,7 +192,7 @@ export const useTradingBot = (props: {
     }, []);
 
     const executeBotStrategy = useCallback(async () => {
-        if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < PRICE_HISTORY_POINTS_TO_KEEP || !selectedMarketRules || isPlacingOrder) {
+        if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT || !selectedMarketRules || isPlacingOrder) {
             return;
         }
         
@@ -382,5 +384,3 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory
     };
 };
-
-    

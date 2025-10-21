@@ -148,39 +148,37 @@ export default function TradingBotControlPanel() {
         onBotAction,
     });
     
-    const requiredCandles = PRICE_HISTORY_POINTS_TO_KEEP;
+    const requiredCandles = 30; // Mínimo de velas necesarias para la estrategia
 
     const annotatedHistory = useMemo(() => currentMarketPriceHistory.filter(dp => dp && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)), [currentMarketPriceHistory]);
     const latestDataPointForStrategy = useMemo(() => annotatedHistory.at(-1) || null, [annotatedHistory]);
     const lastStrategyDecision = useMemo(() => operationLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [operationLogs]);
 
     const ScalpingAnalysisDescription = () => {
-        if (!latestDataPointForStrategy || annotatedHistory.length < requiredCandles) {
-            return `Análisis de Scalping en espera: se necesitan ${requiredCandles} velas para iniciar. Actual: ${annotatedHistory.length}.`;
+        if (annotatedHistory.length < requiredCandles) {
+            return `Análisis en espera: se necesitan ${requiredCandles} velas para iniciar. Actual: ${annotatedHistory.length}.`;
         }
     
         const latest = latestDataPointForStrategy;
-        const { rsi, closePrice, buyConditionsMet, sellConditionsMet } = latest;
+        if (!latest) return "Esperando datos de la última vela...";
+
+        const { rsi, buyConditionsMet } = latest;
     
         if (botOpenPosition) {
-            const { entryPrice, takeProfitPrice, stopLossPrice } = botOpenPosition;
-            return `Posición ABIERTA. Entrada: ${entryPrice.toFixed(2)}. Objetivo (Take Profit): ${takeProfitPrice?.toFixed(2) || 'N/A'}. Límite de Pérdida (Stop Loss): ${stopLossPrice?.toFixed(2) || 'N/A'}. El bot está monitoreando para cerrar la operación.`;
+            const { entryPrice, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
+            const strategyName = strategy === 'sniper' ? 'Francotirador' : 'Scalping';
+            return `Posición ABIERTA (${strategyName}). Entrada: ${entryPrice.toFixed(2)}. Take Profit: ${takeProfitPrice?.toFixed(2) || 'N/A'}. Stop Loss: ${stopLossPrice?.toFixed(2) || 'N/A'}. Monitoreando para cierre.`;
         }
     
-        if (buyConditionsMet && buyConditionsMet > 0) {
-            let reason = `El bot ha detectado una señal de COMPRA porque se cumple ${buyConditionsMet} de 1 condición requerida.`;
-            if (isValidNumber(rsi) && rsi <= 35) {
-                reason += ` Principalmente, el RSI (${rsi.toFixed(1)}) está en zona de sobreventa, indicando que el activo podría estar 'barato'.`;
-            }
-            return reason;
+        if (buyConditionsMet && buyConditionsMet >= 2) {
+            return `Señal de Francotirador detectada (${buyConditionsMet}/2). El bot intentará abrir una posición con objetivos de ganancia más amplios.`;
+        }
+
+        if (buyConditionsMet && buyConditionsMet >= 1) {
+            return `Señal de Scalping detectada (${buyConditionsMet}/1). El bot intentará abrir una posición de corto plazo. RSI: ${isValidNumber(rsi) ? rsi.toFixed(1) : 'N/A'}.`;
         }
     
-        if (sellConditionsMet && sellConditionsMet > 0) {
-            // Recordar: el bot es "long-only", no venderá en corto.
-            return `Se detectan ${sellConditionsMet} condiciones de VENTA. Sin embargo, el bot no tiene una posición abierta para vender, por lo que se mantiene en espera (HOLD).`;
-        }
-    
-        return "Modo Scalping ACTIVO. Esperando la próxima oportunidad de entrada (RSI en sobreventa, cruce MACD o toque de Banda de Bollinger). El bot necesita solo 1 condición para actuar.";
+        return "Modo de Caza ACTIVO. Esperando la próxima oportunidad de entrada (RSI en sobreventa, cruce MACD o toque de Banda de Bollinger). El bot actuará según la fuerza de la señal.";
     };
 
     return (
@@ -205,7 +203,7 @@ export default function TradingBotControlPanel() {
                     </CardContent>
                     <CardFooter className="flex-col items-center text-xs text-muted-foreground space-y-1">
                         {selectedMarket && <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}</p>}
-                        {currentMarketPriceHistory.length < requiredCandles && selectedMarket && <p className="text-orange-500">El bot necesita {requiredCandles} velas para iniciar. Actual: {currentMarketPriceHistory.length}.</p>}
+                        {isBotRunning && currentMarketPriceHistory.length < requiredCandles && selectedMarket && <p className="text-orange-500">El bot necesita {requiredCandles} velas para iniciar. Actual: {currentMarketPriceHistory.length}.</p>}
                         {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
                         {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
                         {rulesLoading && <p className="text-blue-500">Cargando reglas del mercado...</p>}
