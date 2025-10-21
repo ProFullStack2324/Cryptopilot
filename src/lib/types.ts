@@ -161,11 +161,13 @@ export interface BotOpenPosition {
     marketId: string;
     entryPrice: number;
     amount: number;
-    type: 'buy' | 'sell'; 
+    type: 'buy'; // Solo compramos por ahora
     timestamp: number;
     stopLossPrice?: number; 
-    takeProfitPrice?: number; 
+    takeProfitPrice?: number;
+    strategy: 'scalping' | 'sniper'; // Para saber con qué estrategia se abrió la posición
 }
+
 
 // INTERFACES DE BALANCE
 export interface Balance {
@@ -224,5 +226,3 @@ export interface BinanceBalancesDisplayProps {
     isLoading: boolean;
     error: string | null;
 }
-
-    

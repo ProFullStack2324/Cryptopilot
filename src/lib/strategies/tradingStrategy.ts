@@ -12,7 +12,7 @@ import {
 export interface StrategyDecision {
     action: TradeAction;
     orderData?: OrderFormData;
-    details?: any; // Para pasar información adicional, como el conteo de condiciones
+    details?: any; 
 }
 
 // ======================================================================================================
@@ -20,13 +20,13 @@ export interface StrategyDecision {
 // ======================================================================================================
 const STRATEGY_CONFIG = {
     scalping: {
-        minBuyConditions: 1, // Scalping agresivo: 1 es suficiente.
+        minBuyConditions: 1, 
         takeProfitPercentage: 0.008, // 0.8%
         stopLossPercentage: 0.004,   // 0.4%
-        capitalToRiskPercentage: 0.95 // Usaremos un % alto porque se ajusta al mínimo nocional.
+        capitalToRiskPercentage: 0.95 
     },
     sniper: {
-        minBuyConditions: 2, // Sniper conservador: requiere 2 o más.
+        minBuyConditions: 2, 
         takeProfitPercentage: 0.02,  // 2%
         stopLossPercentage: 0.01,    // 1%
         capitalToRiskPercentage: 0.95
@@ -45,7 +45,6 @@ export const decideTradeActionAndAmount = (params: {
     botOpenPosition: BotOpenPosition | null;
     selectedMarketRules: MarketRules;
     logStrategyMessage: (message: string, details?: any) => void;
-    strategyMode: 'scalping' | 'sniper'; // Se añade el modo de estrategia
 }): StrategyDecision => {
     const {
         selectedMarket,
@@ -55,7 +54,6 @@ export const decideTradeActionAndAmount = (params: {
         botOpenPosition,
         selectedMarketRules,
         logStrategyMessage: log,
-        strategyMode
     } = params;
     
     const MIN_REQUIRED_HISTORY = 30;
@@ -67,9 +65,6 @@ export const decideTradeActionAndAmount = (params: {
 
     const latest = currentMarketPriceHistory.at(-1)!;
     const prev = currentMarketPriceHistory.at(-2);
-    
-    // Ahora la configuración se elige según el modo
-    const config = STRATEGY_CONFIG[strategyMode];
     
     const { rsi, upperBollingerBand, lowerBollingerBand, macdHistogram, closePrice } = latest;
     const prevMacdHistogram = prev?.macdHistogram;
@@ -83,76 +78,78 @@ export const decideTradeActionAndAmount = (params: {
 
     const quoteAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.quoteAsset)?.free || 0;
     
-    // --- LÓGICA DE COMPRA (Si NO tenemos posición abierta) ---
-    if (!botOpenPosition) {
-        // Condiciones de compra (son las mismas, lo que cambia es cuántas se requieren)
-        const buyPriceCondition = closePrice <= lowerBollingerBand!;
-        const buyRsiCondition = rsi! <= STRATEGY_CONFIG.rsiBuyThreshold;
-        const buyMacdCondition = macdHistogram! > 0 && prevMacdHistogram! <= 0;
-        
-        const conditionsForBuyMet = [buyPriceCondition, buyRsiCondition, buyMacdCondition];
-        const buyConditionsCount = conditionsForBuyMet.filter(Boolean).length;
-        
+    if (botOpenPosition) {
+        log(`HOLD: Posición de compra ya abierta en modo ${botOpenPosition.strategy}. Monitoreando para salida.`);
+        return { action: 'hold' };
+    }
+
+    // --- LÓGICA DE COMPRA DINÁMICA ---
+    const buyPriceCondition = closePrice <= lowerBollingerBand!;
+    const buyRsiCondition = rsi! <= STRATEGY_CONFIG.rsiBuyThreshold;
+    const buyMacdCondition = macdHistogram! > 0 && prevMacdHistogram! <= 0;
+    
+    const conditionsForBuyMet = [buyPriceCondition, buyRsiCondition, buyMacdCondition];
+    const buyConditionsCount = conditionsForBuyMet.filter(Boolean).length;
+
+    let strategyMode: 'scalping' | 'sniper' | null = null;
+    if (buyConditionsCount >= STRATEGY_CONFIG.sniper.minBuyConditions) {
+        strategyMode = 'sniper';
+    } else if (buyConditionsCount >= STRATEGY_CONFIG.scalping.minBuyConditions) {
+        strategyMode = 'scalping';
+    }
+    
+    if (strategyMode) {
+        const config = STRATEGY_CONFIG[strategyMode];
         const decisionDetails = {
             strategyMode,
             requiredConditions: config.minBuyConditions,
             buyConditionsCount,
-            conditions: {
-                price: buyPriceCondition,
-                rsi: buyRsiCondition,
-                macd: buyMacdCondition
-            }
+            conditions: { price: buyPriceCondition, rsi: buyRsiCondition, macd: buyMacdCondition }
         };
 
-        if (buyConditionsCount >= config.minBuyConditions) {
-            log(`Señal de COMPRA detectada en modo ${strategyMode} (${buyConditionsCount}/${config.minBuyConditions} condiciones cumplidas).`, decisionDetails);
-            
-            const minNotionalValue = selectedMarketRules.minNotional.minNotional;
-            let amountInQuote = quoteAssetBalance * config.capitalToRiskPercentage;
-            
-            log(`Capital a arriesgar (${(config.capitalToRiskPercentage * 100).toFixed(0)}%): ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}. Nocional Mínimo: ${minNotionalValue} ${selectedMarket.quoteAsset}.`);
-
-            if (amountInQuote < minNotionalValue) {
-                log(`Capital a arriesgar es menor que el mínimo. Se intentará usar el valor nocional mínimo.`);
-                amountInQuote = minNotionalValue * 1.01;
-            }
-
-            if (amountInQuote > quoteAssetBalance) {
-                log(`HOLD: Saldo insuficiente (${quoteAssetBalance.toFixed(2)} ${selectedMarket.quoteAsset}) para cubrir la orden mínima de ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}.`);
-                return { action: 'hold_insufficient_funds', details: { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance } };
-            }
-
-            let quantityToBuy = amountInQuote / currentPrice;
-
-            const stepSize = selectedMarketRules.lotSize.stepSize;
-            if (stepSize > 0) {
-                quantityToBuy = Math.floor(quantityToBuy / stepSize) * stepSize;
-            }
-            quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarketRules.precision.amount));
-            
-            if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
-                log(`HOLD: Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido (${selectedMarketRules.lotSize.minQty}).`);
-                return { action: 'hold', details: decisionDetails };
-            }
-
-            return {
-                action: 'buy',
-                orderData: {
-                    symbol: selectedMarket.symbol,
-                    side: 'BUY',
-                    orderType: 'MARKET',
-                    quantity: quantityToBuy,
-                    price: currentPrice
-                },
-                details: decisionDetails
-            };
-        }
+        log(`Señal de COMPRA detectada en modo ${strategyMode} (${buyConditionsCount}/${config.minBuyConditions} condiciones cumplidas).`, decisionDetails);
         
-        return { action: 'hold', details: decisionDetails };
-    } 
-    // --- LÓGICA DE VENTA (Take Profit / Stop Loss, manejado en el hook) ---
-    else {
-        log(`HOLD en modo ${strategyMode}: Posición de compra ya abierta. Monitoreando para salida.`);
-        return { action: 'hold' };
+        const minNotionalValue = selectedMarketRules.minNotional.minNotional;
+        let amountInQuote = quoteAssetBalance * config.capitalToRiskPercentage;
+        
+        log(`Capital a arriesgar (${(config.capitalToRiskPercentage * 100).toFixed(0)}%): ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}. Nocional Mínimo: ${minNotionalValue} ${selectedMarket.quoteAsset}.`);
+
+        if (amountInQuote < minNotionalValue) {
+            log(`Capital a arriesgar es menor que el mínimo. Se intentará usar el valor nocional mínimo.`);
+            amountInQuote = minNotionalValue * 1.01;
+        }
+
+        if (amountInQuote > quoteAssetBalance) {
+            log(`HOLD: Saldo insuficiente (${quoteAssetBalance.toFixed(2)} ${selectedMarket.quoteAsset}) para cubrir la orden mínima de ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}.`);
+            return { action: 'hold_insufficient_funds', details: { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance } };
+        }
+
+        let quantityToBuy = amountInQuote / currentPrice;
+
+        const stepSize = selectedMarketRules.lotSize.stepSize;
+        if (stepSize > 0) {
+            quantityToBuy = Math.floor(quantityToBuy / stepSize) * stepSize;
+        }
+        quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarketRules.precision.amount));
+        
+        if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
+            log(`HOLD: Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido (${selectedMarketRules.lotSize.minQty}).`);
+            return { action: 'hold', details: decisionDetails };
+        }
+
+        return {
+            action: 'buy',
+            orderData: {
+                symbol: selectedMarket.symbol,
+                side: 'BUY',
+                orderType: 'MARKET',
+                quantity: quantityToBuy,
+                price: currentPrice
+            },
+            details: decisionDetails
+        };
     }
+    
+    // Si no se cumple ninguna condición de compra
+    return { action: 'hold' };
 };

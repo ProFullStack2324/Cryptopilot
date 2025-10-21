@@ -80,6 +80,9 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
           return "Se requiere 1 de 3 condiciones para COMPRA.";
       }
       // Sniper mode
+      if (botOpenPosition) {
+        return `Monitoreando salida: TP @ ${botOpenPosition.takeProfitPrice?.toFixed(pricePrecision)}, SL @ ${botOpenPosition.stopLossPrice?.toFixed(pricePrecision)}`;
+    }
       return "Se requieren 2 de 3 condiciones para COMPRA.";
   }
 
@@ -158,5 +161,3 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
     </div>
   );
 }
-
-    
