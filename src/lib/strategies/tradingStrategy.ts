@@ -16,24 +16,24 @@ export interface StrategyDecision {
 }
 
 // ======================================================================================================
-// CONFIGURACIÓN DE LA ESTRATEGIA DE SCALPING
-// Estos son los parámetros que ajustaremos para cambiar el comportamiento del bot.
+// CONFIGURACIÓN DE LAS ESTRATEGIAS
 // ======================================================================================================
-const SCALPING_CONFIG = {
-    // 1. Requisito de Entrada (Compra): ¿Cuántas condiciones deben cumplirse para comprar?
-    minBuyConditions: 1, // Scalping agresivo: 1 es suficiente.
-
-    // 2. Umbrales de Indicadores: ¿Cuándo consideramos que un indicador da una señal?
-    rsiBuyThreshold: 35,   // Comprar cuando RSI <= 35
-    rsiSellThreshold: 65,  // Vender cuando RSI >= 65
-
-    // 3 & 4. Take Profit y Stop Loss (se aplicarán en el hook `useTradingBot`)
-    // No se usan directamente aquí, pero se definen para que el hook los lea.
-    takeProfitPercentage: 0.008, // 0.8%
-    stopLossPercentage: 0.004,   // 0.4%
-
-    // 5. Gestión del Capital: ¿Qué porcentaje del capital arriesgar por operación?
-    capitalToRiskPercentage: 0.95 // Usaremos un % alto (95%) porque lo ajustaremos al mínimo nocional.
+const STRATEGY_CONFIG = {
+    scalping: {
+        minBuyConditions: 1, // Scalping agresivo: 1 es suficiente.
+        takeProfitPercentage: 0.008, // 0.8%
+        stopLossPercentage: 0.004,   // 0.4%
+        capitalToRiskPercentage: 0.95 // Usaremos un % alto porque se ajusta al mínimo nocional.
+    },
+    sniper: {
+        minBuyConditions: 2, // Sniper conservador: requiere 2 o más.
+        takeProfitPercentage: 0.02,  // 2%
+        stopLossPercentage: 0.01,    // 1%
+        capitalToRiskPercentage: 0.95
+    },
+    // Umbrales compartidos
+    rsiBuyThreshold: 35,
+    rsiSellThreshold: 65,
 };
 
 
@@ -45,6 +45,7 @@ export const decideTradeActionAndAmount = (params: {
     botOpenPosition: BotOpenPosition | null;
     selectedMarketRules: MarketRules;
     logStrategyMessage: (message: string, details?: any) => void;
+    strategyMode: 'scalping' | 'sniper'; // Se añade el modo de estrategia
 }): StrategyDecision => {
     const {
         selectedMarket,
@@ -53,7 +54,8 @@ export const decideTradeActionAndAmount = (params: {
         allBinanceBalances,
         botOpenPosition,
         selectedMarketRules,
-        logStrategyMessage: log
+        logStrategyMessage: log,
+        strategyMode
     } = params;
     
     const MIN_REQUIRED_HISTORY = 30;
@@ -65,6 +67,9 @@ export const decideTradeActionAndAmount = (params: {
 
     const latest = currentMarketPriceHistory.at(-1)!;
     const prev = currentMarketPriceHistory.at(-2);
+    
+    // Ahora la configuración se elige según el modo
+    const config = STRATEGY_CONFIG[strategyMode];
     
     const { rsi, upperBollingerBand, lowerBollingerBand, macdHistogram, closePrice } = latest;
     const prevMacdHistogram = prev?.macdHistogram;
@@ -80,16 +85,17 @@ export const decideTradeActionAndAmount = (params: {
     
     // --- LÓGICA DE COMPRA (Si NO tenemos posición abierta) ---
     if (!botOpenPosition) {
-        // Condiciones de compra para la estrategia de scalping
+        // Condiciones de compra (son las mismas, lo que cambia es cuántas se requieren)
         const buyPriceCondition = closePrice <= lowerBollingerBand!;
-        const buyRsiCondition = rsi! <= SCALPING_CONFIG.rsiBuyThreshold;
+        const buyRsiCondition = rsi! <= STRATEGY_CONFIG.rsiBuyThreshold;
         const buyMacdCondition = macdHistogram! > 0 && prevMacdHistogram! <= 0;
         
         const conditionsForBuyMet = [buyPriceCondition, buyRsiCondition, buyMacdCondition];
         const buyConditionsCount = conditionsForBuyMet.filter(Boolean).length;
         
         const decisionDetails = {
-            conditionsForBuyMet,
+            strategyMode,
+            requiredConditions: config.minBuyConditions,
             buyConditionsCount,
             conditions: {
                 price: buyPriceCondition,
@@ -98,23 +104,19 @@ export const decideTradeActionAndAmount = (params: {
             }
         };
 
-        if (buyConditionsCount >= SCALPING_CONFIG.minBuyConditions) {
-            log(`Señal de COMPRA detectada (${buyConditionsCount}/${SCALPING_CONFIG.minBuyConditions} condiciones cumplidas).`, decisionDetails);
+        if (buyConditionsCount >= config.minBuyConditions) {
+            log(`Señal de COMPRA detectada en modo ${strategyMode} (${buyConditionsCount}/${config.minBuyConditions} condiciones cumplidas).`, decisionDetails);
             
             const minNotionalValue = selectedMarketRules.minNotional.minNotional;
-
-            // Lógica de capital ajustada para scalping con saldos pequeños
-            let amountInQuote = quoteAssetBalance * SCALPING_CONFIG.capitalToRiskPercentage;
+            let amountInQuote = quoteAssetBalance * config.capitalToRiskPercentage;
             
-            log(`Capital a arriesgar (${(SCALPING_CONFIG.capitalToRiskPercentage * 100).toFixed(0)}%): ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}. Nocional Mínimo: ${minNotionalValue} ${selectedMarket.quoteAsset}.`);
+            log(`Capital a arriesgar (${(config.capitalToRiskPercentage * 100).toFixed(0)}%): ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}. Nocional Mínimo: ${minNotionalValue} ${selectedMarket.quoteAsset}.`);
 
-            // Si el capital a arriesgar es menor que el mínimo, intentamos usar el mínimo
             if (amountInQuote < minNotionalValue) {
                 log(`Capital a arriesgar es menor que el mínimo. Se intentará usar el valor nocional mínimo.`);
-                amountInQuote = minNotionalValue * 1.01; // Un 1% extra para cubrir fluctuaciones
+                amountInQuote = minNotionalValue * 1.01;
             }
 
-            // Comprobación final de saldo
             if (amountInQuote > quoteAssetBalance) {
                 log(`HOLD: Saldo insuficiente (${quoteAssetBalance.toFixed(2)} ${selectedMarket.quoteAsset}) para cubrir la orden mínima de ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}.`);
                 return { action: 'hold_insufficient_funds', details: { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance } };
@@ -122,14 +124,12 @@ export const decideTradeActionAndAmount = (params: {
 
             let quantityToBuy = amountInQuote / currentPrice;
 
-            // Ajustar la cantidad a las reglas del mercado (stepSize y precision)
             const stepSize = selectedMarketRules.lotSize.stepSize;
             if (stepSize > 0) {
                 quantityToBuy = Math.floor(quantityToBuy / stepSize) * stepSize;
             }
             quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarketRules.precision.amount));
             
-            // Verificación final contra la cantidad mínima del lote
             if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
                 log(`HOLD: Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido (${selectedMarketRules.lotSize.minQty}).`);
                 return { action: 'hold', details: decisionDetails };
@@ -152,10 +152,7 @@ export const decideTradeActionAndAmount = (params: {
     } 
     // --- LÓGICA DE VENTA (Take Profit / Stop Loss, manejado en el hook) ---
     else {
-        // La decisión de vender por estrategia (take profit/stop loss) se manejará en useTradingBot
-        // para tener acceso directo a la `botOpenPosition` y el `currentPrice`.
-        // Esta función solo se preocupa de las señales de entrada.
-        log("HOLD: Posición de compra ya abierta. Monitoreando para salida.");
+        log(`HOLD en modo ${strategyMode}: Posición de compra ya abierta. Monitoreando para salida.`);
         return { action: 'hold' };
     }
 };

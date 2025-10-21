@@ -22,14 +22,20 @@ import { calculateSMA, calculateRSI, calculateMACD, calculateBollingerBands } fr
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
 // ======================================================================================================
-// CONFIGURACIÓN DE LA ESTRATEGIA DE SCALPING
-// Estos son los parámetros que definen el comportamiento del bot.
+// CONFIGURACIÓN DE LA ESTRATEGIA
 // ======================================================================================================
-const SCALPING_CONFIG = {
-    takeProfitPercentage: 0.008, // Vender con una ganancia del 0.8%
-    stopLossPercentage: 0.004,   // Vender con una pérdida del 0.4%
+const STRATEGY_CONFIG = {
+    scalping: {
+        minBuyConditions: 1,
+        takeProfitPercentage: 0.008,
+        stopLossPercentage: 0.004,
+    },
+    sniper: {
+        minBuyConditions: 2,
+        takeProfitPercentage: 0.02,
+        stopLossPercentage: 0.01,
+    }
 };
-
 
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
@@ -50,6 +56,7 @@ export const useTradingBot = (props: {
     const [currentPrice, setCurrentPrice] = useState<number | null>(null);
     const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
     const [botIntervalMs] = useState(5000); // Frecuencia de ejecución de la estrategia (5 segundos)
+    const [strategyMode] = useState<'scalping' | 'sniper'>('scalping'); // Modo de operación actual
 
     const { toast } = useToast();
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -90,10 +97,11 @@ export const useTradingBot = (props: {
                 toast({ title: "Error al colocar orden", description: errorMessage, variant: "destructive" });
                 return false;
             } else {
+                const config = STRATEGY_CONFIG[strategyMode];
                 setBotLastActionTimestamp(Date.now());
                 if (finalOrderData.side === 'BUY' && currentPrice) {
-                    const takeProfitPrice = currentPrice * (1 + SCALPING_CONFIG.takeProfitPercentage);
-                    const stopLossPrice = currentPrice * (1 - SCALPING_CONFIG.stopLossPercentage);
+                    const takeProfitPrice = currentPrice * (1 + config.takeProfitPercentage);
+                    const stopLossPrice = currentPrice * (1 - config.stopLossPercentage);
                     setBotOpenPosition({ 
                         marketId: selectedMarket.id, 
                         entryPrice: currentPrice, 
@@ -120,7 +128,7 @@ export const useTradingBot = (props: {
         } finally {
             if (isMounted.current) setIsPlacingOrder(false);
         }
-    }, [isPlacingOrder, logAction, toast, currentPrice, selectedMarket]);
+    }, [isPlacingOrder, logAction, toast, currentPrice, selectedMarket, strategyMode]);
 
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
         if (!klines || klines.length === 0) return [];
@@ -185,6 +193,8 @@ export const useTradingBot = (props: {
             return;
         }
 
+        const config = STRATEGY_CONFIG[strategyMode];
+
         if (botOpenPosition) {
             const { amount, takeProfitPrice, stopLossPrice } = botOpenPosition;
             
@@ -221,6 +231,7 @@ export const useTradingBot = (props: {
             allBinanceBalances,
             botOpenPosition,
             selectedMarketRules,
+            strategyMode, // Pasar el modo actual
             logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
         });
         
@@ -229,10 +240,10 @@ export const useTradingBot = (props: {
         if (decision.action === 'buy' && decision.orderData) {
             await executeOrder(decision.orderData);
         } else if (decision.action === 'hold_insufficient_funds') {
-            // Este log ya se maneja en onBotAction, no es necesario hacer nada más aquí.
+            // Log ya manejado en onBotAction en page.tsx
         }
 
-    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
+    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder, strategyMode ]);
 
     useEffect(() => {
         isMounted.current = true;
@@ -371,5 +382,3 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory
     };
 };
-
-    
