@@ -16,6 +16,7 @@ import { BotControls } from '@/components/dashboard/bot-controls';
 import { BinanceBalancesDisplay } from '@/components/dashboard/binance-balances-display';
 import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
+import { BotStatusFlow } from '@/components/dashboard/bot-status-flow';
 import { MarketChart } from '@/components/MarketChart';
 import { CHART_COLORS } from '@/components/MarketChart';
 import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
@@ -202,7 +203,7 @@ export default function TradingBotControlPanel() {
                     </CardContent>
                     <CardFooter className="flex-col items-center text-xs text-muted-foreground space-y-1">
                         {selectedMarket && <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}</p>}
-                        {isBotRunning && currentMarketPriceHistory.length < requiredCandlesForStrategy && selectedMarket && <p className="text-orange-500">El bot necesita {requiredCandlesForStrategy} velas para iniciar análisis. Actual: {currentMarketPriceHistory.length}.</p>}
+                        {isBotRunning && annotatedHistory.length < requiredCandlesForStrategy && <p className="text-orange-500 font-semibold">El bot necesita {requiredCandlesForStrategy} velas para iniciar análisis. Actual: {annotatedHistory.length}.</p>}
                         {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
                         {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
                         {rulesLoading && <p className="text-blue-500">Cargando reglas del mercado...</p>}
@@ -213,7 +214,12 @@ export default function TradingBotControlPanel() {
             </header>
 
             <main className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
-                <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
+                     <BotStatusFlow 
+                        isBotRunning={isBotRunning}
+                        dataLoadedCount={annotatedHistory.length}
+                        requiredDataCount={requiredCandlesForStrategy}
+                    />
                     <Card>
                         <CardHeader><CardTitle>Reglas del Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
                         <CardContent>
@@ -293,8 +299,3 @@ export default function TradingBotControlPanel() {
         </div>
     );
 }
-
-    
-    
-
-    
