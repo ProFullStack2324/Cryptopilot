@@ -1,4 +1,3 @@
-
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -303,5 +302,3 @@ export default function TradingBotControlPanel() {
         </div>
     );
 }
-
-    
