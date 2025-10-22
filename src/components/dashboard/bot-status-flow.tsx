@@ -5,6 +5,7 @@ import React from 'react';
 import { cn } from "@/lib/utils";
 import { CheckCircle, Loader, Search, PlayCircle, Bot } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface BotStatusFlowProps {
     isBotRunning: boolean;
@@ -39,7 +40,7 @@ const StatusStep = ({ icon: Icon, title, description, status, progress }: StepPr
                 )}>
                     <Icon className="w-4 h-4" />
                 </div>
-                { (isActive || isCompleted) && <div className="mt-2 w-0.5 h-8 bg-border" />}
+                { (status === 'active' || status === 'completed') && <div className="mt-2 w-0.5 h-8 bg-border" />}
             </div>
             <div className="pt-1">
                 <p className={cn(
@@ -64,7 +65,6 @@ const StatusStep = ({ icon: Icon, title, description, status, progress }: StepPr
 
 export function BotStatusFlow({ isBotRunning, dataLoadedCount, requiredDataCount }: BotStatusFlowProps) {
     
-    const isWarmingUp = isBotRunning && dataLoadedCount < requiredDataCount;
     const isHunting = isBotRunning && dataLoadedCount >= requiredDataCount;
 
     let step1Status: StepProps['status'] = 'pending';
@@ -76,25 +76,26 @@ export function BotStatusFlow({ isBotRunning, dataLoadedCount, requiredDataCount
 
     if (isBotRunning) {
         step1Status = 'completed';
-        step2Status = 'active';
-        step2Description = `Recolectando velas (${dataLoadedCount}/${requiredDataCount})`;
-        step2Progress = (dataLoadedCount / requiredDataCount) * 100;
-    }
-
-    if (isWarmingUp) {
-        // La descripción y progreso ya están configurados
+        if (dataLoadedCount < requiredDataCount) {
+            step2Status = 'active';
+            step2Description = `Recolectando velas (${dataLoadedCount}/${requiredDataCount})`;
+            step2Progress = (dataLoadedCount / requiredDataCount) * 100;
+        } else {
+            step2Status = 'completed';
+            step2Description = `Datos suficientes recolectados (${requiredDataCount}/${requiredDataCount})`;
+            step3Status = 'active';
+        }
     }
 
     if (isHunting) {
-        step2Status = 'completed';
-        step2Description = `Datos suficientes recolectados (${requiredDataCount}/${requiredDataCount})`;
         step3Status = 'active';
     }
-
+    
     if (!isBotRunning) {
         step1Status = 'pending';
         step2Status = 'pending';
         step3Status = 'pending';
+        step2Description = 'Esperando inicio del bot...';
     }
 
 

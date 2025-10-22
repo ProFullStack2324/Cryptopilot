@@ -1,4 +1,4 @@
-// ru ta  sr c/lib/strategies/tradingStrategy.ts
+// src/lib/strategies/tradingStrategy.ts
 import {
     Market,
     MarketRules,
@@ -8,6 +8,7 @@ import {
     OrderFormData,
     MarketPriceDataPoint
 } from '@/lib/types';
+import { MIN_REQUIRED_HISTORY_FOR_BOT } from '@/hooks/useTradingBot';
 
 export interface StrategyDecision {
     action: TradeAction;
@@ -56,10 +57,8 @@ export const decideTradeActionAndAmount = (params: {
         logStrategyMessage: log,
     } = params;
     
-    const MIN_REQUIRED_HISTORY = 30;
-
-    if (currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY) {
-        log(`HOLD: Historial de mercado insuficiente (${currentMarketPriceHistory.length}/${MIN_REQUIRED_HISTORY}).`);
+    if (currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
+        log(`HOLD: Historial de mercado insuficiente (${currentMarketPriceHistory.length}/${MIN_REQUIRED_HISTORY_FOR_BOT}).`);
         return { action: 'hold' };
     }
 

@@ -13,7 +13,6 @@ import {
     ApiResult,
     KLine,
     TradeEndpointResponse,
-    OrderFormData
 } from '@/lib/types';
 
 import { decideTradeActionAndAmount } from '@/lib/strategies/tradingStrategy';
@@ -40,6 +39,16 @@ const STRATEGY_CONFIG = {
 };
 
 export const MIN_REQUIRED_HISTORY_FOR_BOT = 30; // Requisito mínimo de velas para operar
+
+// Interfaz para una orden
+interface OrderData {
+    symbol: string;
+    side: 'BUY' | 'SELL';
+    type: 'MARKET' | 'LIMIT';
+    quantity: number;
+    price?: number;
+}
+
 
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
@@ -71,7 +80,7 @@ export const useTradingBot = (props: {
         onBotAction({ type, success, message, details, data, timestamp: Date.now() });
     }, [onBotAction]);
 
-    const executeOrder = useCallback(async (orderData: OrderFormData, strategyForOrder: 'scalping' | 'sniper') => {
+    const executeOrder = useCallback(async (orderData: OrderData, strategyForOrder: 'scalping' | 'sniper') => {
         if (isPlacingOrder) return false;
         if (!selectedMarket) {
             logAction("FALLO al colocar orden: No hay mercado seleccionado.", false, 'order_failed');
@@ -85,9 +94,11 @@ export const useTradingBot = (props: {
             ...orderData,
             symbol: selectedMarket.symbol,
             type: 'market', // Scalping y Sniper usan órdenes de mercado para rapidez
+            side: orderData.side.toLowerCase() as 'buy' | 'sell',
+            amount: orderData.quantity,
         };
     
-        logAction(`Intento de orden (${strategyForOrder}): ${finalOrderData.side} ${finalOrderData.amount} ${finalOrderData.symbol}`, true, 'order_placed', finalOrderData);
+        logAction(`Intento de orden (${strategyForOrder}): ${finalOrderData.side.toUpperCase()} ${finalOrderData.amount} ${finalOrderData.symbol}`, true, 'order_placed', finalOrderData);
     
         try {
             const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(finalOrderData) });
@@ -217,7 +228,7 @@ export const useTradingBot = (props: {
                 quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarketRules.precision.amount));
 
                 if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
-                    await executeOrder({ side: 'sell', amount: quantityToSell, orderType: 'market', symbol: selectedMarket.symbol }, botOpenPosition.strategy || 'scalping');
+                    await executeOrder({ side: 'SELL', amount: quantityToSell, type: 'MARKET', symbol: selectedMarket.symbol }, botOpenPosition.strategy || 'scalping');
                 } else {
                     logAction(`FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.`, false, 'order_failed', { quantityToSell });
                 }
@@ -377,12 +388,14 @@ export const useTradingBot = (props: {
     }, [fetchInitialData]);
 
     const updateMarketData = useCallback(async () => {
-        if (!selectedMarket?.symbol) return;
+        if (!selectedMarket?.symbol || !isMounted.current) return;
         try {
             // Fetch the last 2 candles to ensure we can see if the latest one is new/closed
             const response = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=2`);
             const klinesData: ApiResult<{klines: KLine[]}> = await response.json();
             
+            if (!isMounted.current) return;
+
             if (!response.ok || !klinesData.success || !klinesData.data?.klines || klinesData.data.klines.length === 0) {
                 // Don't throw an error, just log it, to avoid stopping the bot on a transient network issue
                 console.warn("Could not fetch new market data.");
@@ -405,8 +418,9 @@ export const useTradingBot = (props: {
                 }
 
                 // If it's a new candle, re-annotate the entire history with the new candle
-                const newFullKlines = [...currentMarketPriceHistory.map(dp => [dp.timestamp, dp.openPrice, dp.highPrice, dp.lowPrice, dp.closePrice, dp.volume]), latestKline].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
-                const reannotatedHistory = annotateMarketPriceHistory(newFullKlines as KLine[]);
+                const newFullKlines = [...prevHistory.map(dp => [dp.timestamp, dp.openPrice, dp.highPrice, dp.lowPrice, dp.closePrice, dp.volume] as KLine), latestKline].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
+                
+                const reannotatedHistory = annotateMarketPriceHistory(newFullKlines);
 
                 if (reannotatedHistory.length > 0) {
                     setCurrentPrice(reannotatedHistory.at(-1)!.closePrice);
@@ -419,7 +433,7 @@ export const useTradingBot = (props: {
             console.error("Failed to update market data:", error);
             // Don't toast here to avoid spamming the user on network hiccups
         }
-    }, [selectedMarket?.symbol, annotateMarketPriceHistory, currentMarketPriceHistory]);
+    }, [selectedMarket?.symbol, annotateMarketPriceHistory]);
 
 
     useEffect(() => {
@@ -439,6 +453,6 @@ export const useTradingBot = (props: {
     return {
         isBotRunning, toggleBotStatus, botOpenPosition, botLastActionTimestamp,
         isPlacingOrder, placeOrderError, selectedMarketRules, rulesLoading, rulesError,
-        currentPrice, currentMarketPriceHistory, MIN_REQUIRED_HISTORY_FOR_BOT
+        currentPrice, currentMarketPriceHistory
     };
 };
