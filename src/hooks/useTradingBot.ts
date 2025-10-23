@@ -38,7 +38,7 @@ const STRATEGY_CONFIG = {
     }
 };
 
-export const MIN_REQUIRED_HISTORY_FOR_BOT = 30; // Requisito mínimo de velas para operar
+export const MIN_REQUIRED_HISTORY_FOR_BOT = 51; // Requisito mínimo de velas para operar
 
 // Interfaz para una orden
 interface OrderData {
@@ -325,7 +325,7 @@ export const useTradingBot = (props: {
                     maxQty: parseFloat(lotSizeFilter?.maxQty) || 0,
                     stepSize: parseFloat(lotSizeFilter?.stepSize) || 0,
                 },
-                minNotional: {
+                minNotional: { 
                     minNotional: parseFloat(minNotionalFilter?.minNotional || minNotionalFilter?.notional) || 0,
                 },
                 priceFilter: {

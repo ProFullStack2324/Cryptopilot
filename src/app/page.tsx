@@ -7,7 +7,6 @@ import {
     Market,
     BinanceBalance,
     MarketPriceDataPoint,
-    PRICE_HISTORY_POINTS_TO_KEEP
 } from '@/lib/types'; 
 
 // Importaciones de Componentes de Dashboard
@@ -36,13 +35,13 @@ const MOCK_MARKETS: Market[] = [
         id: "BTCUSDT", symbol: "BTCUSDT", baseAsset: "BTC", quoteAsset: "USDT", active: true,
         precision: { amount: 5, price: 2, base: 8, quote: 8 },
         limits: { amount: { min: 0.00001, max: 100 }, price: { min: 0.01, max: 1000000 } , cost: { min: 10 } },
-        info: {}, pricePrecision: 2, amountPrecision: 5, latestPrice: null, change24h: null,
+        info: {}, amountPrecision: 5, latestPrice: null, change24h: null, pricePrecision: 2,
     },
     {
         id: "ETHUSDT", symbol: "ETHUSDT", baseAsset: "ETH", quoteAsset: "USDT", active: true,
         precision: { amount: 4, price: 2, base: 8, quote: 8 },
         limits: { amount: { min: 0.0001, max: 1000 }, price: { min: 0.01, max: 10000 } , cost: { min: 10 } },
-        info: {}, pricePrecision: 2, amountPrecision: 4, latestPrice: null, change24h: null,
+        info: {}, amountPrecision: 4, latestPrice: null, change24h: null, pricePrecision: 2,
     },
 ];
 
@@ -164,7 +163,7 @@ export default function TradingBotControlPanel() {
         const latest = latestDataPointForStrategy;
         if (!latest) return "Esperando datos de la última vela...";
 
-        const { rsi, buyConditionsMet, sellConditionsMet } = latest;
+        const { buyConditionsMet, sellConditionsMet } = latest;
     
         if (botOpenPosition) {
             const { entryPrice, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
