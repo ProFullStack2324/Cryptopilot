@@ -182,7 +182,7 @@ export default function TradingBotControlPanel() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 sm:p-6 lg:p-8 flex flex-col">
+        <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8 flex flex-col">
             <header className="w-full mb-6">
                 <Card className="shadow-lg rounded-xl">
                     <CardHeader>
@@ -199,11 +199,15 @@ export default function TradingBotControlPanel() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <BotControls isBotRunning={isBotRunning} onToggleBot={toggleBotStatus} />
+                        <BotControls 
+                            isBotRunning={isBotRunning} 
+                            onToggleBot={toggleBotStatus}
+                            disabled={!selectedMarket || rulesLoading || !!rulesError}
+                        />
                     </CardContent>
                     <CardFooter className="flex-col items-center text-xs text-muted-foreground space-y-1">
                         {selectedMarket && <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}</p>}
-                        {isBotRunning && annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT && <p className="text-orange-500 font-semibold">El bot necesita {MIN_REQUIRED_HISTORY_FOR_BOT} velas para iniciar análisis. Actual: {annotatedHistory.length}.</p>}
+                        {isBotRunning && annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT && <p className="text-orange-500 font-semibold">Análisis en espera: se necesitan {MIN_REQUIRED_HISTORY_FOR_BOT} velas para iniciar. Actual: {annotatedHistory.length}.</p>}
                         {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
                         {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
                         {rulesLoading && <p className="text-blue-500">Cargando reglas del mercado...</p>}
