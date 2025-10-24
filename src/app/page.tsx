@@ -1,3 +1,4 @@
+
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -153,7 +154,7 @@ export default function TradingBotControlPanel() {
     const AnalysisDescription = () => {
         if (!isBotRunning) {
             if (annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
-                 return `Calentamiento de datos: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas. Actual: ${annotatedHistory.length}. El bot se podrá iniciar al completar la carga.`;
+                 return `Esperando datos: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas. Actual: ${annotatedHistory.length}. El bot se podrá iniciar al completar la carga.`;
             }
             return "El bot está detenido. Inícialo para comenzar el análisis.";
         }
@@ -210,7 +211,6 @@ export default function TradingBotControlPanel() {
                     </CardContent>
                     <CardFooter className="flex-col items-center text-xs text-muted-foreground space-y-1">
                         {selectedMarket && <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}</p>}
-                        {annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT && <p className="text-orange-500 font-semibold">Calentamiento de datos: se necesitan {MIN_REQUIRED_HISTORY_FOR_BOT} velas. Actual: {annotatedHistory.length}.</p>}
                         {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
                         {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
                         {rulesLoading && <p className="text-blue-500">Cargando reglas del mercado...</p>}
@@ -306,4 +306,5 @@ export default function TradingBotControlPanel() {
             </main>
         </div>
     );
-}
+
+    
