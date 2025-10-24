@@ -103,12 +103,13 @@ export const useTradingBot = (props: {
             } else {
                 const config = STRATEGY_CONFIG[strategyForOrder];
                 setBotLastActionTimestamp(Date.now());
-                if (finalOrderData.side === 'buy' && currentPrice) {
-                    const takeProfitPrice = currentPrice * (1 + config.takeProfitPercentage);
-                    const stopLossPrice = currentPrice * (1 - config.stopLossPercentage);
+                if (finalOrderData.side === 'buy' && result.data?.price) {
+                    const entryPrice = parseFloat(result.data.price);
+                    const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
+                    const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
                     setBotOpenPosition({
                         marketId: selectedMarket.id,
-                        entryPrice: currentPrice,
+                        entryPrice: entryPrice,
                         amount: finalOrderData.amount,
                         type: 'buy',
                         timestamp: Date.now(),
@@ -133,7 +134,7 @@ export const useTradingBot = (props: {
         } finally {
             if (isMounted.current) setIsPlacingOrder(false);
         }
-    }, [isPlacingOrder, logAction, toast, currentPrice, selectedMarket]);
+    }, [isPlacingOrder, logAction, toast, selectedMarket]);
     
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
         if (!klines || klines.length === 0) return [];
@@ -225,7 +226,7 @@ export const useTradingBot = (props: {
                 quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarketRules.precision.amount));
     
                 if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
-                    await executeOrder({ side: 'SELL', quantity: quantityToSell, price: currentPrice }, strategy || 'scalping');
+                    await executeOrder({ side: 'sell', quantity: quantityToSell, price: currentPrice }, strategy || 'scalping');
                 } else {
                     logAction(`FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.`, false, 'order_failed', { quantityToSell });
                 }
@@ -233,8 +234,6 @@ export const useTradingBot = (props: {
             }
         }
         
-        // La lógica de compra solo se ejecuta si NO hay una posición abierta.
-        // Si hay una posición abierta y no se cumplió ninguna condición de venta, la función simplemente termina aquí.
         if (!botOpenPosition) {
             const decision = decideTradeActionAndAmount({
                 selectedMarket,
@@ -251,12 +250,11 @@ export const useTradingBot = (props: {
             }
     
             if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
-                await executeOrder({ side: 'BUY', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
+                await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
             } else if (decision.action === 'hold_insufficient_funds') {
                 logAction(`Decisión: ${decision.action.toUpperCase()}. Razón: Fondos insuficientes.`, false, 'strategy_decision', decision.details, { action: decision.action });
             }
         } else {
-            // Si hay una posición abierta pero no se cumplieron las condiciones de venta, simplemente logueamos "HOLD"
             logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`);
         }
     
