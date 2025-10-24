@@ -152,6 +152,9 @@ export default function TradingBotControlPanel() {
 
     const AnalysisDescription = () => {
         if (!isBotRunning) {
+            if (annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
+                return `Calentamiento de datos: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas. Actual: ${annotatedHistory.length}.`;
+            }
             return "El bot está detenido. Inícialo para comenzar el análisis.";
         }
     
@@ -202,12 +205,12 @@ export default function TradingBotControlPanel() {
                         <BotControls 
                             isBotRunning={isBotRunning} 
                             onToggleBot={toggleBotStatus}
-                            disabled={!selectedMarket || rulesLoading || !!rulesError}
+                            disabled={!selectedMarket || rulesLoading || !!rulesError || annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT}
                         />
                     </CardContent>
                     <CardFooter className="flex-col items-center text-xs text-muted-foreground space-y-1">
                         {selectedMarket && <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}</p>}
-                        {isBotRunning && annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT && <p className="text-orange-500 font-semibold">Análisis en espera: se necesitan {MIN_REQUIRED_HISTORY_FOR_BOT} velas para iniciar. Actual: {annotatedHistory.length}.</p>}
+                        {annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT && <p className="text-orange-500 font-semibold">Calentamiento de datos: se necesitan {MIN_REQUIRED_HISTORY_FOR_BOT} velas. Actual: {annotatedHistory.length}.</p>}
                         {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
                         {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
                         {rulesLoading && <p className="text-blue-500">Cargando reglas del mercado...</p>}
