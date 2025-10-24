@@ -111,8 +111,6 @@ export interface MarketPriceDataPoint {
     middleBollingerBand?: number;
     lowerBollingerBand?: number;
 
-    strategySignal?: TradeAction;
-
     // Conteo de condiciones para la visualización de zonas
     buyConditionsMet?: number;
     sellConditionsMet?: number;

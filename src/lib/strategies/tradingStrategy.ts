@@ -1,4 +1,4 @@
-// src/lib/strategies/tradingStrategy.ts
+// ru ta  src/lib/strategies/tradingStrategy.ts
 import {
     Market,
     MarketRules,
@@ -12,7 +12,7 @@ import { MIN_REQUIRED_HISTORY_FOR_BOT } from '@/hooks/useTradingBot';
 
 export interface StrategyDecision {
     action: TradeAction;
-    orderData?: OrderFormData;
+    orderData?: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'BUY' | 'SELL'; quantity: number };
     details?: any; 
 }
 
@@ -139,9 +139,7 @@ export const decideTradeActionAndAmount = (params: {
         return {
             action: 'buy',
             orderData: {
-                symbol: selectedMarket.symbol,
                 side: 'BUY',
-                orderType: 'MARKET',
                 quantity: quantityToBuy,
                 price: currentPrice
             },

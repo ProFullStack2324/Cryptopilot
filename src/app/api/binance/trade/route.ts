@@ -41,9 +41,6 @@ export async function POST(req: Request) {
     console.log(`[API/Binance/Trade/Mainnet] Creando orden: ${side.toUpperCase()} ${amount} ${ccxtSymbol} (${type.toUpperCase()})`);
     let order;
     if (type === 'market') {
-      // Para Market BUY, Binance puede requerir el 'cost' (cuánto USDT quieres gastar) en lugar de 'amount' (cuánto BTC quieres comprar)
-      // CCXT maneja esto a través de params. Para una market buy, es a menudo mejor especificar el costo.
-      // Sin embargo, para mantener consistencia con la lógica del bot, seguiremos pasando 'amount', ccxt lo manejará.
       order = await exchangeMainnet.createMarketOrder(ccxtSymbol, side, amount);
     } else {
       order = await exchangeMainnet.createLimitOrder(ccxtSymbol, side, amount, price!);

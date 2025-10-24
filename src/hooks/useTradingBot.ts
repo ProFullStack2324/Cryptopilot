@@ -13,6 +13,7 @@ import {
     ApiResult,
     KLine,
     TradeEndpointResponse,
+    OrderFormData
 } from '@/lib/types';
 
 import { decideTradeActionAndAmount } from '@/lib/strategies/tradingStrategy';
@@ -40,16 +41,6 @@ const STRATEGY_CONFIG = {
 
 export const MIN_REQUIRED_HISTORY_FOR_BOT = 51; // Requisito mínimo de velas para operar
 
-// Interfaz para una orden
-interface OrderData {
-    symbol: string;
-    side: 'BUY' | 'SELL';
-    type: 'MARKET' | 'LIMIT';
-    quantity: number;
-    price?: number;
-}
-
-
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
     allBinanceBalances: BinanceBalance[];
@@ -69,18 +60,16 @@ export const useTradingBot = (props: {
     const [currentPrice, setCurrentPrice] = useState<number | null>(null);
     const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
     const [botIntervalMs] = useState(5000); // Frecuencia de ejecución de la estrategia (5 segundos)
-    const [dataUpdateIntervalMs] = useState(15000); // Frecuencia de actualización de datos de mercado (15 segundos)
     
     const { toast } = useToast();
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const dataIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isMounted = useRef(false);
 
     const logAction = useCallback((message: string, success: boolean, type: BotActionDetails['type'], details?: any, data?: any) => {
         onBotAction({ type, success, message, details, data, timestamp: Date.now() });
     }, [onBotAction]);
 
-    const executeOrder = useCallback(async (orderData: OrderData, strategyForOrder: 'scalping' | 'sniper') => {
+    const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'BUY' | 'SELL'; quantity: number }, strategyForOrder: 'scalping' | 'sniper') => {
         if (isPlacingOrder) return false;
         if (!selectedMarket) {
             logAction("FALLO al colocar orden: No hay mercado seleccionado.", false, 'order_failed');
@@ -91,14 +80,14 @@ export const useTradingBot = (props: {
         setPlaceOrderError(null);
     
         const finalOrderData = {
-            ...orderData,
             symbol: selectedMarket.symbol,
-            type: 'market', // Scalping y Sniper usan órdenes de mercado para rapidez
-            side: orderData.side.toLowerCase() as 'buy' | 'sell',
+            type: 'market',
+            side: orderData.side,
             amount: orderData.quantity,
+            price: orderData.price,
         };
     
-        logAction(`Intento de orden (${strategyForOrder}): ${finalOrderData.side.toUpperCase()} ${finalOrderData.amount} ${finalOrderData.symbol}`, true, 'order_placed', finalOrderData);
+        logAction(`Intento de orden (${strategyForOrder}): ${finalOrderData.side} ${finalOrderData.amount} ${finalOrderData.symbol}`, true, 'order_placed', finalOrderData);
     
         try {
             const response = await fetch('/api/binance/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(finalOrderData) });
@@ -113,7 +102,7 @@ export const useTradingBot = (props: {
             } else {
                 const config = STRATEGY_CONFIG[strategyForOrder];
                 setBotLastActionTimestamp(Date.now());
-                if (finalOrderData.side === 'buy' && currentPrice) {
+                if (finalOrderData.side === 'BUY' && currentPrice) {
                     const takeProfitPrice = currentPrice * (1 + config.takeProfitPercentage);
                     const stopLossPrice = currentPrice * (1 - config.stopLossPercentage);
                     setBotOpenPosition({
@@ -127,7 +116,7 @@ export const useTradingBot = (props: {
                         strategy: strategyForOrder,
                     });
                     toast({ title: `¡Orden de Compra (${strategyForOrder}) Exitosa!`, variant: "default" });
-                } else if (finalOrderData.side === 'sell') {
+                } else if (finalOrderData.side === 'SELL') {
                     setBotOpenPosition(null);
                     toast({ title: "¡Orden de Venta Exitosa!", variant: "default" });
                 }
@@ -228,7 +217,7 @@ export const useTradingBot = (props: {
                 quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarketRules.precision.amount));
 
                 if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
-                    await executeOrder({ side: 'SELL', amount: quantityToSell, type: 'MARKET', symbol: selectedMarket.symbol }, botOpenPosition.strategy || 'scalping');
+                    await executeOrder({ side: 'SELL', quantity: quantityToSell }, botOpenPosition.strategy || 'scalping');
                 } else {
                     logAction(`FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.`, false, 'order_failed', { quantityToSell });
                 }
@@ -245,20 +234,15 @@ export const useTradingBot = (props: {
             allBinanceBalances,
             botOpenPosition,
             selectedMarketRules,
-            logStrategyMessage: (message: string, details?: any) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
+            logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
         });
         
-        let strategyToExecute: 'scalping' | 'sniper' = 'scalping'; // Default a scalping
-        if (decision.details?.strategyMode) {
-             strategyToExecute = decision.details.strategyMode;
+        if (decision.action !== 'hold' && decision.action !== 'hold_insufficient_funds') {
+             logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()} en modo ${decision.details?.strategyMode}`, true, 'strategy_decision', decision.details, { action: decision.action });
         }
 
-        if (decision.action !== 'hold' && decision.action !== 'hold_insufficient_funds') {
-             logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()} en modo ${strategyToExecute}`, true, 'strategy_decision', decision.details, { action: decision.action });
-        }
-        
-        if (decision.action === 'buy' && decision.orderData) {
-            await executeOrder(decision.orderData, strategyToExecute);
+        if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
+            await executeOrder(decision.orderData, decision.details.strategyMode);
         } else if (decision.action === 'hold_insufficient_funds') {
             logAction(`Decisión: ${decision.action.toUpperCase()}. Razón: Fondos insuficientes.`, false, 'strategy_decision', decision.details, { action: decision.action });
         }
@@ -285,112 +269,107 @@ export const useTradingBot = (props: {
         });
     }, [selectedMarket?.symbol, toast, logAction]);
 
-    const fetchInitialData = useCallback(async () => {
-        if (!selectedMarket?.symbol) {
-            if (isMounted.current) {
-                setSelectedMarketRules(null);
-                setRulesLoading(false);
-                setCurrentMarketPriceHistory([]);
-                setCurrentPrice(null);
-                setIsDataLoaded(false);
-            }
-            return;
-        }
-
-        if (!isMounted.current) return;
-        setRulesLoading(true);
-        setRulesError(null);
-        setIsDataLoaded(false);
-
-        try {
-            const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
-            const rulesData: ApiResult<any> = await rulesResponse.json();
-            
-            if (!rulesResponse.ok || !rulesData.success) {
-                throw new Error(rulesData.message || `Error al cargar reglas del mercado.`);
-            }
-            
-            const marketInfo = rulesData.data;
-            const lotSizeFilter = marketInfo.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
-            const minNotionalFilter = marketInfo.filters?.find((f: any) => f.filterType === 'NOTIONAL' || f.filterType === 'MIN_NOTIONAL');
-            const priceFilter = marketInfo.filters?.find((f: any) => f.filterType === 'PRICE_FILTER');
-
-            const parsedRules: MarketRules = {
-                symbol: marketInfo.symbol,
-                status: marketInfo.active ? 'TRADING' : 'BREAK',
-                baseAsset: marketInfo.baseAsset,
-                quoteAsset: marketInfo.quoteAsset,
-                lotSize: {
-                    minQty: parseFloat(lotSizeFilter?.minQty) || 0,
-                    maxQty: parseFloat(lotSizeFilter?.maxQty) || 0,
-                    stepSize: parseFloat(lotSizeFilter?.stepSize) || 0,
-                },
-                minNotional: { 
-                    minNotional: parseFloat(minNotionalFilter?.minNotional || minNotionalFilter?.notional) || 0,
-                },
-                priceFilter: {
-                    minPrice: parseFloat(priceFilter?.minPrice) || 0,
-                    maxPrice: parseFloat(priceFilter?.maxPrice) || 0,
-                    tickSize: parseFloat(priceFilter?.tickSize) || 0,
-                },
-                precision: {
-                    price: marketInfo.pricePrecision,
-                    amount: marketInfo.amountPrecision,
-                    base: marketInfo.baseAssetPrecision,
-                    quote: marketInfo.quotePrecision,
-                },
-                baseAssetPrecision: marketInfo.baseAssetPrecision,
-                quotePrecision: marketInfo.quotePrecision,
-                icebergAllowed: marketInfo.icebergAllowed || false,
-                ocoAllowed: marketInfo.ocoAllowed || false,
-                quoteOrderQtyMarketAllowed: marketInfo.quoteOrderQtyMarketAllowed || false,
-                isSpotTradingAllowed: marketInfo.isSpotTradingAllowed || false,
-                isMarginTradingAllowed: marketInfo.isMarginTradingAllowed || false,
-                filters: marketInfo.filters || [],
-            };
-            
-            if (isMounted.current) setSelectedMarketRules(parsedRules);
-
-        } catch (error: any) {
-            if (isMounted.current) {
-                setRulesError(error.message);
-                toast({ title: "Error al Cargar Reglas", description: error.message, variant: "destructive" });
-            }
-        } finally {
-            if (isMounted.current) setRulesLoading(false);
-        }
-
-        try {
-            const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
-            const klinesData: ApiResult<{klines: KLine[]}> = await klinesResponse.json();
-            if (!klinesResponse.ok || !klinesData.success) throw new Error(klinesData.message || "Error al cargar velas (klines).");
-            const klinesArray = klinesData.data?.klines;
-            if (Array.isArray(klinesArray) && klinesArray.length > 0) {
-                const historyWithIndicators = annotateMarketPriceHistory(klinesArray);
-                if (isMounted.current) {
-                    setCurrentMarketPriceHistory(historyWithIndicators);
-                    setCurrentPrice(historyWithIndicators.at(-1)?.closePrice || null);
-                    setIsDataLoaded(true);
-                }
-            } else {
-                if (isMounted.current) setIsDataLoaded(false);
-            }
-        } catch (error: any) {
-            if (isMounted.current) {
-                toast({ title: "Advertencia al Cargar Gráfico", description: error.message, variant: "destructive" });
-                setCurrentMarketPriceHistory([]); setIsDataLoaded(false);
-            }
-        }
-    }, [selectedMarket?.symbol, toast, annotateMarketPriceHistory]);
-    
     useEffect(() => {
-        fetchInitialData();
-        const initialDataInterval = setInterval(fetchInitialData, dataUpdateIntervalMs);
+        const fetchInitialData = async () => {
+            if (!selectedMarket?.symbol) {
+                if (isMounted.current) {
+                    setSelectedMarketRules(null);
+                    setRulesLoading(false);
+                    setCurrentMarketPriceHistory([]);
+                    setCurrentPrice(null);
+                    setIsDataLoaded(false);
+                }
+                return;
+            }
 
-        return () => {
-            clearInterval(initialDataInterval);
+            if (!isMounted.current) return;
+            setRulesLoading(true);
+            setRulesError(null);
+            setIsDataLoaded(false);
+
+            try {
+                const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
+                const rulesData: ApiResult<any> = await rulesResponse.json();
+                
+                if (!rulesResponse.ok || !rulesData.success) {
+                    throw new Error(rulesData.message || `Error al cargar reglas del mercado.`);
+                }
+                
+                const marketInfo = rulesData.data;
+                const lotSizeFilter = marketInfo.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
+                const minNotionalFilter = marketInfo.filters?.find((f: any) => f.filterType === 'NOTIONAL' || f.filterType === 'MIN_NOTIONAL');
+                const priceFilter = marketInfo.filters?.find((f: any) => f.filterType === 'PRICE_FILTER');
+
+                const parsedRules: MarketRules = {
+                    symbol: marketInfo.symbol,
+                    status: marketInfo.active ? 'TRADING' : 'BREAK',
+                    baseAsset: marketInfo.baseAsset,
+                    quoteAsset: marketInfo.quoteAsset,
+                    lotSize: {
+                        minQty: parseFloat(lotSizeFilter?.minQty) || 0,
+                        maxQty: parseFloat(lotSizeFilter?.maxQty) || 0,
+                        stepSize: parseFloat(lotSizeFilter?.stepSize) || 0,
+                    },
+                    minNotional: {
+                        minNotional: parseFloat(minNotionalFilter?.minNotional || minNotionalFilter?.notional) || 0,
+                    },
+                    priceFilter: {
+                        minPrice: parseFloat(priceFilter?.minPrice) || 0,
+                        maxPrice: parseFloat(priceFilter?.maxPrice) || 0,
+                        tickSize: parseFloat(priceFilter?.tickSize) || 0,
+                    },
+                    precision: {
+                        price: marketInfo.pricePrecision,
+                        amount: marketInfo.amountPrecision,
+                        base: marketInfo.baseAssetPrecision,
+                        quote: marketInfo.quotePrecision,
+                    },
+                    baseAssetPrecision: marketInfo.baseAssetPrecision,
+                    quotePrecision: marketInfo.quotePrecision,
+                    icebergAllowed: marketInfo.icebergAllowed || false,
+                    ocoAllowed: marketInfo.ocoAllowed || false,
+                    quoteOrderQtyMarketAllowed: marketInfo.quoteOrderQtyMarketAllowed || false,
+                    isSpotTradingAllowed: marketInfo.isSpotTradingAllowed || false,
+                    isMarginTradingAllowed: marketInfo.isMarginTradingAllowed || false,
+                    filters: marketInfo.filters || [],
+                };
+                
+                if (isMounted.current) setSelectedMarketRules(parsedRules);
+
+            } catch (error: any) {
+                if (isMounted.current) {
+                    setRulesError(error.message);
+                    toast({ title: "Error al Cargar Reglas", description: error.message, variant: "destructive" });
+                }
+            } finally {
+                if (isMounted.current) setRulesLoading(false);
+            }
+
+            try {
+                const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
+                const klinesData: ApiResult<KLine[]> = await klinesResponse.json();
+                if (!klinesResponse.ok || !klinesData.success) throw new Error(klinesData.message || "Error al cargar velas (klines).");
+                const klinesArray = klinesData.data || (klinesData as any).klines;
+                if (Array.isArray(klinesArray) && klinesArray.length > 0) {
+                    const historyWithIndicators = annotateMarketPriceHistory(klinesArray);
+                    if (isMounted.current) {
+                        setCurrentMarketPriceHistory(historyWithIndicators);
+                        setCurrentPrice(historyWithIndicators.at(-1)?.closePrice || null);
+                        setIsDataLoaded(true);
+                    }
+                } else {
+                    if (isMounted.current) setIsDataLoaded(false);
+                }
+            } catch (error: any) {
+                if (isMounted.current) {
+                    toast({ title: "Advertencia al Cargar Gráfico", description: error.message, variant: "destructive" });
+                    setCurrentMarketPriceHistory([]); setIsDataLoaded(false);
+                }
+            }
+
         };
-    }, [fetchInitialData, dataUpdateIntervalMs]);
+        fetchInitialData();
+    }, [selectedMarket?.symbol, toast, annotateMarketPriceHistory]);
 
     useEffect(() => {
         if (isBotRunning && isDataLoaded) {
@@ -398,9 +377,7 @@ export const useTradingBot = (props: {
         } else {
             if (botIntervalRef.current) clearInterval(botIntervalRef.current);
         }
-        return () => { 
-            if (botIntervalRef.current) clearInterval(botIntervalRef.current);
-        };
+        return () => { if (botIntervalRef.current) clearInterval(botIntervalRef.current); };
     }, [isBotRunning, isDataLoaded, executeBotStrategy, botIntervalMs]);
 
     return {
@@ -409,5 +386,3 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory
     };
 };
-
-    
