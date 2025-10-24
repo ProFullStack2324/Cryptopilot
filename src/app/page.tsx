@@ -236,15 +236,13 @@ export default function TradingBotControlPanel() {
                     <BinanceBalancesDisplay balances={currentBalances.reduce((acc, bal) => ({ ...acc, [bal.asset]: { available: bal.free, onOrder: bal.locked, total: bal.free + bal.locked } }), {})} isLoading={balancesLoading} error={balancesError} />
                 </div>
                 
-                {annotatedHistory.length > 0 && (
-                    <Card className="lg:col-span-3 shadow-lg rounded-xl">
-                        <CardHeader><CardTitle>Gráfica de Mercado</CardTitle></CardHeader>
-                        <CardContent>
-                            <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
-                        </CardContent>
-                        <CardFooter><p className="text-xs text-muted-foreground"><AnalysisDescription /></p></CardFooter>
-                    </Card>
-                )}
+                <Card className="lg:col-span-3 shadow-lg rounded-xl">
+                    <CardHeader><CardTitle>Gráfica de Mercado</CardTitle></CardHeader>
+                    <CardContent>
+                        <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
+                    </CardContent>
+                    <CardFooter><p className="text-xs text-muted-foreground"><AnalysisDescription /></p></CardFooter>
+                </Card>
 
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-3">
@@ -300,5 +298,3 @@ export default function TradingBotControlPanel() {
         </div>
     );
 }
-
-    
