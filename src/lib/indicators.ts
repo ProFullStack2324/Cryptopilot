@@ -159,19 +159,22 @@ export const calculateRSI = (prices: number[], period: number = 14): number => {
  * @param prices Array de precios (últimos precios de MarketPriceDataPoint).
  * @param period Período para la SMA (generalmente 20).
  * @param stdDevMultiplier Multiplicador de la desviación estándar (generalmente 2).
- * @returns Un objeto con upperBollingerBand, middleBollingerBand y lowerBollingerBand o NaN si no hay suficientes datos.
+ * @returns Un objeto con upper, middle y lower o NaN si no hay suficientes datos.
  */
 export const calculateBollingerBands = (prices: number[], period: number = 20, stdDevMultiplier: number = 2): {
-    upperBollingerBand: number;
-    middleBollingerBand: number;
-    lowerBollingerBand: number;
+    upper: number;
+    middle: number;
+    lower: number;
 } => {
     if (prices.length < period) {
-        return { upperBollingerBand: NaN, middleBollingerBand: NaN, lowerBollingerBand: NaN };
+        return { upper: NaN, middle: NaN, lower: NaN };
     }
 
     const relevantPrices = prices.slice(-period);
     const middleBand = calculateSMA(relevantPrices, period);
+    if(isNaN(middleBand)){
+        return { upper: NaN, middle: NaN, lower: NaN };
+    }
 
     // Calcular la desviación estándar
     const variance = relevantPrices.reduce((sum, price) => sum + Math.pow(price - middleBand, 2), 0) / period;
@@ -180,5 +183,5 @@ export const calculateBollingerBands = (prices: number[], period: number = 20, s
     const upperBand = middleBand + (standardDeviation * stdDevMultiplier);
     const lowerBand = middleBand - (standardDeviation * stdDevMultiplier);
 
-    return { upperBollingerBand: upperBand, middleBollingerBand: middleBand, lowerBollingerBand: lowerBand };
+    return { upper: upperBand, middle: middleBand, lower: lowerBand };
 };
