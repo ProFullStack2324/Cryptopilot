@@ -6,7 +6,6 @@ import { useToast } from '@/hooks/use-toast';
 import {
     Market,
     BinanceBalance,
-    MarketPriceDataPoint,
 } from '@/lib/types'; 
 
 // Importaciones de Componentes de Dashboard

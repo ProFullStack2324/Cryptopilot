@@ -245,7 +245,7 @@ export const useTradingBot = (props: {
             allBinanceBalances,
             botOpenPosition,
             selectedMarketRules,
-            logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
+            logStrategyMessage: (message: string, details?: any) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
         });
         
         let strategyToExecute: 'scalping' | 'sniper' = 'scalping'; // Default a scalping
