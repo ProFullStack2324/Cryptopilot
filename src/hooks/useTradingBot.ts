@@ -392,55 +392,6 @@ export const useTradingBot = (props: {
         };
     }, [fetchInitialData, dataUpdateIntervalMs]);
 
-    const updateMarketData = useCallback(async () => {
-        if (!selectedMarket?.symbol || !isMounted.current) return;
-        try {
-            // Fetch the last 2 candles to ensure we can see if the latest one is new/closed
-            const response = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=2`);
-            const klinesData: ApiResult<{klines: KLine[]}> = await response.json();
-            
-            if (!isMounted.current) return;
-
-            if (!response.ok || !klinesData.success || !klinesData.data?.klines || klinesData.data.klines.length === 0) {
-                // Don't throw an error, just log it, to avoid stopping the bot on a transient network issue
-                console.warn("Could not fetch new market data.");
-                return;
-            }
-
-            const latestKline = klinesData.data.klines.at(-1)!;
-
-            setCurrentMarketPriceHistory(prevHistory => {
-                const lastKnownTimestamp = prevHistory.at(-1)?.timestamp;
-                // If the new kline is the same as the last one, just update the price
-                if (lastKnownTimestamp === latestKline[0]) {
-                    const updatedHistory = [...prevHistory];
-                    const lastPoint = updatedHistory.at(-1)!;
-                    lastPoint.closePrice = latestKline[4]; // Update close price
-                    lastPoint.highPrice = Math.max(lastPoint.highPrice, latestKline[2]);
-                    lastPoint.lowPrice = Math.min(lastPoint.lowPrice, latestKline[3]);
-                    setCurrentPrice(latestKline[4]);
-                    return updatedHistory;
-                }
-
-                // If it's a new candle, re-annotate the entire history with the new candle
-                const newFullKlines = [...prevHistory.map(dp => [dp.timestamp, dp.openPrice, dp.highPrice, dp.lowPrice, dp.closePrice, dp.volume] as KLine), latestKline].slice(-PRICE_HISTORY_POINTS_TO_KEEP);
-                
-                const reannotatedHistory = annotateMarketPriceHistory(newFullKlines);
-
-                if (reannotatedHistory.length > 0) {
-                    setCurrentPrice(reannotatedHistory.at(-1)!.closePrice);
-                }
-                
-                return reannotatedHistory;
-            });
-
-        } catch (error) {
-            console.error("Failed to update market data:", error);
-            // Don't toast here to avoid spamming the user on network hiccups
-        }
-    }, [selectedMarket?.symbol, annotateMarketPriceHistory]);
-
-
     useEffect(() => {
         if (isBotRunning && isDataLoaded) {
             botIntervalRef.current = setInterval(executeBotStrategy, botIntervalMs);
@@ -458,3 +409,5 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory
     };
 };
+
+    

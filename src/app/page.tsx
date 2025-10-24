@@ -15,8 +15,7 @@ import { BinanceBalancesDisplay } from '@/components/dashboard/binance-balances-
 import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
 import { BotStatusFlow } from '@/components/dashboard/bot-status-flow';
-import { MarketChart } from '@/components/MarketChart';
-import { CHART_COLORS } from '@/components/MarketChart';
+import { MarketChart, CHART_COLORS } from '@/components/MarketChart';
 import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
 
 // Importaciones de UI
@@ -97,12 +96,10 @@ export default function TradingBotControlPanel() {
 
     const onBotAction = useCallback((details: any) => {
         const newLog = { ...details, timestamp: Date.now() + Math.random() };
-        // Todos los logs van al registro de operaciones (el diario del bot)
         setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
         
         const isInsufficientFunds = details.data?.action === 'hold_insufficient_funds';
 
-        // Solo las acciones de transacción van al libro de órdenes
         if (details.type === 'order_placed' || details.type === 'order_failed' || (details.type === 'strategy_decision' && isInsufficientFunds)) {
             let logEntry = { ...newLog };
             if (isInsufficientFunds) {
@@ -112,7 +109,6 @@ export default function TradingBotControlPanel() {
              setTradeExecutionLogs(prev => {
                 const updatedLogs = [logEntry, ...prev.slice(0, 99)];
                 
-                // Enviar el log del libro de órdenes a la base de datos
                 (async () => {
                     try {
                         await fetch('/api/logs/save', {
@@ -154,13 +150,13 @@ export default function TradingBotControlPanel() {
     const AnalysisDescription = () => {
         if (!isBotRunning) {
             if (annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
-                 return `Esperando datos: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas. Actual: ${annotatedHistory.length}. El bot se podrá iniciar al completar la carga.`;
+                 return `Datos de mercado cargando: ${annotatedHistory.length}/${MIN_REQUIRED_HISTORY_FOR_BOT} velas. El botón de inicio se habilitará pronto.`;
             }
             return "El bot está detenido. Inícialo para comenzar el análisis.";
         }
     
         if (annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
-            return `Análisis en espera: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas para iniciar. Actual: ${annotatedHistory.length}.`;
+            return `Análisis en espera: se necesitan ${MIN_REQUIRED_HISTORY_for_BOT} velas para iniciar. Actual: ${annotatedHistory.length}.`;
         }
     
         const latest = latestDataPointForStrategy;
@@ -306,5 +302,6 @@ export default function TradingBotControlPanel() {
             </main>
         </div>
     );
+}
 
     
