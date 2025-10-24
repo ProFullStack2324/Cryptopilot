@@ -385,7 +385,12 @@ export const useTradingBot = (props: {
     
     useEffect(() => {
         fetchInitialData();
-    }, [fetchInitialData]);
+        const initialDataInterval = setInterval(fetchInitialData, dataUpdateIntervalMs);
+
+        return () => {
+            clearInterval(initialDataInterval);
+        };
+    }, [fetchInitialData, dataUpdateIntervalMs]);
 
     const updateMarketData = useCallback(async () => {
         if (!selectedMarket?.symbol || !isMounted.current) return;
@@ -439,16 +444,13 @@ export const useTradingBot = (props: {
     useEffect(() => {
         if (isBotRunning && isDataLoaded) {
             botIntervalRef.current = setInterval(executeBotStrategy, botIntervalMs);
-            dataIntervalRef.current = setInterval(updateMarketData, dataUpdateIntervalMs);
         } else {
             if (botIntervalRef.current) clearInterval(botIntervalRef.current);
-            if (dataIntervalRef.current) clearInterval(dataIntervalRef.current);
         }
         return () => { 
             if (botIntervalRef.current) clearInterval(botIntervalRef.current);
-            if (dataIntervalRef.current) clearInterval(dataIntervalRef.current);
         };
-    }, [isBotRunning, isDataLoaded, executeBotStrategy, updateMarketData, botIntervalMs, dataUpdateIntervalMs]);
+    }, [isBotRunning, isDataLoaded, executeBotStrategy, botIntervalMs]);
 
     return {
         isBotRunning, toggleBotStatus, botOpenPosition, botLastActionTimestamp,

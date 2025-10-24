@@ -153,7 +153,7 @@ export default function TradingBotControlPanel() {
     const AnalysisDescription = () => {
         if (!isBotRunning) {
             if (annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
-                return `Calentamiento de datos: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas. Actual: ${annotatedHistory.length}.`;
+                return `Calentamiento de datos: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas. Actual: ${annotatedHistory.length}. El bot se podrá iniciar al completar la carga.`;
             }
             return "El bot está detenido. Inícialo para comenzar el análisis.";
         }
