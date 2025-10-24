@@ -297,4 +297,5 @@ export default function TradingBotControlPanel() {
             </main>
         </div>
     );
-}
+
+    
