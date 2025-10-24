@@ -36,7 +36,8 @@ const STRATEGY_CONFIG = {
         takeProfitPercentage: 0.02,  // 2%
         stopLossPercentage: 0.01,    // 1%
         capitalToRiskPercentage: 0.95
-    }
+    },
+    rsiSellThreshold: 65,
 };
 
 export const MIN_REQUIRED_HISTORY_FOR_BOT = 51; // Requisito mínimo de velas para operar
@@ -197,17 +198,25 @@ export const useTradingBot = (props: {
         if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT || !selectedMarketRules || isPlacingOrder) {
             return;
         }
-        
-        if (botOpenPosition) {
-            const config = STRATEGY_CONFIG[botOpenPosition.strategy || 'scalping']; // Usa la estrategia de la posición abierta
-            const { amount, takeProfitPrice, stopLossPrice } = botOpenPosition;
-            
-            let sellReason: 'take_profit' | 'stop_loss' | null = null;
-            if (takeProfitPrice && currentPrice >= takeProfitPrice) sellReason = 'take_profit';
-            else if (stopLossPrice && currentPrice <= stopLossPrice) sellReason = 'stop_loss';
 
+        const latest = currentMarketPriceHistory.at(-1);
+    
+        if (botOpenPosition) {
+            const { amount, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
+            const currentRsi = latest?.rsi;
+    
+            let sellReason: 'take_profit' | 'stop_loss' | 'rsi_sell' | null = null;
+    
+            if (takeProfitPrice && currentPrice >= takeProfitPrice) {
+                sellReason = 'take_profit';
+            } else if (stopLossPrice && currentPrice <= stopLossPrice) {
+                sellReason = 'stop_loss';
+            } else if (isValidNumber(currentRsi) && currentRsi >= STRATEGY_CONFIG.rsiSellThreshold) {
+                sellReason = 'rsi_sell';
+            }
+    
             if (sellReason) {
-                logAction(`Señal de VENTA por ${sellReason}.`, true, 'strategy_decision', { reason: sellReason, currentPrice, target: sellReason === 'take_profit' ? takeProfitPrice : stopLossPrice });
+                logAction(`Señal de VENTA por ${sellReason}.`, true, 'strategy_decision', { reason: sellReason, currentPrice, rsi: currentRsi, target: sellReason === 'take_profit' ? takeProfitPrice : stopLossPrice });
                 
                 let quantityToSell = amount;
                 const stepSize = selectedMarketRules.lotSize.stepSize;
@@ -215,16 +224,17 @@ export const useTradingBot = (props: {
                     quantityToSell = Math.floor(quantityToSell / stepSize) * stepSize;
                 }
                 quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarketRules.precision.amount));
-
+    
                 if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
-                    await executeOrder({ side: 'SELL', quantity: quantityToSell }, botOpenPosition.strategy || 'scalping');
+                    await executeOrder({ side: 'SELL', quantity: quantityToSell }, strategy || 'scalping');
                 } else {
                     logAction(`FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.`, false, 'order_failed', { quantityToSell });
                 }
                 return;
             }
-             logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`);
-             return;
+    
+            logAction(`HOLD: Posición de compra abierta (${strategy}). Monitoreando para salida.`);
+            return;
         }
         
         const decision = decideTradeActionAndAmount({
