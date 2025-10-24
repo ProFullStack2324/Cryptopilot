@@ -149,20 +149,17 @@ export default function TradingBotControlPanel() {
 
     const AnalysisDescription = () => {
         if (!isBotRunning) {
-            if (annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
-                 return `Datos de mercado cargando: ${annotatedHistory.length}/${MIN_REQUIRED_HISTORY_FOR_BOT} velas. El botón de inicio se habilitará pronto.`;
-            }
             return "El bot está detenido. Inícialo para comenzar el análisis.";
         }
     
         if (annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
-            return `Análisis en espera: se necesitan ${MIN_REQUIRED_HISTORY_for_BOT} velas para iniciar. Actual: ${annotatedHistory.length}.`;
+            return `Análisis en espera: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas para iniciar. Actual: ${annotatedHistory.length}.`;
         }
     
         const latest = latestDataPointForStrategy;
         if (!latest) return "Esperando datos de la última vela...";
 
-        const { buyConditionsMet, sellConditionsMet } = latest;
+        const { buyConditionsMet } = latest;
     
         if (botOpenPosition) {
             const { entryPrice, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
@@ -202,7 +199,7 @@ export default function TradingBotControlPanel() {
                         <BotControls 
                             isBotRunning={isBotRunning} 
                             onToggleBot={toggleBotStatus}
-                            disabled={!selectedMarket || rulesLoading || !!rulesError || annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT}
+                            disabled={!selectedMarket || rulesLoading || !!rulesError}
                         />
                     </CardContent>
                     <CardFooter className="flex-col items-center text-xs text-muted-foreground space-y-1">
