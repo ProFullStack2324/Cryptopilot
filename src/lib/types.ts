@@ -136,8 +136,8 @@ export type ParsedSignals = SignalItem[];
 // INTERFAZ OrderFormData
 export interface OrderFormData {
     symbol: string;
-    side: 'BUY' | 'SELL'; 
-    orderType: 'MARKET' | 'LIMIT';
+    side: 'buy' | 'sell'; 
+    orderType: 'market' | 'limit';
     quantity: number;
     price?: number; 
 }

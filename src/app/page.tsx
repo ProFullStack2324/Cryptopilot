@@ -15,10 +15,12 @@ import { BotControls } from '@/components/dashboard/bot-controls';
 import { BinanceBalancesDisplay } from '@/components/dashboard/binance-balances-display';
 import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
-import { BotStatusFlow } from '@/components/dashboard/bot-status-flow'; // Importar el nuevo componente
+import { BotStatusFlow } from '@/components/dashboard/bot-status-flow';
 import { MarketChart } from '@/components/MarketChart';
 import { CHART_COLORS } from '@/components/MarketChart';
 import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
+import { SimulatedPerformanceCard } from '@/components/dashboard/simulated-performance-card';
+
 
 // Importaciones de UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -107,10 +109,11 @@ export default function TradingBotControlPanel() {
         placeOrderError,
         selectedMarketRules,
         rulesLoading,
-        rulesError,
+rulesError,
         currentPrice,
         botOpenPosition,
         currentMarketPriceHistory,
+        simulatedPosition,
     } = useTradingBot({
         selectedMarket,
         allBinanceBalances: currentBalances,
@@ -236,15 +239,23 @@ export default function TradingBotControlPanel() {
                     />
                 </div>
                 
-                {annotatedHistory.length > 0 && (
-                    <Card className="lg:col-span-3 shadow-lg rounded-xl">
-                        <CardHeader><CardTitle>Gráfica de Mercado</CardTitle></CardHeader>
-                        <CardContent>
-                            <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
-                        </CardContent>
-                        <CardFooter><p className="text-xs text-muted-foreground"><ScalpingAnalysisDescription /></p></CardFooter>
-                    </Card>
+                {simulatedPosition && (
+                    <SimulatedPerformanceCard
+                        simulatedPosition={simulatedPosition}
+                        currentPrice={currentPrice}
+                        market={selectedMarket}
+                    />
                 )}
+
+                
+                <Card className="lg:col-span-3 shadow-lg rounded-xl">
+                    <CardHeader><CardTitle>Gráfica de Mercado</CardTitle></CardHeader>
+                    <CardContent>
+                        <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
+                    </CardContent>
+                    <CardFooter><p className="text-xs text-muted-foreground"><ScalpingAnalysisDescription /></p></CardFooter>
+                </Card>
+                
 
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-3">

@@ -51,6 +51,7 @@ export const useTradingBot = (props: {
 
     const [isBotRunning, setIsBotRunning] = useState<boolean>(false);
     const [botOpenPosition, setBotOpenPosition] = useState<BotOpenPosition | null>(null);
+    const [simulatedPosition, setSimulatedPosition] = useState<BotOpenPosition | null>(null);
     const [botLastActionTimestamp, setBotLastActionTimestamp] = useState<number | null>(null);
     const [isPlacingOrder, setIsPlacingOrder] = useState<boolean>(false);
     const [placeOrderError, setPlaceOrderError] = useState<string | null>(null);
@@ -200,6 +201,14 @@ export const useTradingBot = (props: {
         }
     
         const latest = currentMarketPriceHistory.at(-1);
+
+        if (simulatedPosition) {
+            const { takeProfitPrice, stopLossPrice } = simulatedPosition;
+            if ((takeProfitPrice && currentPrice >= takeProfitPrice) || (stopLossPrice && currentPrice <= stopLossPrice)) {
+                logAction(`Simulación finalizada. Precio de salida virtual: ${currentPrice}.`, true, 'strategy_decision');
+                setSimulatedPosition(null);
+            }
+        }
     
         if (botOpenPosition) {
             const { amount, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
@@ -230,11 +239,11 @@ export const useTradingBot = (props: {
                 } else {
                     logAction(`FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.`, false, 'order_failed', { quantityToSell });
                 }
-                return; // Importante: Salir después de intentar una venta para evitar lógica de compra en el mismo ciclo.
+                return; 
             }
         }
         
-        if (!botOpenPosition) {
+        if (!botOpenPosition && !simulatedPosition) { // Solo busca comprar si no hay posición real ni simulada
             const decision = decideTradeActionAndAmount({
                 selectedMarket,
                 currentMarketPriceHistory,
@@ -251,14 +260,30 @@ export const useTradingBot = (props: {
     
             if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
                 await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
-            } else if (decision.action === 'hold_insufficient_funds') {
+            } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
                 logAction(`Decisión: ${decision.action.toUpperCase()}. Razón: Fondos insuficientes.`, false, 'strategy_decision', decision.details, { action: decision.action });
+                
+                const config = STRATEGY_CONFIG[decision.details.strategyMode];
+                const entryPrice = decision.orderData.price;
+                const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
+                const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
+
+                setSimulatedPosition({
+                    marketId: selectedMarket.id,
+                    entryPrice: entryPrice,
+                    amount: decision.orderData.quantity,
+                    type: 'buy',
+                    timestamp: Date.now(),
+                    takeProfitPrice,
+                    stopLossPrice,
+                    strategy: decision.details.strategyMode,
+                });
             }
-        } else {
+        } else if (botOpenPosition) {
             logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`);
         }
     
-    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
+    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, simulatedPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
     
 
     useEffect(() => {
@@ -381,6 +406,10 @@ export const useTradingBot = (props: {
 
         };
         fetchInitialData();
+        const dataInterval = setInterval(fetchInitialData, 30000); // Polling cada 30 segundos
+        
+        return () => clearInterval(dataInterval);
+
     }, [selectedMarket?.symbol, toast, annotateMarketPriceHistory]);
 
     useEffect(() => {
@@ -395,6 +424,6 @@ export const useTradingBot = (props: {
     return {
         isBotRunning, toggleBotStatus, botOpenPosition, botLastActionTimestamp,
         isPlacingOrder, placeOrderError, selectedMarketRules, rulesLoading, rulesError,
-        currentPrice, currentMarketPriceHistory
+        currentPrice, currentMarketPriceHistory, simulatedPosition
     };
 };
