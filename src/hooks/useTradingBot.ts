@@ -46,8 +46,9 @@ export const useTradingBot = (props: {
     selectedMarket: Market | null;
     allBinanceBalances: BinanceBalance[];
     onBotAction?: (details: BotActionDetails) => void;
+    timeframe: string; // ¡NUEVO!
 }) => {
-    const { selectedMarket, allBinanceBalances, onBotAction = () => {} } = props;
+    const { selectedMarket, allBinanceBalances, onBotAction = () => {}, timeframe } = props;
 
     const [isBotRunning, setIsBotRunning] = useState<boolean>(false);
     const [botOpenPosition, setBotOpenPosition] = useState<BotOpenPosition | null>(null);
@@ -383,7 +384,7 @@ export const useTradingBot = (props: {
             }
 
             try {
-                const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=1m&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
+                const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=${timeframe}&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
                 const klinesData: ApiResult<KLine[]> = await klinesResponse.json();
                 if (!klinesResponse.ok || !klinesData.success) throw new Error(klinesData.message || "Error al cargar velas (klines).");
                 const klinesArray = klinesData.data || (klinesData as any).klines;
@@ -410,7 +411,7 @@ export const useTradingBot = (props: {
         
         return () => clearInterval(dataInterval);
 
-    }, [selectedMarket?.symbol, toast, annotateMarketPriceHistory]);
+    }, [selectedMarket?.symbol, toast, annotateMarketPriceHistory, timeframe]);
 
     useEffect(() => {
         if (isBotRunning && isDataLoaded) {

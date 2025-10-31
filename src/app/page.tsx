@@ -20,7 +20,7 @@ import { MarketChart } from '@/components/MarketChart';
 import { CHART_COLORS } from '@/components/MarketChart';
 import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
 import { SimulatedPerformanceCard } from '@/components/dashboard/simulated-performance-card';
-
+import { Watchlist } from '@/components/dashboard/watchlist'; // ¡NUEVO!
 
 // Importaciones de UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -31,7 +31,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-
 
 const MOCK_MARKETS: Market[] = [
     {
@@ -55,9 +54,9 @@ const parseErrorMessage = (error: string | null): string => {
     return error;
 };
 
-
 export default function TradingBotControlPanel() {
     const [selectedMarketId, setSelectedMarketId] = useState<string>("BTCUSDT");
+    const [timeframe, setTimeframe] = useState<string>('1m'); // ¡NUEVO ESTADO!
     const selectedMarket = useMemo(() => MOCK_MARKETS.find(m => m.id === selectedMarketId) || null, [selectedMarketId]);
 
     const [currentBalances, setCurrentBalances] = useState<BinanceBalance[]>([]);
@@ -69,7 +68,6 @@ export default function TradingBotControlPanel() {
 
     const { toast } = useToast();
 
-    // CORRECCIÓN: Mover la definición de onBotAction ANTES de usarla en useTradingBot.
     const onBotAction = useCallback((details: any) => {
         const newLog = { ...details, timestamp: Date.now() + Math.random() };
         setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
@@ -109,7 +107,7 @@ export default function TradingBotControlPanel() {
         placeOrderError,
         selectedMarketRules,
         rulesLoading,
-rulesError,
+        rulesError,
         currentPrice,
         botOpenPosition,
         currentMarketPriceHistory,
@@ -118,6 +116,7 @@ rulesError,
         selectedMarket,
         allBinanceBalances: currentBalances,
         onBotAction,
+        timeframe, // ¡NUEVO!
     });
 
     useEffect(() => {
@@ -195,9 +194,21 @@ rulesError,
                         <div className="flex items-center gap-2">
                             <span className="font-semibold">Mercado:</span>
                             <Select onValueChange={setSelectedMarketId} value={selectedMarketId || ""}>
-                                <SelectTrigger className="w-[180px]"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
+                                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
                                 <SelectContent>
                                     {MOCK_MARKETS.map(market => <SelectItem key={market.id} value={market.id}>{market.symbol}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                         <div className="flex items-center gap-2">
+                            <span className="font-semibold">Temporalidad:</span>
+                            <Select onValueChange={setTimeframe} value={timeframe}>
+                                <SelectTrigger className="w-[120px]"><SelectValue placeholder="Tiempo" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="1m">1 Minuto</SelectItem>
+                                    <SelectItem value="5m">5 Minutos</SelectItem>
+                                    <SelectItem value="15m">15 Minutos</SelectItem>
+                                    <SelectItem value="1h">1 Hora</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -213,7 +224,7 @@ rulesError,
                 </Card>
             </header>
 
-            <main className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
+            <main className="grid grid-cols-1 lg:grid-cols-4 gap-6 w-full">
                 <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
                     <Card>
                         <CardHeader><CardTitle>Reglas del Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
@@ -238,27 +249,31 @@ rulesError,
                         botOpenPosition={botOpenPosition}
                     />
                 </div>
+
+                <div className="lg:col-span-1">
+                    <Watchlist />
+                </div>
                 
                 {simulatedPosition && (
-                    <SimulatedPerformanceCard
-                        simulatedPosition={simulatedPosition}
-                        currentPrice={currentPrice}
-                        market={selectedMarket}
-                    />
+                    <div className="lg:col-span-4">
+                        <SimulatedPerformanceCard
+                            simulatedPosition={simulatedPosition}
+                            currentPrice={currentPrice}
+                            market={selectedMarket}
+                        />
+                    </div>
                 )}
-
                 
-                <Card className="lg:col-span-3 shadow-lg rounded-xl">
+                <Card className="lg:col-span-4 shadow-lg rounded-xl">
                     <CardHeader><CardTitle>Gráfica de Mercado</CardTitle></CardHeader>
                     <CardContent>
                         <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
                     </CardContent>
                     <CardFooter><p className="text-xs text-muted-foreground"><ScalpingAnalysisDescription /></p></CardFooter>
                 </Card>
-                
 
                  {annotatedHistory.length > 0 && (
-                    <Card className="lg:col-span-3">
+                    <Card className="lg:col-span-4">
                         <CardHeader><CardTitle>Diagnóstico de Estrategia (Scalping)</CardTitle></CardHeader>
                         <CardContent>
                              <StrategyDashboard 
@@ -273,27 +288,31 @@ rulesError,
                     </Card>
                 )}
                 
-                <Card className="lg:col-span-3">
+                <Card className="lg:col-span-4">
                     <CardHeader><CardTitle>Análisis de Condiciones (Scalping vs Francotirador)</CardTitle></CardHeader>
                     <CardContent>
                         <StrategyConditionChart data={annotatedHistory} />
                     </CardContent>
                 </Card>
                 
-                <TradeHistoryTable 
-                    logs={tradeExecutionLogs}
-                    title="Libro de Órdenes"
-                    emptyLogMessage="Esperando la primera acción de compra o venta..."
-                />
+                <div className="lg:col-span-2">
+                    <TradeHistoryTable 
+                        logs={tradeExecutionLogs}
+                        title="Libro de Órdenes"
+                        emptyLogMessage="Esperando la primera acción de compra o venta..."
+                    />
+                </div>
 
-                <TradeHistoryTable 
-                    logs={operationLogs}
-                    title="Registro de Operaciones (Diario del Bot)"
-                    emptyLogMessage="Esperando la primera acción del bot..."
-                />
+                <div className="lg:col-span-2">
+                    <TradeHistoryTable 
+                        logs={operationLogs}
+                        title="Registro de Operaciones (Diario del Bot)"
+                        emptyLogMessage="Esperando la primera acción del bot..."
+                    />
+                </div>
 
                 {annotatedHistory.length > 0 && (
-                    <Card className="lg:col-span-3">
+                    <Card className="lg:col-span-4">
                         <CardHeader><CardTitle>Diagnóstico de Estrategia (Análisis Francotirador)</CardTitle></CardHeader>
                         <CardContent>
                              <StrategyDashboard 

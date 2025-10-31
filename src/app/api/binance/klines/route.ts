@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const symbolParam = searchParams.get('symbol');
-        const intervalParam = searchParams.get('interval') || '1m';
+        const intervalParam = searchParams.get('interval') || '1m'; // Se usa 'interval' en lugar de 'timeframe'
         const limitParam = searchParams.get('limit');
         const limit = limitParam ? parseInt(limitParam, 10) : 200;
 
