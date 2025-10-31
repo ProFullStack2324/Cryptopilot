@@ -1,4 +1,3 @@
-
 // src/hooks/useTradingBot.ts
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
@@ -205,9 +204,29 @@ export const useTradingBot = (props: {
         const latest = currentMarketPriceHistory.at(-1);
 
         if (simulatedPosition) {
-            const { takeProfitPrice, stopLossPrice } = simulatedPosition;
-            if ((takeProfitPrice && currentPrice >= takeProfitPrice) || (stopLossPrice && currentPrice <= stopLossPrice)) {
-                logAction(`Simulación finalizada. Precio de salida virtual: ${currentPrice}.`, true, 'strategy_decision');
+            const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount } = simulatedPosition;
+            let exitReason: string | null = null;
+            if (takeProfitPrice && currentPrice >= takeProfitPrice) exitReason = 'take_profit';
+            else if (stopLossPrice && currentPrice <= stopLossPrice) exitReason = 'stop_loss';
+
+            if (exitReason) {
+                const finalPnl = (currentPrice - entryPrice) * amount;
+                logAction(`Simulación finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.`, true, 'strategy_decision');
+                
+                // Guardar el fin de la simulación en la DB
+                if (simulationId) {
+                    fetch('/api/simulations/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            simulationId,
+                            exitPrice: currentPrice,
+                            exitReason,
+                            finalPnl,
+                        }),
+                    }).catch(e => console.error("Failed to save simulation end state", e));
+                }
+                
                 setSimulatedPosition(null);
             }
         }
@@ -270,7 +289,7 @@ export const useTradingBot = (props: {
                 const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
                 const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
 
-                setSimulatedPosition({
+                const newSimulation: Omit<BotOpenPosition, 'simulationId'> = {
                     marketId: selectedMarket.id,
                     entryPrice: entryPrice,
                     amount: decision.orderData.quantity,
@@ -279,7 +298,27 @@ export const useTradingBot = (props: {
                     takeProfitPrice,
                     stopLossPrice,
                     strategy: decision.details.strategyMode,
-                });
+                };
+
+                // Guardar el inicio de la simulación en la DB y obtener el ID
+                try {
+                    const response = await fetch('/api/simulations/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(newSimulation),
+                    });
+                    const result = await response.json();
+                    if(result.success && result.insertedId) {
+                        setSimulatedPosition({ ...newSimulation, simulationId: result.insertedId });
+                    } else {
+                        // Si falla el guardado, iniciar simulación sin ID
+                        setSimulatedPosition(newSimulation);
+                        console.error("Failed to save simulation start state");
+                    }
+                } catch (e) {
+                     setSimulatedPosition(newSimulation);
+                     console.error("Error connecting to simulation save API", e);
+                }
             }
         } else if (botOpenPosition) {
             logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`);

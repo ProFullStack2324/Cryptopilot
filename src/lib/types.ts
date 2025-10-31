@@ -164,6 +164,7 @@ export interface BotOpenPosition {
     stopLossPrice?: number; 
     takeProfitPrice?: number;
     strategy: 'scalping' | 'sniper'; // Para saber con qué estrategia se abrió la posición
+    simulationId?: string; // Para la persistencia de simulaciones
 }
 
 
