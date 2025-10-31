@@ -213,7 +213,6 @@ export const useTradingBot = (props: {
                 const finalPnl = (currentPrice - entryPrice) * amount;
                 logAction(`Simulación finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.`, true, 'strategy_decision');
                 
-                // Guardar el fin de la simulación en la DB
                 if (simulationId) {
                     fetch('/api/simulations/save', {
                         method: 'POST',
@@ -264,7 +263,7 @@ export const useTradingBot = (props: {
             }
         }
         
-        if (!botOpenPosition && !simulatedPosition) { // Solo busca comprar si no hay posición real ni simulada
+        if (!botOpenPosition && !simulatedPosition) {
             const decision = decideTradeActionAndAmount({
                 selectedMarket,
                 currentMarketPriceHistory,
@@ -272,18 +271,16 @@ export const useTradingBot = (props: {
                 allBinanceBalances,
                 botOpenPosition,
                 selectedMarketRules,
-                logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details, { action: 'hold' })
+                logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details)
             });
             
-            if (decision.action !== 'hold' && decision.action !== 'hold_insufficient_funds') {
-                 logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()} en modo ${decision.details?.strategyMode}`, true, 'strategy_decision', decision.details, { action: decision.action });
+            if (decision.action !== 'hold') {
+                 logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()}${decision.details?.strategyMode ? ` en modo ${decision.details.strategyMode}` : ''}`, true, 'strategy_decision', decision.details, { action: decision.action });
             }
     
             if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
                 await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
             } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
-                logAction(`Decisión: ${decision.action.toUpperCase()}. Razón: Fondos insuficientes.`, false, 'strategy_decision', decision.details, { action: decision.action });
-                
                 const config = STRATEGY_CONFIG[decision.details.strategyMode];
                 const entryPrice = decision.orderData.price;
                 const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
@@ -300,7 +297,6 @@ export const useTradingBot = (props: {
                     strategy: decision.details.strategyMode,
                 };
 
-                // Guardar el inicio de la simulación en la DB y obtener el ID
                 try {
                     const response = await fetch('/api/simulations/save', {
                         method: 'POST',
@@ -311,7 +307,6 @@ export const useTradingBot = (props: {
                     if(result.success && result.insertedId) {
                         setSimulatedPosition({ ...newSimulation, simulationId: result.insertedId });
                     } else {
-                        // Si falla el guardado, iniciar simulación sin ID
                         setSimulatedPosition(newSimulation);
                         console.error("Failed to save simulation start state");
                     }
@@ -321,7 +316,7 @@ export const useTradingBot = (props: {
                 }
             }
         } else if (botOpenPosition) {
-            logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`);
+            logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`, true, 'strategy_decision');
         }
     
     }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, simulatedPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
@@ -449,3 +444,5 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory, simulatedPosition
     };
 };
+
+    

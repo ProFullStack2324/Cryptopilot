@@ -58,7 +58,7 @@ export const decideTradeActionAndAmount = (params: {
     } = params;
     
     if (currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
-        log(`HOLD: Historial de mercado insuficiente (${currentMarketPriceHistory.length}/${MIN_REQUIRED_HISTORY_FOR_BOT}).`);
+        // No registrar mensaje si no hay suficientes datos para evitar spam en el log inicial
         return { action: 'hold' };
     }
 
@@ -78,7 +78,7 @@ export const decideTradeActionAndAmount = (params: {
     const quoteAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.quoteAsset)?.free || 0;
     
     if (botOpenPosition) {
-        log(`HOLD: Posición de compra ya abierta en modo ${botOpenPosition.strategy}. Monitoreando para salida.`);
+        // No registrar mensaje aquí para evitar spam. El monitoreo de salida se hace en el hook.
         return { action: 'hold' };
     }
 
@@ -106,22 +106,17 @@ export const decideTradeActionAndAmount = (params: {
             conditions: { price: buyPriceCondition, rsi: buyRsiCondition, macd: buyMacdCondition }
         };
 
-        log(`Señal de COMPRA detectada en modo ${strategyMode} (${buyConditionsCount}/${config.minBuyConditions} condiciones cumplidas).`, decisionDetails);
-        
         const minNotionalValue = selectedMarketRules.minNotional.minNotional;
         let amountInQuote = quoteAssetBalance * config.capitalToRiskPercentage;
         
-        log(`Capital a arriesgar (${(config.capitalToRiskPercentage * 100).toFixed(0)}%): ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}. Nocional Mínimo: ${minNotionalValue} ${selectedMarket.quoteAsset}.`);
-
         if (amountInQuote < minNotionalValue) {
-            log(`Capital a arriesgar es menor que el mínimo. Se intentará usar el valor nocional mínimo.`);
             amountInQuote = minNotionalValue * 1.01;
         }
 
         if (amountInQuote > quoteAssetBalance) {
-            log(`HOLD: Saldo insuficiente (${quoteAssetBalance.toFixed(2)} ${selectedMarket.quoteAsset}) para cubrir la orden mínima de ${amountInQuote.toFixed(2)} ${selectedMarket.quoteAsset}.`);
-            // Devolvemos los detalles completos, incluyendo las condiciones que se cumplieron
-            return { action: 'hold_insufficient_funds', details: { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance } };
+            const insufficientFundsDetails = { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance };
+            // El mensaje de log se genera en el hook para este caso
+            return { action: 'hold_insufficient_funds', details: insufficientFundsDetails, orderData: { side: 'BUY', quantity: amountInQuote / currentPrice, price: currentPrice } };
         }
 
         let quantityToBuy = amountInQuote / currentPrice;
@@ -133,8 +128,8 @@ export const decideTradeActionAndAmount = (params: {
         quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarketRules.precision.amount));
         
         if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
-            log(`HOLD: Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido (${selectedMarketRules.lotSize.minQty}).`);
-            return { action: 'hold', details: decisionDetails };
+            log(`HOLD: Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido (${selectedMarketRules.lotSize.minQty}).`, decisionDetails);
+            return { action: 'hold' };
         }
 
         return {
@@ -151,3 +146,5 @@ export const decideTradeActionAndAmount = (params: {
     // Si no se cumple ninguna condición de compra
     return { action: 'hold' };
 };
+
+    
