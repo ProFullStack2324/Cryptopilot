@@ -20,7 +20,7 @@ import { MarketChart } from '@/components/MarketChart';
 import { CHART_COLORS } from '@/components/MarketChart';
 import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
 import { SimulatedPerformanceCard } from '@/components/dashboard/simulated-performance-card';
-import { Watchlist } from '@/components/dashboard/watchlist'; // ¡NUEVO!
+import { Watchlist } from '@/components/dashboard/watchlist';
 
 // Importaciones de UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -56,7 +56,7 @@ const parseErrorMessage = (error: string | null): string => {
 
 export default function TradingBotControlPanel() {
     const [selectedMarketId, setSelectedMarketId] = useState<string>("BTCUSDT");
-    const [timeframe, setTimeframe] = useState<string>('1m'); // ¡NUEVO ESTADO!
+    const [timeframe, setTimeframe] = useState<string>('1m');
     const selectedMarket = useMemo(() => MOCK_MARKETS.find(m => m.id === selectedMarketId) || null, [selectedMarketId]);
 
     const [currentBalances, setCurrentBalances] = useState<BinanceBalance[]>([]);
@@ -116,7 +116,7 @@ export default function TradingBotControlPanel() {
         selectedMarket,
         allBinanceBalances: currentBalances,
         onBotAction,
-        timeframe, // ¡NUEVO!
+        timeframe,
     });
 
     useEffect(() => {
@@ -139,6 +139,7 @@ export default function TradingBotControlPanel() {
                 }
             } catch (error: any) {
                 setBalancesError(error.message);
+                toast({ title: "Error al cargar balances", description: error.message, variant: "destructive" });
             } finally {
                 setBalancesLoading(false);
             }
@@ -146,7 +147,7 @@ export default function TradingBotControlPanel() {
         fetchBalances();
         const interval = setInterval(fetchBalances, 60000); 
         return () => clearInterval(interval);
-    }, []);
+    }, [toast]);
 
     
     const annotatedHistory = useMemo(() => currentMarketPriceHistory.filter(dp => dp && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)), [currentMarketPriceHistory]);

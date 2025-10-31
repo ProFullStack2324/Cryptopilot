@@ -1,3 +1,4 @@
+
 // src/hooks/useTradingBot.ts
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
@@ -308,24 +309,24 @@ export const useTradingBot = (props: {
     }, [selectedMarket?.symbol, toast, logAction]);
 
     useEffect(() => {
-        const fetchInitialData = async () => {
-            if (!selectedMarket?.symbol) {
-                if (isMounted.current) {
-                    setSelectedMarketRules(null);
-                    setRulesLoading(false);
-                    setCurrentMarketPriceHistory([]);
-                    setCurrentPrice(null);
-                    setIsDataLoaded(false);
-                }
-                return;
+        if (!selectedMarket?.symbol) {
+            if (isMounted.current) {
+                setSelectedMarketRules(null);
+                setRulesLoading(false);
+                setCurrentMarketPriceHistory([]);
+                setCurrentPrice(null);
+                setIsDataLoaded(false);
             }
+            return;
+        }
 
+        const fetchMarketData = async () => {
             if (!isMounted.current) return;
             setRulesLoading(true);
             setRulesError(null);
-            setIsDataLoaded(false);
-
+            
             try {
+                // Fetch Rules
                 const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
                 const rulesData: ApiResult<any> = await rulesResponse.json();
                 
@@ -343,25 +344,10 @@ export const useTradingBot = (props: {
                     status: marketInfo.active ? 'TRADING' : 'BREAK',
                     baseAsset: marketInfo.baseAsset,
                     quoteAsset: marketInfo.quoteAsset,
-                    lotSize: {
-                        minQty: parseFloat(lotSizeFilter?.minQty) || 0,
-                        maxQty: parseFloat(lotSizeFilter?.maxQty) || 0,
-                        stepSize: parseFloat(lotSizeFilter?.stepSize) || 0,
-                    },
-                    minNotional: {
-                        minNotional: parseFloat(minNotionalFilter?.minNotional || minNotionalFilter?.notional) || 0,
-                    },
-                    priceFilter: {
-                        minPrice: parseFloat(priceFilter?.minPrice) || 0,
-                        maxPrice: parseFloat(priceFilter?.maxPrice) || 0,
-                        tickSize: parseFloat(priceFilter?.tickSize) || 0,
-                    },
-                    precision: {
-                        price: marketInfo.pricePrecision,
-                        amount: marketInfo.amountPrecision,
-                        base: marketInfo.baseAssetPrecision,
-                        quote: marketInfo.quotePrecision,
-                    },
+                    lotSize: { minQty: parseFloat(lotSizeFilter?.minQty) || 0, maxQty: parseFloat(lotSizeFilter?.maxQty) || 0, stepSize: parseFloat(lotSizeFilter?.stepSize) || 0 },
+                    minNotional: { minNotional: parseFloat(minNotionalFilter?.minNotional || minNotionalFilter?.notional) || 0 },
+                    priceFilter: { minPrice: parseFloat(priceFilter?.minPrice) || 0, maxPrice: parseFloat(priceFilter?.maxPrice) || 0, tickSize: parseFloat(priceFilter?.tickSize) || 0 },
+                    precision: { price: marketInfo.pricePrecision, amount: marketInfo.amountPrecision, base: marketInfo.baseAssetPrecision, quote: marketInfo.quotePrecision },
                     baseAssetPrecision: marketInfo.baseAssetPrecision,
                     quotePrecision: marketInfo.quotePrecision,
                     icebergAllowed: marketInfo.icebergAllowed || false,
@@ -374,16 +360,7 @@ export const useTradingBot = (props: {
                 
                 if (isMounted.current) setSelectedMarketRules(parsedRules);
 
-            } catch (error: any) {
-                if (isMounted.current) {
-                    setRulesError(error.message);
-                    toast({ title: "Error al Cargar Reglas", description: error.message, variant: "destructive" });
-                }
-            } finally {
-                if (isMounted.current) setRulesLoading(false);
-            }
-
-            try {
+                // Fetch Klines
                 const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=${timeframe}&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
                 const klinesData: ApiResult<KLine[]> = await klinesResponse.json();
                 if (!klinesResponse.ok || !klinesData.success) throw new Error(klinesData.message || "Error al cargar velas (klines).");
@@ -398,20 +375,25 @@ export const useTradingBot = (props: {
                 } else {
                     if (isMounted.current) setIsDataLoaded(false);
                 }
+
             } catch (error: any) {
                 if (isMounted.current) {
-                    toast({ title: "Advertencia al Cargar Gráfico", description: error.message, variant: "destructive" });
-                    setCurrentMarketPriceHistory([]); setIsDataLoaded(false);
+                    setRulesError(error.message);
+                    toast({ title: "Error al Cargar Datos del Mercado", description: error.message, variant: "destructive" });
+                    setIsDataLoaded(false);
+                    setCurrentMarketPriceHistory([]);
                 }
+            } finally {
+                if (isMounted.current) setRulesLoading(false);
             }
-
         };
-        fetchInitialData();
-        const dataInterval = setInterval(fetchInitialData, 30000); // Polling cada 30 segundos
+
+        fetchMarketData();
+        const dataInterval = setInterval(fetchMarketData, 30000);
         
         return () => clearInterval(dataInterval);
 
-    }, [selectedMarket?.symbol, toast, annotateMarketPriceHistory, timeframe]);
+    }, [selectedMarket?.symbol, timeframe, toast, annotateMarketPriceHistory]);
 
     useEffect(() => {
         if (isBotRunning && isDataLoaded) {
