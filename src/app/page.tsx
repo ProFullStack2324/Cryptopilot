@@ -21,6 +21,7 @@ import { CHART_COLORS } from '@/components/MarketChart';
 import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
 import { SimulatedPerformanceCard } from '@/components/dashboard/simulated-performance-card';
 import { Watchlist } from '@/components/dashboard/watchlist';
+import { SignalHistoryTable } from '@/components/dashboard/signal-history-table'; // ¡NUEVO!
 
 // Importaciones de UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -65,39 +66,55 @@ export default function TradingBotControlPanel() {
 
     const [operationLogs, setOperationLogs] = useState<any[]>([]);
     const [tradeExecutionLogs, setTradeExecutionLogs] = useState<any[]>([]);
+    const [signalLogs, setSignalLogs] = useState<any[]>([]); // ¡NUEVO ESTADO!
 
     const { toast } = useToast();
 
     const onBotAction = useCallback((details: any) => {
         const newLog = { ...details, timestamp: Date.now() + Math.random() };
+        
+        // El Diario del Bot (operationLogs) siempre registra todo
         setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
         
         const isInsufficientFunds = details.data?.action === 'hold_insufficient_funds';
 
-        if (details.type === 'order_placed' || details.type === 'order_failed' || (details.type === 'strategy_decision' && isInsufficientFunds)) {
-            let logEntry = { ...newLog };
+        // Registro para el Libro de Órdenes y MongoDB
+        if (details.type === 'order_placed' || details.type === 'order_failed' || isInsufficientFunds) {
+            let logEntryForExecution = { ...newLog };
             if (isInsufficientFunds) {
-                logEntry.message = `Orden de Compra NO REALIZADA: Saldo insuficiente. Requerido: ~$${details.data.details.required.toFixed(2)}, Disponible: $${details.data.details.available.toFixed(2)}`;
-                logEntry.success = false;
+                logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${details.details?.required.toFixed(2)}, Disponible: $${details.details?.available.toFixed(2)}`;
+                logEntryForExecution.success = false;
             }
              setTradeExecutionLogs(prev => {
-                const updatedLogs = [logEntry, ...prev.slice(0, 99)];
-                
+                const updatedLogs = [logEntryForExecution, ...prev.slice(0, 99)];
                 (async () => {
                     try {
-                        await fetch('/api/logs/save', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(logEntry)
-                        });
-                    } catch (e) {
-                        console.error("Failed to save log to database", e);
-                    }
+                        await fetch('/api/logs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForExecution) });
+                    } catch (e) { console.error("Failed to save execution log to database", e); }
                 })();
-
                 return updatedLogs;
             });
         }
+        
+        // ¡NUEVO! Registro para el Historial de Señales y MongoDB
+        if (details.type === 'strategy_decision' && details.details?.strategyMode) {
+             let logEntryForSignal = {
+                timestamp: details.timestamp,
+                message: `Señal ${details.details.strategyMode.toUpperCase()} detectada (${details.details.buyConditionsCount} condiciones).`,
+                details: details.details,
+                success: true,
+             };
+             setSignalLogs(prev => {
+                 const updatedLogs = [logEntryForSignal, ...prev.slice(0, 99)];
+                (async () => {
+                    try {
+                        await fetch('/api/signals/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForSignal) });
+                    } catch (e) { console.error("Failed to save signal log to database", e); }
+                })();
+                 return updatedLogs;
+             });
+        }
+
     }, []);
 
     const {
@@ -295,20 +312,25 @@ export default function TradingBotControlPanel() {
                         <StrategyConditionChart data={annotatedHistory} />
                     </CardContent>
                 </Card>
-                
-                <div className="lg:col-span-2">
+
+                <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6">
                     <TradeHistoryTable 
                         logs={tradeExecutionLogs}
                         title="Libro de Órdenes"
                         emptyLogMessage="Esperando la primera acción de compra o venta..."
+                        className="md:col-span-1"
                     />
-                </div>
-
-                <div className="lg:col-span-2">
+                    <SignalHistoryTable
+                        logs={signalLogs}
+                        title="Historial de Señales Detectadas"
+                        emptyLogMessage="Esperando la primera señal de la estrategia..."
+                        className="md:col-span-1"
+                    />
                     <TradeHistoryTable 
                         logs={operationLogs}
                         title="Registro de Operaciones (Diario del Bot)"
                         emptyLogMessage="Esperando la primera acción del bot..."
+                        className="md:col-span-1"
                     />
                 </div>
 
