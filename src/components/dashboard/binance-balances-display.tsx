@@ -3,7 +3,7 @@
 
 import React from 'react';
 // useEffect and useState a re r emoved because this component now receives data via props.
-// The fetching logic should be in a parent component (e.g., page.tsx).
+// The fetching   should be in a parent component (e.g., page.tsx).
 // import { useEffect, useState } from 'react'; 
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
