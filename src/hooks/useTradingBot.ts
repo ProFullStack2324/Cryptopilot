@@ -46,7 +46,7 @@ export const useTradingBot = (props: {
     selectedMarket: Market | null;
     allBinanceBalances: BinanceBalance[];
     onBotAction?: (details: BotActionDetails) => void;
-    timeframe: string; // ¡NUEVO!
+    timeframe: string;
 }) => {
     const { selectedMarket, allBinanceBalances, onBotAction = () => {}, timeframe } = props;
 
@@ -62,7 +62,7 @@ export const useTradingBot = (props: {
     const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>([]);
     const [currentPrice, setCurrentPrice] = useState<number | null>(null);
     const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
-    const [botIntervalMs] = useState(5000); // Frecuencia de ejecución de la estrategia (5 segundos)
+    const [botIntervalMs] = useState(5000);
     
     const { toast } = useToast();
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -143,10 +143,7 @@ export const useTradingBot = (props: {
         const annotatedHistory: MarketPriceDataPoint[] = [];
 
         const closes = klines.map(k => k[4]).filter(isValidNumber);
-        if (closes.length !== klines.length) {
-            console.warn("Algunas velas no tienen precio de cierre válido.");
-            return [];
-        }
+        if (closes.length < 2) return [];
 
         for (let i = 0; i < klines.length; i++) {
             const currentCloses = klines.slice(0, i + 1).map(k => k[4]);
@@ -202,6 +199,7 @@ export const useTradingBot = (props: {
         }
     
         const latest = currentMarketPriceHistory.at(-1);
+        if (!latest) return;
 
         if (simulatedPosition) {
             const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount } = simulatedPosition;
@@ -232,7 +230,7 @@ export const useTradingBot = (props: {
     
         if (botOpenPosition) {
             const { amount, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
-            const currentRsi = latest?.rsi;
+            const currentRsi = latest.rsi;
     
             let sellReason: 'take_profit' | 'stop_loss' | 'rsi_sell' | null = null;
     
@@ -261,9 +259,10 @@ export const useTradingBot = (props: {
                 }
                 return; 
             }
+            logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`, true, 'strategy_decision');
         }
         
-        if (!botOpenPosition && !simulatedPosition) {
+        if (!botOpenPosition) {
             const decision = decideTradeActionAndAmount({
                 selectedMarket,
                 currentMarketPriceHistory,
@@ -315,12 +314,37 @@ export const useTradingBot = (props: {
                      console.error("Error connecting to simulation save API", e);
                 }
             }
-        } else if (botOpenPosition) {
-            logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`, true, 'strategy_decision');
         }
     
     }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, simulatedPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
     
+    // Función para generar datos de mercado simulados
+    const generateSimulatedData = useCallback(() => {
+        setCurrentMarketPriceHistory(prevHistory => {
+            const lastPoint = prevHistory.length > 0 ? prevHistory[prevHistory.length - 1] : { closePrice: 60000, timestamp: Date.now() - 60000 };
+            const newPrice = lastPoint.closePrice * (1 + (Math.random() - 0.5) * 0.001); // Fluctuación aleatoria
+            const newPoint:KLine = [
+                Date.now(),
+                lastPoint.closePrice,
+                Math.max(lastPoint.closePrice, newPrice),
+                Math.min(lastPoint.closePrice, newPrice),
+                newPrice,
+                Math.random() * 10,
+            ];
+            
+            const newHistoryKlines = [...prevHistory.map(p => [p.timestamp, p.openPrice, p.highPrice, p.lowPrice, p.closePrice, p.volume] as KLine), newPoint];
+            if (newHistoryKlines.length > PRICE_HISTORY_POINTS_TO_KEEP) {
+                newHistoryKlines.shift();
+            }
+            
+            const annotated = annotateMarketPriceHistory(newHistoryKlines);
+            if (annotated.length > 0) {
+                 setCurrentPrice(annotated[annotated.length - 1].closePrice);
+            }
+            return annotated;
+        });
+    }, [annotateMarketPriceHistory]);
+
 
     useEffect(() => {
         isMounted.current = true;
@@ -354,6 +378,8 @@ export const useTradingBot = (props: {
             return;
         }
 
+        let dataInterval: NodeJS.Timeout | null = null;
+
         const fetchMarketData = async () => {
             if (!isMounted.current) return;
             setRulesLoading(true);
@@ -374,22 +400,14 @@ export const useTradingBot = (props: {
                 const priceFilter = marketInfo.filters?.find((f: any) => f.filterType === 'PRICE_FILTER');
 
                 const parsedRules: MarketRules = {
-                    symbol: marketInfo.symbol,
-                    status: marketInfo.active ? 'TRADING' : 'BREAK',
-                    baseAsset: marketInfo.baseAsset,
-                    quoteAsset: marketInfo.quoteAsset,
+                    symbol: marketInfo.symbol, status: marketInfo.active ? 'TRADING' : 'BREAK', baseAsset: marketInfo.baseAsset, quoteAsset: marketInfo.quoteAsset,
                     lotSize: { minQty: parseFloat(lotSizeFilter?.minQty) || 0, maxQty: parseFloat(lotSizeFilter?.maxQty) || 0, stepSize: parseFloat(lotSizeFilter?.stepSize) || 0 },
                     minNotional: { minNotional: parseFloat(minNotionalFilter?.minNotional || minNotionalFilter?.notional) || 0 },
                     priceFilter: { minPrice: parseFloat(priceFilter?.minPrice) || 0, maxPrice: parseFloat(priceFilter?.maxPrice) || 0, tickSize: parseFloat(priceFilter?.tickSize) || 0 },
                     precision: { price: marketInfo.pricePrecision, amount: marketInfo.amountPrecision, base: marketInfo.baseAssetPrecision, quote: marketInfo.quotePrecision },
-                    baseAssetPrecision: marketInfo.baseAssetPrecision,
-                    quotePrecision: marketInfo.quotePrecision,
-                    icebergAllowed: marketInfo.icebergAllowed || false,
-                    ocoAllowed: marketInfo.ocoAllowed || false,
-                    quoteOrderQtyMarketAllowed: marketInfo.quoteOrderQtyMarketAllowed || false,
-                    isSpotTradingAllowed: marketInfo.isSpotTradingAllowed || false,
-                    isMarginTradingAllowed: marketInfo.isMarginTradingAllowed || false,
-                    filters: marketInfo.filters || [],
+                    baseAssetPrecision: marketInfo.baseAssetPrecision, quotePrecision: marketInfo.quotePrecision, icebergAllowed: marketInfo.icebergAllowed || false,
+                    ocoAllowed: marketInfo.ocoAllowed || false, quoteOrderQtyMarketAllowed: marketInfo.quoteOrderQtyMarketAllowed || false, isSpotTradingAllowed: marketInfo.isSpotTradingAllowed || false,
+                    isMarginTradingAllowed: marketInfo.isMarginTradingAllowed || false, filters: marketInfo.filters || [],
                 };
                 
                 if (isMounted.current) setSelectedMarketRules(parsedRules);
@@ -413,21 +431,28 @@ export const useTradingBot = (props: {
             } catch (error: any) {
                 if (isMounted.current) {
                     setRulesError(error.message);
-                    toast({ title: "Error al Cargar Datos del Mercado", description: error.message, variant: "destructive" });
-                    setIsDataLoaded(false);
-                    setCurrentMarketPriceHistory([]);
+                    logAction(`Error de Conexión: ${error.message}. Activando modo simulado.`, false, 'order_failed');
+                    setIsDataLoaded(true); // Permitir que el bot inicie en modo simulado
+                    // Iniciar generación de datos simulados si la carga real falla
+                    if (!dataInterval) {
+                        generateSimulatedData(); // Carga inicial simulada
+                        dataInterval = setInterval(generateSimulatedData, 5000);
+                    }
                 }
             } finally {
                 if (isMounted.current) setRulesLoading(false);
             }
         };
 
-        fetchMarketData();
-        const dataInterval = setInterval(fetchMarketData, 30000);
+        fetchMarketData(); // Llamada inicial
+        const initialDataInterval = setInterval(fetchMarketData, 30000); // Intervalo para datos reales
         
-        return () => clearInterval(dataInterval);
+        return () => {
+            clearInterval(initialDataInterval);
+            if (dataInterval) clearInterval(dataInterval);
+        };
 
-    }, [selectedMarket?.symbol, timeframe, toast, annotateMarketPriceHistory]);
+    }, [selectedMarket?.symbol, timeframe, annotateMarketPriceHistory, generateSimulatedData, logAction]);
 
     useEffect(() => {
         if (isBotRunning && isDataLoaded) {
@@ -444,5 +469,3 @@ export const useTradingBot = (props: {
         currentPrice, currentMarketPriceHistory, simulatedPosition
     };
 };
-
-    

@@ -21,7 +21,7 @@ import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
 import { SimulatedPerformanceCard } from '@/components/dashboard/simulated-performance-card';
 import { Watchlist } from '@/components/dashboard/watchlist';
 import { SignalHistoryTable } from '@/components/dashboard/signal-history-table';
-import { PerformanceMetricsCard } from '@/components/dashboard/performance-metrics-card'; // ¡NUEVO!
+import { PerformanceMetricsCard } from '@/components/dashboard/performance-metrics-card';
 
 // Importaciones de UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -32,6 +32,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Terminal } from "lucide-react";
+
 
 const MOCK_MARKETS: Market[] = [
     {
@@ -52,6 +55,7 @@ const isValidNumber = (value: any): value is number => typeof value === 'number'
 
 const parseErrorMessage = (error: string | null): string => {
     if (!error) return "Error desconocido.";
+    if (error.includes("timed out")) return "Error de Timeout: No se pudo conectar con la API de Binance a tiempo. Puede ser un bloqueo geográfico del servidor.";
     return error;
 };
 
@@ -75,10 +79,10 @@ export default function TradingBotControlPanel() {
         
         setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
         
-        const isInsufficientFunds = details.data?.action === 'hold_insufficient_funds';
+        const isInsufficientFunds = details.type === 'strategy_decision' && details.data?.action === 'hold_insufficient_funds';
 
         if (details.type === 'order_placed' || details.type === 'order_failed' || isInsufficientFunds) {
-            let logEntryForExecution = { ...newLog };
+            let logEntryForExecution = { ...newLog, message: details.message || newLog.message };
             if (isInsufficientFunds) {
                 logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${details.details?.required.toFixed(2)}, Disponible: $${details.details?.available.toFixed(2)}`;
                 logEntryForExecution.success = false;
@@ -153,7 +157,6 @@ export default function TradingBotControlPanel() {
                 }
             } catch (error: any) {
                 setBalancesError(error.message);
-                toast({ title: "Error al cargar balances", description: error.message, variant: "destructive" });
             } finally {
                 setBalancesLoading(false);
             }
@@ -161,7 +164,7 @@ export default function TradingBotControlPanel() {
         fetchBalances();
         const interval = setInterval(fetchBalances, 60000); 
         return () => clearInterval(interval);
-    }, [toast]);
+    }, []);
 
     
     const annotatedHistory = useMemo(() => currentMarketPriceHistory.filter(dp => dp && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)), [currentMarketPriceHistory]);
@@ -171,30 +174,34 @@ export default function TradingBotControlPanel() {
     const isReadyToStart = !rulesLoading && annotatedHistory.length >= MIN_REQUIRED_HISTORY_FOR_BOT;
 
     const ScalpingAnalysisDescription = () => {
+        if (rulesError) {
+            return `Modo Simulado Activo: No se pudo conectar a Binance. El bot está operando con datos de mercado simulados.`;
+        }
         if (annotatedHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
             return `Análisis en espera: se necesitan ${MIN_REQUIRED_HISTORY_FOR_BOT} velas para iniciar. Actual: ${annotatedHistory.length}.`;
         }
-    
         const latest = latestDataPointForStrategy;
         if (!latest) return "Esperando datos de la última vela...";
-
-        const { rsi, buyConditionsMet } = latest;
     
         if (botOpenPosition) {
             const { entryPrice, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
             const strategyName = strategy === 'sniper' ? 'Francotirador' : 'Scalping';
             return `Posición ABIERTA (${strategyName}). Entrada: ${entryPrice.toFixed(2)}. Take Profit: ${takeProfitPrice?.toFixed(2) || 'N/A'}. Stop Loss: ${stopLossPrice?.toFixed(2) || 'N/A'}. Monitoreando para cierre.`;
         }
-    
-        if (buyConditionsMet && buyConditionsMet >= 2) {
-            return `Señal de Francotirador detectada (${buyConditionsMet}/2). El bot intentará abrir una posición con objetivos de ganancia más amplios.`;
-        }
-
-        if (buyConditionsMet && buyConditionsMet >= 1) {
-            return `Señal de Scalping detectada (${buyConditionsMet}/1). El bot intentará abrir una posición de corto plazo. RSI: ${isValidNumber(rsi) ? rsi.toFixed(1) : 'N/A'}.`;
+        
+        if (simulatedPosition) {
+            return `Simulación ACTIVA. Monitoreando PnL de oportunidad perdida.`;
         }
     
-        return "Modo de Caza ACTIVO. Esperando la próxima oportunidad de entrada (RSI en sobreventa, cruce MACD o toque de Banda de Bollinger). El bot actuará según la fuerza de la señal.";
+        const { buyConditionsMet } = latest;
+        if ((buyConditionsMet || 0) >= 2) {
+            return `Modo de Caza ACTIVO. Señal de Francotirador detectada (${buyConditionsMet}/2). Esperando confirmación para actuar.`;
+        }
+        if ((buyConditionsMet || 0) >= 1) {
+            return `Modo de Caza ACTIVO. Señal de Scalping detectada (${buyConditionsMet}/1). Esperando confirmación para actuar.`;
+        }
+    
+        return "Modo de Caza ACTIVO. Esperando la próxima oportunidad de entrada (RSI en sobreventa, cruce MACD o toque de Banda de Bollinger).";
     };
 
     return (
@@ -229,55 +236,55 @@ export default function TradingBotControlPanel() {
                         </div>
                         <BotControls isBotRunning={isBotRunning} onToggleBot={toggleBotStatus} isDisabled={!isReadyToStart} />
                     </CardContent>
-                    <CardFooter className="flex-col items-center text-xs text-muted-foreground space-y-1">
-                        {selectedMarket && <p><strong>Precio Actual:</strong> {currentPrice !== null ? currentPrice.toFixed(selectedMarket.pricePrecision) : 'Cargando...'}</p>}
-                        {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
-                        {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
-                        {rulesError && <p className="text-red-500">Error al cargar reglas: {parseErrorMessage(rulesError)}</p>}
-                        {balancesError && <p className="text-red-500">Error al cargar balances: {parseErrorMessage(balancesError)}</p>}
-                    </CardFooter>
+                    {isPlacingOrder || placeOrderError || rulesError || balancesError ? (
+                        <CardFooter>
+                            <div className="text-xs text-muted-foreground w-full">
+                                {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
+                                {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
+                                {rulesError && <Alert variant="destructive" className="mt-2"><Terminal className="h-4 w-4" /><AlertTitle>Error de Conexión</AlertTitle><AlertDescription>{parseErrorMessage(rulesError)}</AlertDescription></Alert>}
+                                {balancesError && <Alert variant="destructive" className="mt-2"><Terminal className="h-4 w-4" /><AlertTitle>Error de Balances</AlertTitle><AlertDescription>{parseErrorMessage(balancesError)}</AlertDescription></Alert>}
+                            </div>
+                        </CardFooter>
+                    ) : null}
                 </Card>
             </header>
 
             <main className="grid grid-cols-1 lg:grid-cols-4 gap-6 w-full">
-                 <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <Card className="lg:col-span-1 md:col-span-1">
-                        <CardHeader><CardTitle>Reglas del Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
-                        <CardContent>
-                            {rulesLoading && <p>Cargando...</p>}
-                            {rulesError && <p className="text-red-500">{parseErrorMessage(rulesError)}</p>}
-                            {selectedMarketRules ? (
-                                <div className="text-sm space-y-1">
-                                    <p><strong>Cantidad Mínima:</strong> {isValidNumber(selectedMarketRules.lotSize?.minQty) ? selectedMarketRules.lotSize.minQty : 'N/A'}</p>
-                                    <p><strong>Nocional Mínimo:</strong> {isValidNumber(selectedMarketRules.minNotional?.minNotional) ? `${selectedMarketRules.minNotional.minNotional} USDT` : 'N/A'}</p>
-                                </div>
-                            ) : (!rulesLoading && !rulesError && <p>Selecciona un mercado.</p>)}
-                        </CardContent>
-                    </Card>
-                    <div className="lg:col-span-1 md:col-span-1">
+                 <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="md:col-span-1 lg:col-span-1">
                         <BinanceBalancesDisplay balances={currentBalances.reduce((acc, bal) => ({ ...acc, [bal.asset]: { available: bal.free, onOrder: bal.locked, total: bal.free + bal.locked } }), {})} isLoading={balancesLoading} error={balancesError} />
                     </div>
-                     <div className="lg:col-span-2 md:col-span-2">
+                    <div className="md:col-span-1 lg:col-span-2">
                         <PerformanceMetricsCard />
                     </div>
                 </div>
 
                 <div className="lg:col-span-1 row-start-1 lg:row-start-auto">
-                    <Watchlist />
+                     <BotStatusFlow 
+                        isBotRunning={isBotRunning}
+                        rulesLoading={rulesLoading}
+                        balancesLoading={balancesLoading}
+                        candleCount={annotatedHistory.length}
+                        requiredCandles={MIN_REQUIRED_HISTORY_FOR_BOT}
+                        botOpenPosition={botOpenPosition}
+                     />
                 </div>
                 
-                {simulatedPosition && (
+                {(simulatedPosition || botOpenPosition) && (
                     <div className="lg:col-span-4">
-                        <SimulatedPerformanceCard
-                            simulatedPosition={simulatedPosition}
-                            currentPrice={currentPrice}
-                            market={selectedMarket}
-                        />
+                        {simulatedPosition && (
+                            <SimulatedPerformanceCard
+                                simulatedPosition={simulatedPosition}
+                                currentPrice={currentPrice}
+                                market={selectedMarket}
+                            />
+                        )}
+                        {/* Aquí podrías poner un Card para la posición real si lo deseas */}
                     </div>
                 )}
                 
                 <Card className="lg:col-span-4 shadow-lg rounded-xl">
-                    <CardHeader><CardTitle>Gráfica de Mercado</CardTitle></CardHeader>
+                    <CardHeader><CardTitle>Gráfica de Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
                     <CardContent>
                         <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
                     </CardContent>
@@ -286,8 +293,8 @@ export default function TradingBotControlPanel() {
 
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-4">
-                        <CardHeader><CardTitle>Diagnóstico de Estrategia (Scalping)</CardTitle></CardHeader>
-                        <CardContent>
+                        <CardHeader><CardTitle>Diagnóstico de Estrategia</CardTitle></CardHeader>
+                        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                              <StrategyDashboard 
                                 latest={latestDataPointForStrategy} 
                                 decision={lastStrategyDecision} 
@@ -296,12 +303,20 @@ export default function TradingBotControlPanel() {
                                 botOpenPosition={botOpenPosition}
                                 strategyMode="scalping"
                              />
+                             <StrategyDashboard 
+                                latest={latestDataPointForStrategy} 
+                                decision={lastStrategyDecision} 
+                                selectedMarket={selectedMarket} 
+                                priceHistory={annotatedHistory}
+                                botOpenPosition={botOpenPosition}
+                                strategyMode="sniper"
+                             />
                         </CardContent>
                     </Card>
                 )}
                 
                 <Card className="lg:col-span-4">
-                    <CardHeader><CardTitle>Análisis de Condiciones (Scalping vs Francotirador)</CardTitle></CardHeader>
+                    <CardHeader><CardTitle>Análisis de Condiciones de Estrategia</CardTitle></CardHeader>
                     <CardContent>
                         <StrategyConditionChart data={annotatedHistory} />
                     </CardContent>
@@ -328,21 +343,9 @@ export default function TradingBotControlPanel() {
                     />
                 </div>
 
-                {annotatedHistory.length > 0 && (
-                    <Card className="lg:col-span-4">
-                        <CardHeader><CardTitle>Diagnóstico de Estrategia (Análisis Francotirador)</CardTitle></CardHeader>
-                        <CardContent>
-                             <StrategyDashboard 
-                                latest={latestDataPointForStrategy} 
-                                decision={lastStrategyDecision} 
-                                selectedMarket={selectedMarket} 
-                                priceHistory={annotatedHistory}
-                                botOpenPosition={botOpenPosition}
-                                strategyMode="sniper"
-                             />
-                        </CardContent>
-                    </Card>
-                )}
+                <div className="lg:col-span-4">
+                    <Watchlist />
+                </div>
             </main>
         </div>
     );
