@@ -68,9 +68,11 @@ export const useTradingBot = (props: {
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isMounted = useRef(false);
 
-    // Simplificado para solo llamar al prop onBotAction
+    // Wrapper para asegurar que onBotAction se llame correctamente
     const logAction = useCallback((details: Omit<BotActionDetails, 'timestamp'>) => {
-        onBotAction({ ...details, timestamp: Date.now() });
+        if (onBotAction) {
+            onBotAction({ ...details, timestamp: Date.now() });
+        }
     }, [onBotAction]);
 
     const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'buy' | 'sell'; quantity: number }, strategyForOrder: 'scalping' | 'sniper') => {

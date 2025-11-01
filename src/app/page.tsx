@@ -6,7 +6,6 @@ import { useToast } from '@/hooks/use-toast';
 import {
     Market,
     BinanceBalance,
-    MarketPriceDataPoint,
     BotActionDetails
 } from '@/lib/types'; 
 
@@ -88,7 +87,7 @@ export default function TradingBotControlPanel() {
         if (details.type === 'order_placed' || details.type === 'order_failed' || details.type === 'hold_insufficient_funds') {
             let logEntryForExecution = { ...newLog, message: details.message || 'Acción de orden' };
             if (details.type === 'hold_insufficient_funds') {
-                logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${details.details?.required.toFixed(2)}, Disponible: $${details.details?.available.toFixed(2)}`;
+                logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${(details.details?.required || 0).toFixed(2)}, Disponible: $${(details.details?.available || 0).toFixed(2)}`;
                 logEntryForExecution.success = false;
             }
              setTradeExecutionLogs(prev => [logEntryForExecution, ...prev.slice(0, 99)]);
@@ -132,14 +131,15 @@ export default function TradingBotControlPanel() {
         timeframe,
     });
     
-    // Carga inicial de logs desde la BD
+    // Carga inicial de logs desde la BD (ASUMIENDO QUE EXISTEN ENDPOINTS)
     useEffect(() => {
         const fetchInitialLogs = async () => {
             try {
-                // No tenemos endpoints para leer logs, asumimos que se empieza de cero
-                // Si los tuviéramos, las llamadas irían aquí.
-                // Ejemplo: const tradeLogsRes = await fetch('/api/logs/history');
-                // const signalLogsRes = await fetch('/api/signals/history');
+                // Aquí irían las llamadas a los endpoints que devuelven el historial
+                // const tradeLogsRes = await fetch('/api/logs/history').then(res => res.json());
+                // const signalLogsRes = await fetch('/api/signals/history').then(res => res.json());
+                // if (tradeLogsRes.success) setTradeExecutionLogs(tradeLogsRes.logs);
+                // if (signalLogs.success) setSignalLogs(signalLogs.logs);
             } catch (e) {
                 console.error("Error fetching initial logs", e);
             }
@@ -246,16 +246,16 @@ export default function TradingBotControlPanel() {
                         </div>
                         <BotControls isBotRunning={isBotRunning} onToggleBot={toggleBotStatus} isDisabled={!isReadyToStart} />
                     </CardContent>
-                    {isPlacingOrder || placeOrderError || rulesError || balancesError ? (
+                    {(isPlacingOrder || placeOrderError || rulesError || balancesError) && (
                         <CardFooter>
                             <div className="text-xs text-muted-foreground w-full">
                                 {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
-                                {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
+                                {placeOrderError && <Alert variant="destructive" className="mt-2"><Terminal className="h-4 w-4" /><AlertTitle>Error de Orden</AlertTitle><AlertDescription>{parseErrorMessage(placeOrderError)}</AlertDescription></Alert>}
                                 {rulesError && <Alert variant="destructive" className="mt-2"><Terminal className="h-4 w-4" /><AlertTitle>Error de Conexión</AlertTitle><AlertDescription>{parseErrorMessage(rulesError)}</AlertDescription></Alert>}
                                 {balancesError && <Alert variant="destructive" className="mt-2"><Terminal className="h-4 w-4" /><AlertTitle>Error de Balances</AlertTitle><AlertDescription>{parseErrorMessage(balancesError)}</AlertDescription></Alert>}
                             </div>
                         </CardFooter>
-                    ) : null}
+                    )}
                 </Card>
             </header>
 
