@@ -30,10 +30,8 @@ export default function RootLayout({
       {/* La etiqueta <head> se maneja implícitamente por Next.js a través de Metadata.
           No debe haber espacios ni contenido suelto entre <html> y <body>. */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ToastProvider>
-          {children}
-          <Toaster />
-        </ToastProvider>
+        {children}
+        <Toaster />
       </body>
     </html>
   );
