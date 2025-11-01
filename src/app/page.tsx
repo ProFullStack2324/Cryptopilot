@@ -73,7 +73,7 @@ export default function TradingBotControlPanel() {
 
     const [tradeExecutionLogs, setTradeExecutionLogs] = useState<any[]>([]);
     const [signalLogs, setSignalLogs] = useState<any[]>([]);
-    const { simulationHistory, isLoading: isSimHistoryLoading, error: simHistoryError } = useSimulationHistory();
+    const { simulationHistory, isLoading: isSimHistoryLoading, error: simHistoryError, refreshHistory } = useSimulationHistory();
 
 
     const { toast } = useToast();
@@ -92,15 +92,17 @@ export default function TradingBotControlPanel() {
             }
              setTradeExecutionLogs(prev => [logEntryForExecution, ...prev.slice(0, 99)]);
             // Guardar en la base de datos
-            fetch('/api/logs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForExecution) })
-                .catch(e => console.error("Failed to save execution log to database", e));
+            if(details.type === 'order_placed' || details.type === 'order_failed') {
+                fetch('/api/logs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForExecution) })
+                    .catch(e => console.error("Failed to save execution log to database", e));
+            }
         }
         
         // Filtra eventos para la tabla "Historial de Señales Detectadas"
         if (details.type === 'strategy_decision' && details.details?.strategyMode) {
              let logEntryForSignal = {
                 ...newLog,
-                message: `Señal ${details.details.strategyMode.toUpperCase()} detectada (${details.details.buyConditionsCount} condiciones).`,
+                message: `Señal ${details.data.action.toUpperCase()} detectada (${details.details.buyConditionsCount} condiciones). Modo: ${details.details.strategyMode}`,
                 success: true,
              };
              setSignalLogs(prev => [logEntryForSignal, ...prev.slice(0, 99)]);
@@ -109,7 +111,12 @@ export default function TradingBotControlPanel() {
                 .catch(e => console.error("Failed to save signal log to database", e));
         }
 
-    }, []); // El array de dependencias vacío asegura que la función no se recree innecesariamente.
+        // Si la simulación se cierra, refrescamos el historial
+        if (details.message?.includes("Simulación finalizada")) {
+            refreshHistory();
+        }
+
+    }, [refreshHistory]); // El array de dependencias vacío asegura que la función no se recree innecesariamente.
 
 
     const {
@@ -133,13 +140,14 @@ export default function TradingBotControlPanel() {
     
     // Carga inicial de logs desde la BD (ASUMIENDO QUE EXISTEN ENDPOINTS)
     useEffect(() => {
+        // Esta función se puede expandir para cargar logs desde la BD si se implementan los endpoints
         const fetchInitialLogs = async () => {
             try {
-                // Aquí irían las llamadas a los endpoints que devuelven el historial
-                // const tradeLogsRes = await fetch('/api/logs/history').then(res => res.json());
-                // const signalLogsRes = await fetch('/api/signals/history').then(res => res.json());
+                // Ejemplo (requeriría crear estos endpoints):
+                // const tradeLogsRes = await fetch('/api/logs/history?type=trade').then(res => res.json());
+                // const signalLogsRes = await fetch('/api/logs/history?type=signal').then(res => res.json());
                 // if (tradeLogsRes.success) setTradeExecutionLogs(tradeLogsRes.logs);
-                // if (signalLogs.success) setSignalLogs(signalLogs.logs);
+                // if (signalLogsRes.success) setSignalLogs(signalLogsRes.logs);
             } catch (e) {
                 console.error("Error fetching initial logs", e);
             }
@@ -179,7 +187,7 @@ export default function TradingBotControlPanel() {
     
     const annotatedHistory = useMemo(() => currentMarketPriceHistory.filter(dp => dp && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)), [currentMarketPriceHistory]);
     const latestDataPointForStrategy = useMemo(() => annotatedHistory.at(-1) || null, [annotatedHistory]);
-    const lastStrategyDecision = useMemo(() => tradeExecutionLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [tradeExecutionLogs]);
+    const lastStrategyDecision = useMemo(() => signalLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [signalLogs]);
 
     const isReadyToStart = !rulesLoading && annotatedHistory.length >= MIN_REQUIRED_HISTORY_FOR_BOT;
 
@@ -205,10 +213,10 @@ export default function TradingBotControlPanel() {
     
         const { buyConditionsMet } = latest;
         if ((buyConditionsMet || 0) >= 2) {
-            return `Modo de Caza ACTIVO. Señal de Francotirador detectada (${buyConditionsMet}/2). Esperando confirmación para actuar.`;
+            return `Modo de Caza ACTIVO. Señal de Francotirador detectada (${buyConditionsMet}/3). Esperando confirmación para actuar.`;
         }
         if ((buyConditionsMet || 0) >= 1) {
-            return `Modo de Caza ACTIVO. Señal de Scalping detectada (${buyConditionsMet}/1). Esperando confirmación para actuar.`;
+            return `Modo de Caza ACTIVO. Señal de Scalping detectada (${buyConditionsMet}/3). Esperando confirmación para actuar.`;
         }
     
         return "Modo de Caza ACTIVO. Esperando la próxima oportunidad de entrada (RSI en sobreventa, cruce MACD o toque de Banda de Bollinger).";
