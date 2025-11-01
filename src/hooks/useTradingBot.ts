@@ -204,14 +204,14 @@ export const useTradingBot = (props: {
         if (!latest) return;
 
         if (simulatedPosition) {
-            const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount } = simulatedPosition;
+            const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount, strategy } = simulatedPosition;
             let exitReason: string | null = null;
             if (takeProfitPrice && currentPrice >= takeProfitPrice) exitReason = 'take_profit';
             else if (stopLossPrice && currentPrice <= stopLossPrice) exitReason = 'stop_loss';
 
             if (exitReason) {
                 const finalPnl = (currentPrice - entryPrice) * amount;
-                logAction({ type: 'strategy_decision', success: true, message: `Simulación finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.` });
+                logAction({ type: 'strategy_decision', success: true, message: `Simulación (${strategy}) finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.` });
                 
                 if (simulationId) {
                     fetch('/api/simulations/save', {
@@ -245,7 +245,7 @@ export const useTradingBot = (props: {
             }
     
             if (sellReason) {
-                logAction({ type: 'strategy_decision', success: true, message: `Señal de VENTA por ${sellReason}.`, details: { reason: sellReason, currentPrice, rsi: currentRsi, target: sellReason === 'take_profit' ? takeProfitPrice : stopLossPrice } });
+                logAction({ type: 'strategy_decision', success: true, message: `Señal de VENTA (${strategy}) por ${sellReason}.`, details: { reason: sellReason, currentPrice, rsi: currentRsi, target: sellReason === 'take_profit' ? takeProfitPrice : stopLossPrice } });
                 
                 let quantityToSell = amount;
                 const stepSize = selectedMarketRules.lotSize.stepSize;
@@ -262,58 +262,57 @@ export const useTradingBot = (props: {
                 return; 
             }
             logAction({ type: 'strategy_decision', success: true, message: `HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`, data: { action: 'hold' } });
+            return;
         }
         
-        if (!botOpenPosition) {
-            const decision = decideTradeActionAndAmount({
-                selectedMarket,
-                currentMarketPriceHistory,
-                currentPrice,
-                allBinanceBalances,
-                botOpenPosition,
-                selectedMarketRules,
-                logStrategyMessage: (message, details) => logAction({type: 'strategy_decision', success: true, message, details})
-            });
-            
-            const message = `Decisión de la estrategia: ${decision.action.toUpperCase().replace('_', ' ')}${decision.details?.strategyMode ? ` en modo ${decision.details.strategyMode}` : ''}`;
-            logAction({ type: 'strategy_decision', success: true, message, details: decision.details, data: { action: decision.action } });
-    
-            if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
-                await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
-            } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
-                const config = STRATEGY_CONFIG[decision.details.strategyMode];
-                const entryPrice = decision.orderData.price;
-                const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
-                const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
+        // --- LÓGICA DE DECISIÓN DE COMPRA (SI NO HAY POSICIÓN ABIERTA) ---
+        const decision = decideTradeActionAndAmount({
+            selectedMarket,
+            latestDataPoint: latest,
+            currentPrice,
+            allBinanceBalances,
+            botOpenPosition,
+            selectedMarketRules,
+        });
 
-                const newSimulation: Omit<BotOpenPosition, 'simulationId'> = {
-                    marketId: selectedMarket.id,
-                    entryPrice: entryPrice,
-                    amount: decision.orderData.quantity,
-                    type: 'buy',
-                    timestamp: Date.now(),
-                    takeProfitPrice,
-                    stopLossPrice,
-                    strategy: decision.details.strategyMode,
-                };
+        const message = `Decisión Estrategia: ${decision.action.toUpperCase().replace('_', ' ')}${decision.details?.strategyMode ? ` en modo ${decision.details.strategyMode}` : ''}. Razón: ${decision.details?.reason || 'N/A'}`;
+        logAction({ type: 'strategy_decision', success: true, message, details: decision.details, data: { action: decision.action } });
 
-                try {
-                    const response = await fetch('/api/simulations/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(newSimulation),
-                    });
-                    const result = await response.json();
-                    if(result.success && result.insertedId) {
-                        setSimulatedPosition({ ...newSimulation, simulationId: result.insertedId });
-                    } else {
-                        setSimulatedPosition(newSimulation); // Fallback sin ID
-                        console.error("Failed to save simulation start state", result.message);
-                    }
-                } catch (e) {
-                     setSimulatedPosition(newSimulation); // Fallback sin ID
-                     console.error("Error connecting to simulation save API", e);
+        if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
+            await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
+        } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
+            const config = STRATEGY_CONFIG[decision.details.strategyMode];
+            const entryPrice = decision.orderData.price;
+            const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
+            const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
+
+            const newSimulation: Omit<BotOpenPosition, 'simulationId'> = {
+                marketId: selectedMarket.id,
+                entryPrice: entryPrice,
+                amount: decision.orderData.quantity,
+                type: 'buy',
+                timestamp: Date.now(),
+                takeProfitPrice,
+                stopLossPrice,
+                strategy: decision.details.strategyMode,
+            };
+
+            try {
+                const response = await fetch('/api/simulations/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newSimulation),
+                });
+                const result = await response.json();
+                if(result.success && result.insertedId) {
+                    setSimulatedPosition({ ...newSimulation, simulationId: result.insertedId });
+                } else {
+                    setSimulatedPosition(newSimulation); // Fallback sin ID
+                    console.error("Failed to save simulation start state", result.message);
                 }
+            } catch (e) {
+                 setSimulatedPosition(newSimulation); // Fallback sin ID
+                 console.error("Error connecting to simulation save API", e);
             }
         }
     
@@ -322,7 +321,7 @@ export const useTradingBot = (props: {
     // Función para generar datos de mercado simulados
     const generateSimulatedData = useCallback(() => {
         setCurrentMarketPriceHistory(prevHistory => {
-            const lastPoint = prevHistory.length > 0 ? prevHistory[prevHistory.length - 1] : { closePrice: 60000, timestamp: Date.now() - 60000 };
+            const lastPoint = prevHistory.length > 0 ? prevHistory[prevHistory.length - 1] : { closePrice: 60000, timestamp: Date.now() - 60000, openPrice: 60000, highPrice: 60000, lowPrice: 60000, volume: 10 };
             const newPrice = lastPoint.closePrice * (1 + (Math.random() - 0.5) * 0.001); // Fluctuación aleatoria
             const newPoint:KLine = [
                 Date.now(),

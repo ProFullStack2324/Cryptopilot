@@ -40,60 +40,41 @@ const STRATEGY_CONFIG = {
 
 export const decideTradeActionAndAmount = (params: {
     selectedMarket: Market;
-    currentMarketPriceHistory: MarketPriceDataPoint[];
+    latestDataPoint: MarketPriceDataPoint;
     currentPrice: number;
     allBinanceBalances: BinanceBalance[];
     botOpenPosition: BotOpenPosition | null;
     selectedMarketRules: MarketRules;
-    logStrategyMessage: (message: string, details?: any) => void;
 }): StrategyDecision => {
     const {
         selectedMarket,
-        currentMarketPriceHistory,
+        latestDataPoint: latest,
         currentPrice,
         allBinanceBalances,
         botOpenPosition,
         selectedMarketRules,
-        logStrategyMessage: log,
     } = params;
     
-    if (currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT) {
-        // No registrar mensaje si no hay suficientes datos para evitar spam en el log inicial
+    const isValidIndicator = (val: any): val is number => typeof val === 'number' && !isNaN(val);
+
+    if (botOpenPosition) {
+        // La lógica de venta/cierre ya se maneja en el hook principal,
+        // por lo que si hay una posición abierta, la estrategia de entrada no debe hacer nada.
         return { action: 'hold' };
     }
 
-    const latest = currentMarketPriceHistory.at(-1)!;
-    const prev = currentMarketPriceHistory.at(-2);
+    const { rsi, upperBollingerBand, lowerBollingerBand, macdHistogram, closePrice, buyConditionsMet } = latest;
     
-    const { rsi, upperBollingerBand, lowerBollingerBand, macdHistogram, closePrice } = latest;
-    const prevMacdHistogram = prev?.macdHistogram;
-
-    const isValidIndicator = (val: any): val is number => typeof val === 'number' && !isNaN(val);
-
-    if (![rsi, upperBollingerBand, lowerBollingerBand, macdHistogram, prevMacdHistogram, closePrice].every(isValidIndicator)) {
-        log("HOLD: Uno o más indicadores clave son inválidos en la última vela.");
-        return { action: 'hold' };
+    if (![rsi, upperBollingerBand, lowerBollingerBand, macdHistogram, closePrice, buyConditionsMet].every(isValidIndicator)) {
+        return { action: 'hold', details: { reason: "Indicadores inválidos en la última vela." } };
     }
 
     const quoteAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.quoteAsset)?.free || 0;
-    
-    if (botOpenPosition) {
-        // No registrar mensaje aquí para evitar spam. El monitoreo de salida se hace en el hook.
-        return { action: 'hold' };
-    }
-
-    // --- LÓGICA DE COMPRA DINÁMICA ---
-    const buyPriceCondition = closePrice <= lowerBollingerBand!;
-    const buyRsiCondition = rsi! <= STRATEGY_CONFIG.rsiBuyThreshold;
-    const buyMacdCondition = macdHistogram! > 0 && prevMacdHistogram! <= 0;
-    
-    const conditionsForBuyMet = [buyPriceCondition, buyRsiCondition, buyMacdCondition];
-    const buyConditionsCount = conditionsForBuyMet.filter(Boolean).length;
 
     let strategyMode: 'scalping' | 'sniper' | null = null;
-    if (buyConditionsCount >= STRATEGY_CONFIG.sniper.minBuyConditions) {
+    if (buyConditionsMet >= STRATEGY_CONFIG.sniper.minBuyConditions) {
         strategyMode = 'sniper';
-    } else if (buyConditionsCount >= STRATEGY_CONFIG.scalping.minBuyConditions) {
+    } else if (buyConditionsMet >= STRATEGY_CONFIG.scalping.minBuyConditions) {
         strategyMode = 'scalping';
     }
     
@@ -102,34 +83,38 @@ export const decideTradeActionAndAmount = (params: {
         const decisionDetails = {
             strategyMode,
             requiredConditions: config.minBuyConditions,
-            buyConditionsCount,
-            conditions: { price: buyPriceCondition, rsi: buyRsiCondition, macd: buyMacdCondition }
+            buyConditionsCount: buyConditionsMet,
+            conditions: {
+                price: closePrice <= lowerBollingerBand!,
+                rsi: rsi! <= STRATEGY_CONFIG.rsiBuyThreshold,
+                macd: macdHistogram! > (latest.macdHistogram! - (latest.macdHistogram! * 0.1)) && macdHistogram! > 0, // simplificado
+            }
         };
 
         const minNotionalValue = selectedMarketRules.minNotional.minNotional;
         let amountInQuote = quoteAssetBalance * config.capitalToRiskPercentage;
         
+        // Si el capital a arriesgar es menor que el mínimo nocional, se ajusta al mínimo.
         if (amountInQuote < minNotionalValue) {
-            amountInQuote = minNotionalValue * 1.01;
+            amountInQuote = minNotionalValue * 1.01; // Un poco por encima para evitar errores de redondeo.
         }
 
+        // Si después de ajustar sigue sin haber fondos suficientes.
         if (amountInQuote > quoteAssetBalance) {
             const insufficientFundsDetails = { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance };
-            // El mensaje de log se genera en el hook para este caso
             return { action: 'hold_insufficient_funds', details: insufficientFundsDetails, orderData: { side: 'BUY', quantity: amountInQuote / currentPrice, price: currentPrice } };
         }
 
         let quantityToBuy = amountInQuote / currentPrice;
-
         const stepSize = selectedMarketRules.lotSize.stepSize;
         if (stepSize > 0) {
             quantityToBuy = Math.floor(quantityToBuy / stepSize) * stepSize;
         }
         quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarketRules.precision.amount));
         
+        // Verificar si la cantidad a comprar cumple el mínimo permitido por el exchange.
         if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
-            log(`HOLD: Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido (${selectedMarketRules.lotSize.minQty}).`, decisionDetails);
-            return { action: 'hold' };
+            return { action: 'hold', details: { ...decisionDetails, reason: `Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido.` } };
         }
 
         return {
@@ -143,8 +128,6 @@ export const decideTradeActionAndAmount = (params: {
         };
     }
     
-    // Si no se cumple ninguna condición de compra
-    return { action: 'hold' };
+    return { action: 'hold', details: { reason: "No se cumplieron las condiciones de compra." } };
 };
-
     
