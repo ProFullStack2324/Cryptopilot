@@ -21,7 +21,8 @@ import { CHART_COLORS } from '@/components/MarketChart';
 import { TradeHistoryTable } from '@/components/dashboard/trade-history-table';
 import { SimulatedPerformanceCard } from '@/components/dashboard/simulated-performance-card';
 import { Watchlist } from '@/components/dashboard/watchlist';
-import { SignalHistoryTable } from '@/components/dashboard/signal-history-table'; // ¡NUEVO!
+import { SignalHistoryTable } from '@/components/dashboard/signal-history-table';
+import { PerformanceMetricsCard } from '@/components/dashboard/performance-metrics-card'; // ¡NUEVO!
 
 // Importaciones de UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -66,19 +67,17 @@ export default function TradingBotControlPanel() {
 
     const [operationLogs, setOperationLogs] = useState<any[]>([]);
     const [tradeExecutionLogs, setTradeExecutionLogs] = useState<any[]>([]);
-    const [signalLogs, setSignalLogs] = useState<any[]>([]); // ¡NUEVO ESTADO!
+    const [signalLogs, setSignalLogs] = useState<any[]>([]);
 
     const { toast } = useToast();
 
     const onBotAction = useCallback((details: any) => {
         const newLog = { ...details, timestamp: Date.now() + Math.random() };
         
-        // El Diario del Bot (operationLogs) siempre registra todo
         setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
         
         const isInsufficientFunds = details.data?.action === 'hold_insufficient_funds';
 
-        // Registro para el Libro de Órdenes y MongoDB
         if (details.type === 'order_placed' || details.type === 'order_failed' || isInsufficientFunds) {
             let logEntryForExecution = { ...newLog };
             if (isInsufficientFunds) {
@@ -96,7 +95,6 @@ export default function TradingBotControlPanel() {
             });
         }
         
-        // ¡NUEVO! Registro para el Historial de Señales y MongoDB
         if (details.type === 'strategy_decision' && details.details?.strategyMode) {
              let logEntryForSignal = {
                 timestamp: details.timestamp,
@@ -243,8 +241,8 @@ export default function TradingBotControlPanel() {
             </header>
 
             <main className="grid grid-cols-1 lg:grid-cols-4 gap-6 w-full">
-                <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <Card>
+                 <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <Card className="lg:col-span-1 md:col-span-1">
                         <CardHeader><CardTitle>Reglas del Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
                         <CardContent>
                             {rulesLoading && <p>Cargando...</p>}
@@ -257,18 +255,15 @@ export default function TradingBotControlPanel() {
                             ) : (!rulesLoading && !rulesError && <p>Selecciona un mercado.</p>)}
                         </CardContent>
                     </Card>
-                    <BinanceBalancesDisplay balances={currentBalances.reduce((acc, bal) => ({ ...acc, [bal.asset]: { available: bal.free, onOrder: bal.locked, total: bal.free + bal.locked } }), {})} isLoading={balancesLoading} error={balancesError} />
-                    <BotStatusFlow 
-                        isBotRunning={isBotRunning}
-                        rulesLoading={rulesLoading}
-                        balancesLoading={balancesLoading}
-                        candleCount={annotatedHistory.length}
-                        requiredCandles={MIN_REQUIRED_HISTORY_FOR_BOT}
-                        botOpenPosition={botOpenPosition}
-                    />
+                    <div className="lg:col-span-1 md:col-span-1">
+                        <BinanceBalancesDisplay balances={currentBalances.reduce((acc, bal) => ({ ...acc, [bal.asset]: { available: bal.free, onOrder: bal.locked, total: bal.free + bal.locked } }), {})} isLoading={balancesLoading} error={balancesError} />
+                    </div>
+                     <div className="lg:col-span-2 md:col-span-2">
+                        <PerformanceMetricsCard />
+                    </div>
                 </div>
 
-                <div className="lg:col-span-1">
+                <div className="lg:col-span-1 row-start-1 lg:row-start-auto">
                     <Watchlist />
                 </div>
                 
