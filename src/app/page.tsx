@@ -143,15 +143,14 @@ export default function TradingBotControlPanel() {
     useEffect(() => {
         const fetchInitialLogs = async () => {
             try {
-                // Endpoint para logs de trades
+                // Endpoint para logs de trades (debe ser creado si no existe)
                 // const tradeLogsRes = await fetch('/api/logs/history?type=trade&limit=50').then(res => res.json());
-                // if (tradeLogsRes.success) setTradeExecutionLogs(tradeLogsRes.logs.reverse()); // Asumiendo que vienen del más antiguo al más nuevo
+                // if (tradeLogsRes.success) setTradeExecutionLogs(tradeLogsRes.logs.reverse()); 
 
-                // Endpoint para logs de señales
+                // Endpoint para logs de señales (debe ser creado si no existe)
                 // const signalLogsRes = await fetch('/api/signals/history?limit=50').then(res => res.json());
                 // if (signalLogsRes.success) setSignalLogs(signalLogsRes.logs.reverse());
                 
-                // El historial de simulaciones ya se carga a través de su propio hook
                 refreshHistory();
 
             } catch (e) {
@@ -243,7 +242,7 @@ export default function TradingBotControlPanel() {
                     </CardHeader>
                     <CardContent className="flex flex-wrap items-center justify-center gap-4">
                         <div className="flex items-center gap-2">
-                            <span className="font-semibold">Mercado:</span>
+                            <span className="font-semibold">1. Mercado:</span>
                             <Select onValueChange={setSelectedMarketId} value={selectedMarketId || ""}>
                                 <SelectTrigger className="w-[150px]"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
                                 <SelectContent>
@@ -252,7 +251,7 @@ export default function TradingBotControlPanel() {
                             </Select>
                         </div>
                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">Temporalidad:</span>
+                            <span className="font-semibold">2. Temporalidad:</span>
                             <Select onValueChange={setTimeframe} value={timeframe}>
                                 <SelectTrigger className="w-[120px]"><SelectValue placeholder="Tiempo" /></SelectTrigger>
                                 <SelectContent>
@@ -308,12 +307,11 @@ export default function TradingBotControlPanel() {
                                 market={selectedMarket}
                             />
                         )}
-                        {/* Aquí podrías poner un Card para la posición real si lo deseas */}
                     </div>
                 )}
                 
                 <Card className="lg:col-span-4 shadow-lg rounded-xl">
-                    <CardHeader><CardTitle>Gráfica de Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
+                    <CardHeader><CardTitle>3. Gráfica de Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
                     <CardContent>
                         <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={signalLogs} chartColors={CHART_COLORS} />
                     </CardContent>
@@ -322,7 +320,7 @@ export default function TradingBotControlPanel() {
 
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-4">
-                        <CardHeader><CardTitle>Diagnóstico de Estrategia</CardTitle></CardHeader>
+                        <CardHeader><CardTitle>4. Diagnóstico de Estrategia</CardTitle></CardHeader>
                         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                              <StrategyDashboard 
                                 latest={latestDataPointForStrategy} 
@@ -345,7 +343,7 @@ export default function TradingBotControlPanel() {
                 )}
                 
                 <Card className="lg:col-span-4">
-                    <CardHeader><CardTitle>Análisis de Condiciones de Estrategia</CardTitle></CardHeader>
+                    <CardHeader><CardTitle>5. Análisis de Condiciones</CardTitle></CardHeader>
                     <CardContent>
                         <StrategyConditionChart data={annotatedHistory} />
                     </CardContent>
@@ -354,13 +352,13 @@ export default function TradingBotControlPanel() {
                 <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6">
                     <TradeHistoryTable 
                         logs={tradeExecutionLogs}
-                        title="Libro de Órdenes"
+                        title="6. Libro de Órdenes"
                         emptyLogMessage="Esperando la primera acción de compra o venta..."
                         className="md:col-span-1"
                     />
                     <SignalHistoryTable
                         logs={signalLogs}
-                        title="Historial de Señales Detectadas"
+                        title="7. Historial de Señales"
                         emptyLogMessage="Esperando la primera señal de la estrategia..."
                         className="md:col-span-1"
                     />
@@ -368,7 +366,7 @@ export default function TradingBotControlPanel() {
                         logs={simulationHistory}
                         isLoading={isSimHistoryLoading}
                         error={simHistoryError}
-                        title="Historial de Simulaciones"
+                        title="8. Historial de Simulaciones"
                         emptyLogMessage="No hay simulaciones completadas."
                         className="md:col-span-1"
                     />

@@ -212,13 +212,12 @@ export const useTradingBot = (props: {
     // ======================================================================================================
     const executeBotStrategy = useCallback(async () => {
         if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT || !selectedMarketRules || isPlacingOrder) {
-            return; // Condiciones no cumplidas para ejecutar
+            return; 
         }
     
         const latest = currentMarketPriceHistory.at(-1);
-        if (!latest) return; // No hay datos de la última vela
+        if (!latest) return; 
 
-        // --- INICIO FLUJO DE SIMULACIÓN ---
         if (simulatedPosition) {
             const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount, strategy } = simulatedPosition;
             let exitReason: string | null = null;
@@ -227,14 +226,13 @@ export const useTradingBot = (props: {
 
             if (exitReason && simulationId) {
                 const finalPnl = (currentPrice - entryPrice) * amount;
-                logAction({ type: 'strategy_decision', success: true, message: `Simulación (${strategy}) finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.` });
+                logAction({ type: 'strategy_decision', success: true, message: `Simulación finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.` });
                 
-                // *** CORRECCIÓN: LLAMAR A LA API PARA CERRAR LA SIMULACIÓN ***
                 fetch('/api/simulations/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        simulationId, // <- Enviar el ID para actualizar
+                        simulationId, 
                         exitPrice: currentPrice,
                         exitReason,
                         finalPnl,
@@ -243,11 +241,9 @@ export const useTradingBot = (props: {
                 
                 setSimulatedPosition(null); 
             }
-            return; // Si hay simulación activa, no hacer nada más
+            return; 
         }
-        // --- FIN FLUJO DE SIMULACIÓN ---
     
-        // --- INICIO FLUJO DE POSICIÓN REAL ---
         if (botOpenPosition) {
             const { amount, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
             let sellReason: 'take_profit' | 'stop_loss' | 'rsi_sell' | null = null;
@@ -266,9 +262,7 @@ export const useTradingBot = (props: {
             }
             return;
         }
-        // --- FIN FLUJO DE POSICIÓN REAL ---
         
-        // --- INICIO FLUJO DE NUEVA ENTRADA (SI NO HAY POSICIÓN NI SIMULACIÓN) ---
         const decision = decideTradeActionAndAmount({
             selectedMarket, latestDataPoint: latest, currentPrice, allBinanceBalances, botOpenPosition: null, selectedMarketRules,
         });
@@ -301,7 +295,6 @@ export const useTradingBot = (props: {
                 });
                 const result = await response.json();
                 if(result.success && result.insertedId) {
-                    // *** CORRECCIÓN: GUARDAR EL ID DE LA SIMULACIÓN ***
                     setSimulatedPosition({ ...newSimulationBase, simulationId: result.insertedId });
                 } else {
                     setSimulatedPosition(newSimulationBase);

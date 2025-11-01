@@ -7,20 +7,17 @@ import { MarketPriceDataPoint, Market, BotOpenPosition } from '@/lib/types';
 import clsx from 'clsx';
 import { Check, X } from 'lucide-react';
 
-// Helper para validar si un valor es un número válido
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
-// Props que el componente aceptará
 interface StrategyDashboardProps {
   latest: MarketPriceDataPoint | null;
   decision: string;
   selectedMarket: Market | null;
   priceHistory: MarketPriceDataPoint[];
-  botOpenPosition?: BotOpenPosition | null; // Opcional
-  strategyMode: 'scalping' | 'sniper'; // Para configurar el modo
+  botOpenPosition?: BotOpenPosition | null;
+  strategyMode: 'scalping' | 'sniper';
 }
 
-// Componente individual para una condición de la estrategia MEJORADO
 const ConditionStatus = ({
     label,
     value,
@@ -61,11 +58,9 @@ export function StrategyDashboard({ latest, selectedMarket, priceHistory, botOpe
   const pricePrecision = selectedMarket.pricePrecision;
   const prev = priceHistory[priceHistory.length - 2];
   
-  // Extraer valores de los indicadores de la vela actual y previa
   const { rsi, closePrice, lowerBollingerBand, macdHistogram } = latest;
   const prevMacdHistogram = prev?.macdHistogram;
 
-  // Definir las condiciones de la estrategia para visualización
   const buyPriceCondition = isValidNumber(closePrice) && isValidNumber(lowerBollingerBand) && closePrice <= lowerBollingerBand;
   const buyRsiCondition = isValidNumber(rsi) && rsi <= 35;
   const buyMacdCondition = isValidNumber(macdHistogram) && isValidNumber(prevMacdHistogram) && macdHistogram > 0 && prevMacdHistogram <= 0;
@@ -85,8 +80,6 @@ export function StrategyDashboard({ latest, selectedMarket, priceHistory, botOpe
     if (totalBuyConditionsMet >= requirements) {
         return "COMPRAR";
     }
-    // No hay una decisión de "Vender" explícita basada en una combinación de condiciones aquí,
-    // solo se mantiene a la espera de la próxima señal de compra.
     return "MANTENER";
   }
 
