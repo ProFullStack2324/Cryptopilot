@@ -8,11 +8,10 @@ import {
     OrderFormData,
     MarketPriceDataPoint
 } from '@/lib/types';
-import { MIN_REQUIRED_HISTORY_FOR_BOT } from '@/hooks/useTradingBot';
 
 export interface StrategyDecision {
     action: TradeAction;
-    orderData?: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'BUY' | 'SELL'; quantity: number };
+    orderData?: Omit<OrderFormData, 'marketId' | 'orderType' | 'symbol'> & { side: 'buy' | 'sell'; quantity: number };
     details?: any; 
 }
 
@@ -37,6 +36,7 @@ const STRATEGY_CONFIG = {
     rsiSellThreshold: 65,
 };
 
+const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
 export const decideTradeActionAndAmount = (params: {
     selectedMarket: Market;
@@ -55,21 +55,17 @@ export const decideTradeActionAndAmount = (params: {
         selectedMarketRules,
     } = params;
     
-    const isValidIndicator = (val: any): val is number => typeof val === 'number' && !isNaN(val);
-
     if (botOpenPosition) {
-        // La lógica de venta/cierre ya se maneja en el hook principal,
-        // por lo que si hay una posición abierta, la estrategia de entrada no debe hacer nada.
-        return { action: 'hold' };
+        // La lógica de venta ya se maneja en el hook principal (take profit, stop loss).
+        // Por lo tanto, si hay una posición abierta, la estrategia de entrada no debe hacer nada.
+        return { action: 'hold', details: { reason: "Posición ya abierta. Monitoreando para cierre." } };
     }
 
-    const { rsi, upperBollingerBand, lowerBollingerBand, macdHistogram, closePrice, buyConditionsMet } = latest;
-    
-    if (![rsi, upperBollingerBand, lowerBollingerBand, macdHistogram, closePrice, buyConditionsMet].every(isValidIndicator)) {
-        return { action: 'hold', details: { reason: "Indicadores inválidos en la última vela." } };
-    }
+    const { buyConditionsMet, closePrice, lowerBollingerBand, rsi, macdHistogram } = latest;
 
-    const quoteAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.quoteAsset)?.free || 0;
+    if (!isValidNumber(buyConditionsMet) || !isValidNumber(closePrice) || !isValidNumber(currentPrice)) {
+        return { action: 'hold', details: { reason: "Datos de mercado o indicadores inválidos." } };
+    }
 
     let strategyMode: 'scalping' | 'sniper' | null = null;
     if (buyConditionsMet >= STRATEGY_CONFIG.sniper.minBuyConditions) {
@@ -80,29 +76,34 @@ export const decideTradeActionAndAmount = (params: {
     
     if (strategyMode) {
         const config = STRATEGY_CONFIG[strategyMode];
+        const quoteAssetBalance = allBinanceBalances.find(b => b.asset === selectedMarket.quoteAsset)?.free || 0;
+
         const decisionDetails = {
             strategyMode,
             requiredConditions: config.minBuyConditions,
             buyConditionsCount: buyConditionsMet,
             conditions: {
-                price: closePrice <= lowerBollingerBand!,
-                rsi: rsi! <= STRATEGY_CONFIG.rsiBuyThreshold,
-                macd: macdHistogram! > (latest.macdHistogram! - (latest.macdHistogram! * 0.1)) && macdHistogram! > 0, // simplificado
+                price: isValidNumber(lowerBollingerBand) && closePrice <= lowerBollingerBand,
+                rsi: isValidNumber(rsi) && rsi <= STRATEGY_CONFIG.rsiBuyThreshold,
+                macd: isValidNumber(macdHistogram) && macdHistogram > 0,
             }
         };
 
         const minNotionalValue = selectedMarketRules.minNotional.minNotional;
         let amountInQuote = quoteAssetBalance * config.capitalToRiskPercentage;
         
-        // Si el capital a arriesgar es menor que el mínimo nocional, se ajusta al mínimo.
         if (amountInQuote < minNotionalValue) {
             amountInQuote = minNotionalValue * 1.01; // Un poco por encima para evitar errores de redondeo.
         }
 
-        // Si después de ajustar sigue sin haber fondos suficientes.
         if (amountInQuote > quoteAssetBalance) {
             const insufficientFundsDetails = { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance };
-            return { action: 'hold_insufficient_funds', details: insufficientFundsDetails, orderData: { side: 'BUY', quantity: amountInQuote / currentPrice, price: currentPrice } };
+            const quantityForSimulation = amountInQuote / currentPrice;
+            return { 
+                action: 'hold_insufficient_funds', 
+                details: insufficientFundsDetails, 
+                orderData: { side: 'buy', quantity: quantityForSimulation, price: currentPrice } 
+            };
         }
 
         let quantityToBuy = amountInQuote / currentPrice;
@@ -112,7 +113,6 @@ export const decideTradeActionAndAmount = (params: {
         }
         quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarketRules.precision.amount));
         
-        // Verificar si la cantidad a comprar cumple el mínimo permitido por el exchange.
         if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
             return { action: 'hold', details: { ...decisionDetails, reason: `Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido.` } };
         }
@@ -120,7 +120,7 @@ export const decideTradeActionAndAmount = (params: {
         return {
             action: 'buy',
             orderData: {
-                side: 'BUY',
+                side: 'buy',
                 quantity: quantityToBuy,
                 price: currentPrice
             },
@@ -128,6 +128,6 @@ export const decideTradeActionAndAmount = (params: {
         };
     }
     
-    return { action: 'hold', details: { reason: "No se cumplieron las condiciones de compra." } };
+    return { action: 'hold', details: { reason: "No se cumplieron las condiciones de compra para ninguna estrategia." } };
 };
     

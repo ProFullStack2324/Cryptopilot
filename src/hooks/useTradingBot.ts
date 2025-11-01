@@ -82,7 +82,7 @@ export const useTradingBot = (props: {
     // ======================================================================================================
     // FLUJO DE EJECUCIÓN DE ÓRDENES
     // ======================================================================================================
-    const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'buy' | 'sell'; quantity: number }, strategyForOrder: 'scalping' | 'sniper') => {
+    const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'marketId' | 'orderType'> & { side: 'buy' | 'sell'; amount: number }, strategyForOrder: 'scalping' | 'sniper') => {
         if (isPlacingOrder) return false;
         if (!selectedMarket) {
             logAction({ type: 'order_failed', success: false, message: "FALLO al colocar orden: No hay mercado seleccionado." });
@@ -96,7 +96,7 @@ export const useTradingBot = (props: {
             symbol: selectedMarket.symbol,
             type: 'market',
             side: orderData.side,
-            amount: orderData.quantity,
+            amount: orderData.amount,
             price: orderData.price,
         };
     
@@ -119,7 +119,7 @@ export const useTradingBot = (props: {
                     const entryPrice = parseFloat(result.data.price);
                     const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
                     const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
-                    setBotOpenPosition({
+                    const newPosition = {
                         marketId: selectedMarket.id,
                         entryPrice: entryPrice,
                         amount: finalOrderData.amount,
@@ -128,13 +128,15 @@ export const useTradingBot = (props: {
                         takeProfitPrice,
                         stopLossPrice,
                         strategy: strategyForOrder,
-                    });
+                    };
+                    setBotOpenPosition(newPosition);
+                    logAction({ type: 'order_placed', success: true, message: `Posición Abierta (${strategyForOrder}) a ${entryPrice.toFixed(2)}`, details: newPosition });
                     toast({ title: `¡Orden de Compra (${strategyForOrder}) Exitosa!`, variant: "default" });
                 } else if (finalOrderData.side === 'sell') {
                     setBotOpenPosition(null);
+                    logAction({ type: 'order_placed', success: true, message: `Posición Cerrada con Éxito`, details: result.data });
                     toast({ title: "¡Orden de Venta Exitosa!", variant: "default" });
                 }
-                logAction({ type: 'order_placed', success: true, message: `ÉXITO al colocar orden ${finalOrderData.side}`, details: result.data });
                 return true;
             }
         } catch (error: any) {
@@ -166,8 +168,6 @@ export const useTradingBot = (props: {
             const [timestamp, openPrice, highPrice, lowPrice, closePrice, volume] = klineItem;
             if (![timestamp, openPrice, highPrice, lowPrice, closePrice, volume].every(isValidNumber)) continue;
             
-            const prevKline = i > 0 ? klines[i - 1] : null;
-
             const sma10 = calculateSMA(currentCloses, 10);
             const sma20 = calculateSMA(currentCloses, 20);
             const sma50 = calculateSMA(currentCloses, 50);
@@ -176,20 +176,16 @@ export const useTradingBot = (props: {
             const bb = calculateBollingerBands(currentCloses, 20, 2);
 
             let buyConditionsMet = 0;
-            let sellConditionsMet = 0;
-            
+            const prevKlineIndex = i > 0 ? i - 1 : 0;
+            const prevMacdHistogram = i > 0 ? calculateMACD(klines.slice(0, prevKlineIndex + 1).map(k => k[4])).macdHistogram : NaN;
+
             if (isValidNumber(closePrice) && isValidNumber(bb.lower) && closePrice <= bb.lower) buyConditionsMet++;
-            if (isValidNumber(rsi) && rsi <= 35) buyConditionsMet++;
+            if (isValidNumber(rsi) && rsi <= STRATEGY_CONFIG.rsiBuyThreshold) buyConditionsMet++;
+            if (isValidNumber(macd.macdHistogram) && isValidNumber(prevMacdHistogram) && macd.macdHistogram > 0 && prevMacdHistogram <= 0) buyConditionsMet++;
             
-            if (isValidNumber(macd.macdHistogram) && i > 0) {
-                 const prevMacd = calculateMACD(klines.slice(0, i).map(k => k[4]), 12, 26, 9);
-                 if (isValidNumber(prevMacd.macdHistogram) && macd.macdHistogram > 0 && prevMacd.macdHistogram <= 0) {
-                     buyConditionsMet++;
-                 }
-            }
-            
+            let sellConditionsMet = 0;
             if (isValidNumber(closePrice) && isValidNumber(bb.upper) && closePrice >= bb.upper) sellConditionsMet++;
-            if (isValidNumber(rsi) && rsi >= 65) sellConditionsMet++;
+            if (isValidNumber(rsi) && rsi >= STRATEGY_CONFIG.rsiSellThreshold) sellConditionsMet++;
             
             annotatedHistory.push({
                 timestamp, openPrice, highPrice, lowPrice, closePrice, volume,
@@ -255,7 +251,7 @@ export const useTradingBot = (props: {
                 logAction({ type: 'strategy_decision', success: true, message: `Señal de VENTA (${strategy}) por ${sellReason}.` });
                 let quantityToSell = Math.floor(amount / selectedMarketRules.lotSize.stepSize) * selectedMarketRules.lotSize.stepSize;
                 if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
-                    await executeOrder({ side: 'sell', quantity: quantityToSell, price: currentPrice }, strategy || 'scalping');
+                    await executeOrder({ side: 'sell', amount: quantityToSell, price: currentPrice }, strategy || 'scalping');
                 }
             } else {
                 logAction({ type: 'strategy_decision', success: true, message: `HOLD: Posición abierta. Monitoreando salida.`, data: { action: 'hold' } });
@@ -267,11 +263,10 @@ export const useTradingBot = (props: {
             selectedMarket, latestDataPoint: latest, currentPrice, allBinanceBalances, botOpenPosition: null, selectedMarketRules,
         });
 
-        const message = `Decisión Estrategia: ${decision.action.toUpperCase().replace('_', ' ')}${decision.details?.strategyMode ? ` en modo ${decision.details.strategyMode}` : ''}. Razón: ${decision.details?.reason || 'N/A'}`;
-        logAction({ type: 'strategy_decision', success: true, message, details: decision.details, data: { action: decision.action } });
+        logAction({ type: 'strategy_decision', success: true, message: `Decisión Estrategia: ${decision.action.toUpperCase()}`, details: decision.details, data: { action: decision.action } });
 
         if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
-            await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
+            await executeOrder({ side: 'buy', amount: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
         } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
             logAction({type: 'hold_insufficient_funds', success: false, message: 'Fondos insuficientes. Iniciando simulación.', details: decision.details});
             
@@ -295,7 +290,9 @@ export const useTradingBot = (props: {
                 });
                 const result = await response.json();
                 if(result.success && result.insertedId) {
-                    setSimulatedPosition({ ...newSimulationBase, simulationId: result.insertedId });
+                    const finalSimulationState = { ...newSimulationBase, simulationId: result.insertedId };
+                    setSimulatedPosition(finalSimulationState);
+                    logAction({ type: 'strategy_decision', success: true, message: 'Simulación iniciada.', details: finalSimulationState });
                 } else {
                     setSimulatedPosition(newSimulationBase);
                 }
@@ -454,6 +451,6 @@ export const useTradingBot = (props: {
     return {
         isBotRunning, toggleBotStatus, botOpenPosition, botLastActionTimestamp,
         isPlacingOrder, placeOrderError, selectedMarketRules, rulesLoading, rulesError,
-        currentPrice, currentMarketPriceHistory, simulatedPosition
+        currentPrice, currentMarketPriceHistory, simulatedPosition, setSimulatedPosition
     };
 };

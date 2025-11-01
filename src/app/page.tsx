@@ -9,6 +9,8 @@ import {
     BinanceBalance,
     BotActionDetails
 } from '@/lib/types'; 
+import { useSimulationHistory } from '@/hooks/useSimulationHistory';
+
 
 // Importaciones de Componentes de Dashboard
 import { BotControls } from '@/components/dashboard/bot-controls';
@@ -24,7 +26,6 @@ import { Watchlist } from '@/components/dashboard/watchlist';
 import { SignalHistoryTable } from '@/components/dashboard/signal-history-table';
 import { PerformanceMetricsCard } from '@/components/dashboard/performance-metrics-card';
 import { SimulationHistoryTable } from '@/components/dashboard/simulation-history-table';
-import { useSimulationHistory } from '@/hooks/useSimulationHistory';
 
 
 // Importaciones de UI
@@ -76,7 +77,6 @@ export default function TradingBotControlPanel() {
     const [signalLogs, setSignalLogs] = useState<any[]>([]);
     const { simulationHistory, isLoading: isSimHistoryLoading, error: simHistoryError, refreshHistory } = useSimulationHistory();
 
-
     const { toast } = useToast();
 
     // ** LA FUNCIÓN CLAVE **
@@ -85,11 +85,10 @@ export default function TradingBotControlPanel() {
         const newLog = { ...details, timestamp: Date.now() };
 
         // Filtra eventos para la tabla "Libro de Órdenes"
-        if (details.type === 'order_placed' || details.type === 'order_failed' || details.type === 'hold_insufficient_funds') {
+        if (['order_placed', 'order_failed', 'hold_insufficient_funds'].includes(details.type)) {
             let logEntryForExecution = { ...newLog, message: details.message || 'Acción de orden' };
             if (details.type === 'hold_insufficient_funds') {
                 logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${(details.details?.required || 0).toFixed(2)}, Disponible: $${(details.details?.available || 0).toFixed(2)}`;
-                logEntryForExecution.success = false;
             }
              setTradeExecutionLogs(prev => [logEntryForExecution, ...prev.slice(0, 99)]);
             // Guardar en la base de datos
@@ -100,7 +99,7 @@ export default function TradingBotControlPanel() {
         }
         
         // Filtra eventos para la tabla "Historial de Señales Detectadas"
-        if (details.type === 'strategy_decision' && details.details?.strategyMode) {
+        if (details.type === 'strategy_decision') {
              let logEntryForSignal = {
                 ...newLog,
                 message: `Señal ${details.data.action.toUpperCase()} detectada (${details.details.buyConditionsCount} condiciones). Modo: ${details.details.strategyMode}`,
@@ -132,6 +131,7 @@ export default function TradingBotControlPanel() {
         botOpenPosition,
         currentMarketPriceHistory,
         simulatedPosition,
+        setSimulatedPosition,
     } = useTradingBot({
         selectedMarket,
         allBinanceBalances: currentBalances,
@@ -142,15 +142,17 @@ export default function TradingBotControlPanel() {
     // Carga inicial de logs desde la BD
     useEffect(() => {
         const fetchInitialLogs = async () => {
+            // Este es un placeholder. Deberías crear endpoints que devuelvan el historial.
             try {
-                // Endpoint para logs de trades (debe ser creado si no existe)
-                // const tradeLogsRes = await fetch('/api/logs/history?type=trade&limit=50').then(res => res.json());
-                // if (tradeLogsRes.success) setTradeExecutionLogs(tradeLogsRes.logs.reverse()); 
+                // Endpoint para logs de trades
+                // const tradeRes = await fetch('/api/logs/history?type=trade_log&limit=50').then(r => r.json());
+                // if(tradeRes.success) setTradeExecutionLogs(tradeRes.logs);
 
-                // Endpoint para logs de señales (debe ser creado si no existe)
-                // const signalLogsRes = await fetch('/api/signals/history?limit=50').then(res => res.json());
-                // if (signalLogsRes.success) setSignalLogs(signalLogsRes.logs.reverse());
+                // Endpoint para logs de señales
+                // const signalRes = await fetch('/api/logs/history?type=signal_log&limit=50').then(r => r.json());
+                // if(signalRes.success) setSignalLogs(signalRes.logs);
                 
+                // El historial de simulaciones ya se carga desde su propio hook.
                 refreshHistory();
 
             } catch (e) {
@@ -298,15 +300,13 @@ export default function TradingBotControlPanel() {
                      />
                 </div>
                 
-                {(simulatedPosition || botOpenPosition) && (
+                {simulatedPosition && (
                     <div className="lg:col-span-4">
-                        {simulatedPosition && (
-                            <SimulatedPerformanceCard
-                                simulatedPosition={simulatedPosition}
-                                currentPrice={currentPrice}
-                                market={selectedMarket}
-                            />
-                        )}
+                        <SimulatedPerformanceCard
+                            simulatedPosition={simulatedPosition}
+                            currentPrice={currentPrice}
+                            market={selectedMarket}
+                        />
                     </div>
                 )}
                 
