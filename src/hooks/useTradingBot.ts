@@ -259,7 +259,7 @@ export const useTradingBot = (props: {
                 }
                 return; 
             }
-            logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`, true, 'strategy_decision');
+            logAction(`HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`, true, 'strategy_decision', { action: 'hold' });
         }
         
         if (!botOpenPosition) {
@@ -273,9 +273,9 @@ export const useTradingBot = (props: {
                 logStrategyMessage: (message, details) => logAction(message, true, 'strategy_decision', details)
             });
             
-            if (decision.action !== 'hold') {
-                 logAction(`Decisión de la estrategia: ${decision.action.toUpperCase()}${decision.details?.strategyMode ? ` en modo ${decision.details.strategyMode}` : ''}`, true, 'strategy_decision', decision.details, { action: decision.action });
-            }
+            // Siempre registrar la decisión, incluso si es 'hold'
+            const message = `Decisión de la estrategia: ${decision.action.toUpperCase().replace('_', ' ')}${decision.details?.strategyMode ? ` en modo ${decision.details.strategyMode}` : ''}`;
+            logAction(message, true, 'strategy_decision', decision.details, { action: decision.action });
     
             if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
                 await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
