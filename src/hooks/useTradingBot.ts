@@ -50,10 +50,13 @@ export const useTradingBot = (props: {
 }) => {
     const { selectedMarket, allBinanceBalances, onBotAction, timeframe } = props;
 
+    // Estados del Bot
     const [isBotRunning, setIsBotRunning] = useState<boolean>(false);
     const [botOpenPosition, setBotOpenPosition] = useState<BotOpenPosition | null>(null);
     const [simulatedPosition, setSimulatedPosition] = useState<BotOpenPosition | null>(null);
     const [botLastActionTimestamp, setBotLastActionTimestamp] = useState<number | null>(null);
+    
+    // Estados de Operación y Mercado
     const [isPlacingOrder, setIsPlacingOrder] = useState<boolean>(false);
     const [placeOrderError, setPlaceOrderError] = useState<string | null>(null);
     const [selectedMarketRules, setSelectedMarketRules] = useState<MarketRules | null>(null);
@@ -64,6 +67,7 @@ export const useTradingBot = (props: {
     const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
     const [botIntervalMs] = useState(5000);
     
+    // Refs y hooks
     const { toast } = useToast();
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isMounted = useRef(false);
@@ -75,7 +79,11 @@ export const useTradingBot = (props: {
         }
     }, [onBotAction]);
 
+    // ======================================================================================================
+    // FLUJO DE EJECUCIÓN DE ÓRDENES
+    // ======================================================================================================
     const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'buy' | 'sell'; quantity: number }, strategyForOrder: 'scalping' | 'sniper') => {
+        // ... (el código interno de executeOrder no cambia)
         if (isPlacingOrder) return false;
         if (!selectedMarket) {
             logAction({ type: 'order_failed', success: false, message: "FALLO al colocar orden: No hay mercado seleccionado." });
@@ -140,8 +148,12 @@ export const useTradingBot = (props: {
             if (isMounted.current) setIsPlacingOrder(false);
         }
     }, [isPlacingOrder, logAction, toast, selectedMarket]);
-    
+
+    // ======================================================================================================
+    // FLUJO DE ANÁLISIS DE DATOS
+    // ======================================================================================================
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
+        // ... (el código interno de annotateMarketPriceHistory no cambia)
         if (!klines || klines.length === 0) return [];
         const annotatedHistory: MarketPriceDataPoint[] = [];
 
@@ -196,25 +208,32 @@ export const useTradingBot = (props: {
         return annotatedHistory;
     }, []);
 
+    // ======================================================================================================
+    // NÚCLEO LÓGICO DEL BOT - executeBotStrategy
+    // ======================================================================================================
     const executeBotStrategy = useCallback(async () => {
         if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT || !selectedMarketRules || isPlacingOrder) {
-            return;
+            return; // Condiciones no cumplidas para ejecutar
         }
     
         const latest = currentMarketPriceHistory.at(-1);
-        if (!latest) return;
+        if (!latest) return; // No hay datos de la última vela
 
+        // --- INICIO FLUJO DE SIMULACIÓN ---
         if (simulatedPosition) {
+            // COMENTARIO: El bot tiene una simulación activa. Comprueba si debe cerrarla.
             const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount, strategy } = simulatedPosition;
             let exitReason: string | null = null;
             if (takeProfitPrice && currentPrice >= takeProfitPrice) exitReason = 'take_profit';
             else if (stopLossPrice && currentPrice <= stopLossPrice) exitReason = 'stop_loss';
 
             if (exitReason) {
+                // COMENTARIO: ¡CONDICIÓN DE CIERRE CUMPLIDA!
                 const finalPnl = (currentPrice - entryPrice) * amount;
                 logAction({ type: 'strategy_decision', success: true, message: `Simulación (${strategy}) finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.` });
                 
                 if (simulationId) {
+                    // COMENTARIO: Llamamos a la API para guardar el cierre en la base de datos.
                     fetch('/api/simulations/save', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -224,104 +243,91 @@ export const useTradingBot = (props: {
                             exitReason,
                             finalPnl,
                         }),
-                    }).catch(e => console.error("Failed to save simulation end state", e));
+                    }).catch(e => console.error("Fallo al guardar el fin de la simulación", e));
                 }
                 
-                setSimulatedPosition(null);
+                setSimulatedPosition(null); // Limpiamos la simulación activa.
             }
+            // COMENTARIO: Si no hay motivo de salida, la simulación sigue activa. No hacemos nada.
+            return; // Detenemos la ejecución aquí si estábamos en una simulación.
         }
+        // --- FIN FLUJO DE SIMULACIÓN ---
     
+        // --- INICIO FLUJO DE POSICIÓN REAL ---
         if (botOpenPosition) {
+            // COMENTARIO: El bot tiene una posición real abierta. Comprueba si debe cerrarla.
             const { amount, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
-            const currentRsi = latest.rsi;
-    
             let sellReason: 'take_profit' | 'stop_loss' | 'rsi_sell' | null = null;
-    
-            if (takeProfitPrice && currentPrice >= takeProfitPrice) {
-                sellReason = 'take_profit';
-            } else if (stopLossPrice && currentPrice <= stopLossPrice) {
-                sellReason = 'stop_loss';
-            } else if (isValidNumber(currentRsi) && currentRsi >= STRATEGY_CONFIG.rsiSellThreshold) {
-                sellReason = 'rsi_sell';
-            }
+            if (takeProfitPrice && currentPrice >= takeProfitPrice) sellReason = 'take_profit';
+            else if (stopLossPrice && currentPrice <= stopLossPrice) sellReason = 'stop_loss';
+            else if (isValidNumber(latest.rsi) && latest.rsi >= STRATEGY_CONFIG.rsiSellThreshold) sellReason = 'rsi_sell';
     
             if (sellReason) {
-                logAction({ type: 'strategy_decision', success: true, message: `Señal de VENTA (${strategy}) por ${sellReason}.`, details: { reason: sellReason, currentPrice, rsi: currentRsi, target: sellReason === 'take_profit' ? takeProfitPrice : stopLossPrice } });
-                
-                let quantityToSell = amount;
-                const stepSize = selectedMarketRules.lotSize.stepSize;
-                if (stepSize > 0) {
-                    quantityToSell = Math.floor(quantityToSell / stepSize) * stepSize;
-                }
-                quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarketRules.precision.amount));
-    
+                // COMENTARIO: ¡CONDICIÓN DE VENTA REAL CUMPLIDA!
+                logAction({ type: 'strategy_decision', success: true, message: `Señal de VENTA (${strategy}) por ${sellReason}.` });
+                let quantityToSell = Math.floor(amount / selectedMarketRules.lotSize.stepSize) * selectedMarketRules.lotSize.stepSize;
                 if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
                     await executeOrder({ side: 'sell', quantity: quantityToSell, price: currentPrice }, strategy || 'scalping');
-                } else {
-                    logAction({ type: 'order_failed', success: false, message: `FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.` });
                 }
-                return; 
+            } else {
+                logAction({ type: 'strategy_decision', success: true, message: `HOLD: Posición abierta. Monitoreando salida.`, data: { action: 'hold' } });
             }
-            logAction({ type: 'strategy_decision', success: true, message: `HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`, data: { action: 'hold' } });
-            return;
+            return; // Detenemos la ejecución aquí si estábamos en una posición real.
         }
+        // --- FIN FLUJO DE POSICIÓN REAL ---
         
-        // --- LÓGICA DE DECISIÓN DE COMPRA (SI NO HAY POSICIÓN ABIERTA) ---
+        // --- INICIO FLUJO DE NUEVA ENTRADA (SI NO HAY POSICIÓN NI SIMULACIÓN) ---
+        // COMENTARIO: No hay posición ni simulación. El bot busca una nueva oportunidad de compra.
         const decision = decideTradeActionAndAmount({
-            selectedMarket,
-            latestDataPoint: latest,
-            currentPrice,
-            allBinanceBalances,
-            botOpenPosition,
-            selectedMarketRules,
+            selectedMarket, latestDataPoint: latest, currentPrice, allBinanceBalances, botOpenPosition: null, selectedMarketRules,
         });
 
         const message = `Decisión Estrategia: ${decision.action.toUpperCase().replace('_', ' ')}${decision.details?.strategyMode ? ` en modo ${decision.details.strategyMode}` : ''}. Razón: ${decision.details?.reason || 'N/A'}`;
         logAction({ type: 'strategy_decision', success: true, message, details: decision.details, data: { action: decision.action } });
 
         if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
+            // COMENTARIO: Hay fondos. Se procede a una compra real.
             await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
         } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
-            logAction({type: 'hold_insufficient_funds', success: false, message: 'Fondos insuficientes para la orden de compra', details: decision.details});
+            // COMENTARIO: ¡NO HAY FONDOS! Iniciamos el ciclo de simulación.
+            logAction({type: 'hold_insufficient_funds', success: false, message: 'Fondos insuficientes. Iniciando simulación.', details: decision.details});
+            
             const config = STRATEGY_CONFIG[decision.details.strategyMode];
-            const entryPrice = decision.orderData.price;
-            const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
-            const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
-
-            const newSimulation: Omit<BotOpenPosition, 'simulationId'> = {
+            const newSimulationBase: Omit<BotOpenPosition, 'simulationId'> = {
                 marketId: selectedMarket.id,
-                entryPrice: entryPrice,
+                entryPrice: decision.orderData.price,
                 amount: decision.orderData.quantity,
                 type: 'buy',
                 timestamp: Date.now(),
-                takeProfitPrice,
-                stopLossPrice,
+                takeProfitPrice: decision.orderData.price * (1 + config.takeProfitPercentage),
+                stopLossPrice: decision.orderData.price * (1 - config.stopLossPercentage),
                 strategy: decision.details.strategyMode,
             };
 
+            // COMENTARIO: Guardamos la nueva simulación en la DB para obtener su ID.
             try {
                 const response = await fetch('/api/simulations/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newSimulation),
+                    body: JSON.stringify(newSimulationBase),
                 });
                 const result = await response.json();
                 if(result.success && result.insertedId) {
-                    setSimulatedPosition({ ...newSimulation, simulationId: result.insertedId });
+                    // COMENTARIO: ¡ÉXITO! Guardamos la simulación con su ID para poder cerrarla después.
+                    setSimulatedPosition({ ...newSimulationBase, simulationId: result.insertedId });
                 } else {
-                    setSimulatedPosition(newSimulation); // Fallback sin ID
-                    console.error("Failed to save simulation start state", result.message);
+                    setSimulatedPosition(newSimulationBase); // Fallback sin ID si falla la API
                 }
             } catch (e) {
-                 setSimulatedPosition(newSimulation); // Fallback sin ID
-                 console.error("Error connecting to simulation save API", e);
+                 setSimulatedPosition(newSimulationBase); // Fallback sin ID si falla la red
             }
         }
+        // --- FIN FLUJO DE NUEVA ENTRADA ---
     
     }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, simulatedPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
     
-    // Función para generar datos de mercado simulados
     const generateSimulatedData = useCallback(() => {
+        // ... (el código interno de generateSimulatedData no cambia)
         setCurrentMarketPriceHistory(prevHistory => {
             const lastPoint = prevHistory.length > 0 ? prevHistory[prevHistory.length - 1] : { closePrice: 60000, timestamp: Date.now() - 60000, openPrice: 60000, highPrice: 60000, lowPrice: 60000, volume: 10 };
             const newPrice = lastPoint.closePrice * (1 + (Math.random() - 0.5) * 0.001); // Fluctuación aleatoria
@@ -347,7 +353,9 @@ export const useTradingBot = (props: {
         });
     }, [annotateMarketPriceHistory]);
 
-
+    // ======================================================================================================
+    // EFECTOS Y CICLO DE VIDA
+    // ======================================================================================================
     useEffect(() => {
         isMounted.current = true;
         return () => { isMounted.current = false; };
@@ -434,10 +442,9 @@ export const useTradingBot = (props: {
                 if (isMounted.current) {
                     setRulesError(error.message);
                     logAction({ type: 'order_failed', success: false, message: `Error de Conexión: ${error.message}. Activando modo simulado.` });
-                    setIsDataLoaded(true); // Permitir que el bot inicie en modo simulado
-                    // Iniciar generación de datos simulados si la carga real falla
+                    setIsDataLoaded(true); 
                     if (!dataInterval) {
-                        generateSimulatedData(); // Carga inicial simulada
+                        generateSimulatedData(); 
                         dataInterval = setInterval(generateSimulatedData, 5000);
                     }
                 }
@@ -446,8 +453,8 @@ export const useTradingBot = (props: {
             }
         };
 
-        fetchMarketData(); // Llamada inicial
-        const initialDataInterval = setInterval(fetchMarketData, 30000); // Intervalo para datos reales
+        fetchMarketData(); 
+        const initialDataInterval = setInterval(fetchMarketData, 30000); 
         
         return () => {
             clearInterval(initialDataInterval);
