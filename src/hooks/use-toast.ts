@@ -1,6 +1,4 @@
-"use client"
-
-// Insp    ir e dbyrea ct-hot-toa stlib  rar y
+// Inspired by react-hot-toast library
 import * as React from "react"
 
 import type {
