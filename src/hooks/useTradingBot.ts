@@ -45,10 +45,10 @@ export const MIN_REQUIRED_HISTORY_FOR_BOT = 51; // Requisito mínimo de velas pa
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
     allBinanceBalances: BinanceBalance[];
-    onBotAction?: (details: BotActionDetails) => void;
+    onBotAction: (details: BotActionDetails) => void; // CORREGIDO: se espera onBotAction
     timeframe: string;
 }) => {
-    const { selectedMarket, allBinanceBalances, onBotAction = () => {}, timeframe } = props;
+    const { selectedMarket, allBinanceBalances, onBotAction, timeframe } = props;
 
     const [isBotRunning, setIsBotRunning] = useState<boolean>(false);
     const [botOpenPosition, setBotOpenPosition] = useState<BotOpenPosition | null>(null);
@@ -69,9 +69,8 @@ export const useTradingBot = (props: {
     const isMounted = useRef(false);
 
     const logAction = useCallback((details: Omit<BotActionDetails, 'timestamp'>) => {
-        if (onBotAction) {
-            onBotAction({ ...details, timestamp: Date.now() });
-        }
+        // Esta función ahora llama directamente al callback pasado desde la página.
+        onBotAction({ ...details, timestamp: Date.now() });
     }, [onBotAction]);
 
     const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'buy' | 'sell'; quantity: number }, strategyForOrder: 'scalping' | 'sniper') => {

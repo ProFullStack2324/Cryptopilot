@@ -6,7 +6,8 @@ import { useToast } from '@/hooks/use-toast';
 import {
     Market,
     BinanceBalance,
-    MarketPriceDataPoint
+    MarketPriceDataPoint,
+    BotActionDetails
 } from '@/lib/types'; 
 
 // Importaciones de Componentes de Dashboard
@@ -79,21 +80,24 @@ export default function TradingBotControlPanel() {
 
     const { toast } = useToast();
 
-    const onBotAction = useCallback((details: any) => {
-        const newLog = { ...details, timestamp: Date.now() + Math.random() };
-        
-        setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
-        
+    // ** LA FUNCIÓN CLAVE **
+    // Esta función centraliza la recepción de todos los eventos del bot.
+    const onBotAction = useCallback((details: BotActionDetails) => {
+        // Registra todas las acciones en un log general si es necesario
+        // setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
+
         const isInsufficientFunds = details.type === 'strategy_decision' && details.data?.action === 'hold_insufficient_funds';
 
+        // Filtra eventos para la tabla "Libro de Órdenes"
         if (details.type === 'order_placed' || details.type === 'order_failed' || isInsufficientFunds) {
-            let logEntryForExecution = { ...newLog, message: details.message || newLog.message };
+            let logEntryForExecution = { ...details, message: details.message || 'Acción de orden' };
             if (isInsufficientFunds) {
                 logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${details.details?.required.toFixed(2)}, Disponible: $${details.details?.available.toFixed(2)}`;
                 logEntryForExecution.success = false;
             }
-             setTradeExecutionLogs(prev => {
+            setTradeExecutionLogs(prev => {
                 const updatedLogs = [logEntryForExecution, ...prev.slice(0, 99)];
+                // Guardar en la base de datos
                 (async () => {
                     try {
                         await fetch('/api/logs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForExecution) });
@@ -103,6 +107,7 @@ export default function TradingBotControlPanel() {
             });
         }
         
+        // Filtra eventos para la tabla "Historial de Señales Detectadas"
         if (details.type === 'strategy_decision' && details.details?.strategyMode) {
              let logEntryForSignal = {
                 timestamp: details.timestamp,
@@ -112,6 +117,7 @@ export default function TradingBotControlPanel() {
              };
              setSignalLogs(prev => {
                  const updatedLogs = [logEntryForSignal, ...prev.slice(0, 99)];
+                 // Guardar en la base de datos
                 (async () => {
                     try {
                         await fetch('/api/signals/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForSignal) });
@@ -121,7 +127,8 @@ export default function TradingBotControlPanel() {
              });
         }
 
-    }, []);
+    }, []); // El array de dependencias vacío asegura que la función no se recree innecesariamente.
+
 
     const {
         isBotRunning,
@@ -138,7 +145,7 @@ export default function TradingBotControlPanel() {
     } = useTradingBot({
         selectedMarket,
         allBinanceBalances: currentBalances,
-        onBotAction,
+        onBotAction, // Pasamos la función centralizada al hook
         timeframe,
     });
 
