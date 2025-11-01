@@ -62,7 +62,7 @@ export function StrategyDashboard({ latest, selectedMarket, priceHistory, botOpe
   const prev = priceHistory[priceHistory.length - 2];
   
   // Extraer valores de los indicadores de la vela actual y previa
-  const { rsi, closePrice, lowerBollingerBand, macdHistogram, buyConditionsMet, sellConditionsMet } = latest;
+  const { rsi, closePrice, lowerBollingerBand, macdHistogram } = latest;
   const prevMacdHistogram = prev?.macdHistogram;
 
   // Definir las condiciones de la estrategia para visualización
@@ -74,7 +74,7 @@ export function StrategyDashboard({ latest, selectedMarket, priceHistory, botOpe
 
   const getRequirementsText = () => {
       const requirements = strategyMode === 'scalping' ? 1 : 2;
-      return `Se requiere ${requirements} de 3 condiciones.`;
+      return `Se requiere ${requirements} de 3 condiciones de compra.`;
   }
   
   const getDecision = () => {
@@ -85,10 +85,8 @@ export function StrategyDashboard({ latest, selectedMarket, priceHistory, botOpe
     if (totalBuyConditionsMet >= requirements) {
         return "COMPRAR";
     }
-    // Lógica para VENDER si se cumplen las condiciones de venta (no solo las de compra)
-    if ((sellConditionsMet || 0) > 0) {
-        return "VENDER";
-    }
+    // No hay una decisión de "Vender" explícita basada en una combinación de condiciones aquí,
+    // solo se mantiene a la espera de la próxima señal de compra.
     return "MANTENER";
   }
 
@@ -97,7 +95,6 @@ export function StrategyDashboard({ latest, selectedMarket, priceHistory, botOpe
   return (
     <Card className={clsx("border-2", 
         currentDecision === 'COMPRAR' ? "border-green-500/80" : 
-        currentDecision === 'VENDER' ? "border-red-500/80" :
         currentDecision === 'POSICIÓN ABIERTA' ? "border-blue-500/80" :
         "border-border"
     )}>
@@ -106,7 +103,6 @@ export function StrategyDashboard({ latest, selectedMarket, priceHistory, botOpe
             <span className="capitalize">{strategyMode}</span>
             <span className={clsx("text-lg font-bold px-2 py-1 rounded", {
                 'bg-green-500/10 text-green-500': currentDecision === 'COMPRAR',
-                'bg-red-500/10 text-red-500': currentDecision === 'VENDER',
                 'bg-blue-500/10 text-blue-500': currentDecision === 'POSICIÓN ABIERTA',
                 'bg-muted text-muted-foreground': currentDecision === 'MANTENER'
             })}>
