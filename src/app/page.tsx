@@ -116,7 +116,7 @@ export default function TradingBotControlPanel() {
             refreshHistory();
         }
 
-    }, [refreshHistory]); // El array de dependencias vacío asegura que la función no se recree innecesariamente.
+    }, [refreshHistory]);
 
 
     const {

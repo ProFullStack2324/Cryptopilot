@@ -5,7 +5,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketPriceDataPoint, Market, BotOpenPosition } from '@/lib/types';
 import clsx from 'clsx';
-import { Check, X, TrendingUp, TrendingDown } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 
 // Helper para validar si un valor es un número válido
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
@@ -44,7 +44,7 @@ const ConditionStatus = ({
     </li>
 );
 
-export function StrategyDashboard({ latest, decision, selectedMarket, priceHistory, botOpenPosition, strategyMode }: StrategyDashboardProps) {
+export function StrategyDashboard({ latest, selectedMarket, priceHistory, botOpenPosition, strategyMode }: StrategyDashboardProps) {
   if (!latest || !selectedMarket || priceHistory.length < 2) {
     return (
       <Card>
@@ -62,16 +62,13 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
   const prev = priceHistory[priceHistory.length - 2];
   
   // Extraer valores de los indicadores de la vela actual y previa
-  const { rsi, closePrice, lowerBollingerBand, upperBollingerBand, macdHistogram } = latest;
+  const { rsi, closePrice, lowerBollingerBand, macdHistogram, buyConditionsMet, sellConditionsMet } = latest;
   const prevMacdHistogram = prev?.macdHistogram;
 
   // Definir las condiciones de la estrategia para visualización
   const buyPriceCondition = isValidNumber(closePrice) && isValidNumber(lowerBollingerBand) && closePrice <= lowerBollingerBand;
   const buyRsiCondition = isValidNumber(rsi) && rsi <= 35;
   const buyMacdCondition = isValidNumber(macdHistogram) && isValidNumber(prevMacdHistogram) && macdHistogram > 0 && prevMacdHistogram <= 0;
-
-  const sellPriceCondition = isValidNumber(closePrice) && isValidNumber(upperBollingerBand) && closePrice >= upperBollingerBand;
-  const sellRsiCondition = isValidNumber(rsi) && rsi >= 65;
 
   const totalBuyConditionsMet = (buyPriceCondition ? 1 : 0) + (buyRsiCondition ? 1 : 0) + (buyMacdCondition ? 1 : 0);
 
@@ -88,7 +85,8 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
     if (totalBuyConditionsMet >= requirements) {
         return "COMPRAR";
     }
-    if (sellPriceCondition || sellRsiCondition) {
+    // Lógica para VENDER si se cumplen las condiciones de venta (no solo las de compra)
+    if ((sellConditionsMet || 0) > 0) {
         return "VENDER";
     }
     return "MANTENER";

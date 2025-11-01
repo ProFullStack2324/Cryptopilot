@@ -83,7 +83,6 @@ export const useTradingBot = (props: {
     // FLUJO DE EJECUCIÓN DE ÓRDENES
     // ======================================================================================================
     const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'buy' | 'sell'; quantity: number }, strategyForOrder: 'scalping' | 'sniper') => {
-        // ... (el código interno de executeOrder no cambia)
         if (isPlacingOrder) return false;
         if (!selectedMarket) {
             logAction({ type: 'order_failed', success: false, message: "FALLO al colocar orden: No hay mercado seleccionado." });
@@ -153,7 +152,6 @@ export const useTradingBot = (props: {
     // FLUJO DE ANÁLISIS DE DATOS
     // ======================================================================================================
     const annotateMarketPriceHistory = useCallback((klines: KLine[]): MarketPriceDataPoint[] => {
-        // ... (el código interno de annotateMarketPriceHistory no cambia)
         if (!klines || klines.length === 0) return [];
         const annotatedHistory: MarketPriceDataPoint[] = [];
 
@@ -179,10 +177,11 @@ export const useTradingBot = (props: {
 
             let buyConditionsMet = 0;
             let sellConditionsMet = 0;
-
+            
             if (isValidNumber(closePrice) && isValidNumber(bb.lower) && closePrice <= bb.lower) buyConditionsMet++;
             if (isValidNumber(rsi) && rsi <= 35) buyConditionsMet++;
-            if (isValidNumber(macd.macdHistogram) && prevKline) {
+            
+            if (isValidNumber(macd.macdHistogram) && i > 0) {
                  const prevMacd = calculateMACD(klines.slice(0, i).map(k => k[4]), 12, 26, 9);
                  if (isValidNumber(prevMacd.macdHistogram) && macd.macdHistogram > 0 && prevMacd.macdHistogram <= 0) {
                      buyConditionsMet++;
@@ -221,19 +220,17 @@ export const useTradingBot = (props: {
 
         // --- INICIO FLUJO DE SIMULACIÓN ---
         if (simulatedPosition) {
-            // COMENTARIO: El bot tiene una simulación activa. Comprueba si debe cerrarla.
+            // El bot tiene una simulación activa. Comprueba si debe cerrarla.
             const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount, strategy } = simulatedPosition;
             let exitReason: string | null = null;
             if (takeProfitPrice && currentPrice >= takeProfitPrice) exitReason = 'take_profit';
             else if (stopLossPrice && currentPrice <= stopLossPrice) exitReason = 'stop_loss';
 
             if (exitReason) {
-                // COMENTARIO: ¡CONDICIÓN DE CIERRE CUMPLIDA!
                 const finalPnl = (currentPrice - entryPrice) * amount;
                 logAction({ type: 'strategy_decision', success: true, message: `Simulación (${strategy}) finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.` });
                 
                 if (simulationId) {
-                    // COMENTARIO: Llamamos a la API para guardar el cierre en la base de datos.
                     fetch('/api/simulations/save', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -246,16 +243,14 @@ export const useTradingBot = (props: {
                     }).catch(e => console.error("Fallo al guardar el fin de la simulación", e));
                 }
                 
-                setSimulatedPosition(null); // Limpiamos la simulación activa.
+                setSimulatedPosition(null); 
             }
-            // COMENTARIO: Si no hay motivo de salida, la simulación sigue activa. No hacemos nada.
-            return; // Detenemos la ejecución aquí si estábamos en una simulación.
+            return; 
         }
         // --- FIN FLUJO DE SIMULACIÓN ---
     
         // --- INICIO FLUJO DE POSICIÓN REAL ---
         if (botOpenPosition) {
-            // COMENTARIO: El bot tiene una posición real abierta. Comprueba si debe cerrarla.
             const { amount, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
             let sellReason: 'take_profit' | 'stop_loss' | 'rsi_sell' | null = null;
             if (takeProfitPrice && currentPrice >= takeProfitPrice) sellReason = 'take_profit';
@@ -263,7 +258,6 @@ export const useTradingBot = (props: {
             else if (isValidNumber(latest.rsi) && latest.rsi >= STRATEGY_CONFIG.rsiSellThreshold) sellReason = 'rsi_sell';
     
             if (sellReason) {
-                // COMENTARIO: ¡CONDICIÓN DE VENTA REAL CUMPLIDA!
                 logAction({ type: 'strategy_decision', success: true, message: `Señal de VENTA (${strategy}) por ${sellReason}.` });
                 let quantityToSell = Math.floor(amount / selectedMarketRules.lotSize.stepSize) * selectedMarketRules.lotSize.stepSize;
                 if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
@@ -272,12 +266,11 @@ export const useTradingBot = (props: {
             } else {
                 logAction({ type: 'strategy_decision', success: true, message: `HOLD: Posición abierta. Monitoreando salida.`, data: { action: 'hold' } });
             }
-            return; // Detenemos la ejecución aquí si estábamos en una posición real.
+            return;
         }
         // --- FIN FLUJO DE POSICIÓN REAL ---
         
         // --- INICIO FLUJO DE NUEVA ENTRADA (SI NO HAY POSICIÓN NI SIMULACIÓN) ---
-        // COMENTARIO: No hay posición ni simulación. El bot busca una nueva oportunidad de compra.
         const decision = decideTradeActionAndAmount({
             selectedMarket, latestDataPoint: latest, currentPrice, allBinanceBalances, botOpenPosition: null, selectedMarketRules,
         });
@@ -286,10 +279,8 @@ export const useTradingBot = (props: {
         logAction({ type: 'strategy_decision', success: true, message, details: decision.details, data: { action: decision.action } });
 
         if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
-            // COMENTARIO: Hay fondos. Se procede a una compra real.
             await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
         } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
-            // COMENTARIO: ¡NO HAY FONDOS! Iniciamos el ciclo de simulación.
             logAction({type: 'hold_insufficient_funds', success: false, message: 'Fondos insuficientes. Iniciando simulación.', details: decision.details});
             
             const config = STRATEGY_CONFIG[decision.details.strategyMode];
@@ -304,7 +295,6 @@ export const useTradingBot = (props: {
                 strategy: decision.details.strategyMode,
             };
 
-            // COMENTARIO: Guardamos la nueva simulación en la DB para obtener su ID.
             try {
                 const response = await fetch('/api/simulations/save', {
                     method: 'POST',
@@ -313,7 +303,6 @@ export const useTradingBot = (props: {
                 });
                 const result = await response.json();
                 if(result.success && result.insertedId) {
-                    // COMENTARIO: ¡ÉXITO! Guardamos la simulación con su ID para poder cerrarla después.
                     setSimulatedPosition({ ...newSimulationBase, simulationId: result.insertedId });
                 } else {
                     setSimulatedPosition(newSimulationBase); // Fallback sin ID si falla la API
@@ -327,7 +316,6 @@ export const useTradingBot = (props: {
     }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, simulatedPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
     
     const generateSimulatedData = useCallback(() => {
-        // ... (el código interno de generateSimulatedData no cambia)
         setCurrentMarketPriceHistory(prevHistory => {
             const lastPoint = prevHistory.length > 0 ? prevHistory[prevHistory.length - 1] : { closePrice: 60000, timestamp: Date.now() - 60000, openPrice: 60000, highPrice: 60000, lowPrice: 60000, volume: 10 };
             const newPrice = lastPoint.closePrice * (1 + (Math.random() - 0.5) * 0.001); // Fluctuación aleatoria
