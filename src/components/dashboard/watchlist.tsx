@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { TrendingUp, TrendingDown, Eye } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import clsx from 'clsx';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -28,7 +28,7 @@ export function Watchlist() {
             setIsLoading(true);
             try {
                 // 1. Obtener precios actuales para los símbolos de la watchlist
-                const priceResponse = await fetch(`/api/binance/route?symbol=${symbolsToWatch.join(',')}`);
+                const priceResponse = await fetch(`/api/binance/ticker?symbol=${symbolsToWatch.join(',')}`);
                 if (!priceResponse.ok) throw new Error('No se pudieron obtener los precios de los tickers.');
                 const priceData = await priceResponse.json();
 
@@ -39,7 +39,7 @@ export function Watchlist() {
                 const klinesResults = await Promise.all(changePromises);
                 
                 const newWatchlist = symbolsToWatch.map((symbol, index) => {
-                    const price = parseFloat(priceData.data?.[symbol]) || null;
+                    const price = parseFloat(priceData.data?.[`${symbol.replace('/', '')}`]) || null;
                     const klines = klinesResults[index]?.klines;
                     let change24h = null;
 

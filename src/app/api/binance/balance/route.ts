@@ -49,8 +49,8 @@ export async function GET(req: Request) {
     } else if (error instanceof ccxt.AuthenticationError) {
         userMessage = "Error de autenticación. Causa probable: La IP pública de tu red no está en la lista blanca (whitelist) de tu clave API en Binance, o la clave no tiene los permisos necesarios.";
         statusCode = 401;
-    } else if (error instanceof ccxt.NetworkError) {
-        userMessage = "Error de conexión con la API de Binance Mainnet.";
+    } else if (error instanceof ccxt.NetworkError || error instanceof ccxt.RequestTimeout) {
+        userMessage = `Error de conexión o timeout con la API de Binance Mainnet. Detalles: ${error.message}`;
         statusCode = 503;
     } else if (error instanceof ccxt.ExchangeError) {
         userMessage = `Ocurrió un error en el exchange de Binance: ${error.message}`;

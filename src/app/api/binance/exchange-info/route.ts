@@ -8,7 +8,6 @@ export async function GET(req: Request) {
   const symbolParam = searchParams.get('symbol');
 
   try {
-    // Es público, pero requiere inicialización para cargar todos los mercados
     await exchangeMainnet.loadMarkets();
 
     let responseData = null;
@@ -17,21 +16,17 @@ export async function GET(req: Request) {
         const marketInfo = exchangeMainnet.market(ccxtSymbol);
 
         if (marketInfo) {
-             // CORRECCIÓN: Se extraen los datos de una manera más robusta y directa desde la estructura de ccxt.
              responseData = {
                 id: marketInfo.id,
                 symbol: marketInfo.symbol,
                 baseAsset: marketInfo.base,
                 quoteAsset: marketInfo.quote,
                 active: marketInfo.active,
-                // `minNotional` se obtiene de `market.limits.cost.min`
                 minNotional: marketInfo.limits?.cost?.min,
-                // `minQty` se obtiene de `market.limits.amount.min`
                 minQty: marketInfo.limits?.amount?.min,
                 amountPrecision: marketInfo.precision?.amount,
                 pricePrecision: marketInfo.precision?.price,
                 quotePrecision: marketInfo.precision?.quote,
-                // Se mantiene la info original por si se necesita para depuración avanzada
                 filters: marketInfo.info?.filters 
              };
         } else {
@@ -41,7 +36,6 @@ export async function GET(req: Request) {
               }, { status: 404 });
         }
     } else {
-        // Si no hay símbolo, se devuelve la lista completa de mercados (puede ser muy grande)
         responseData = exchangeMainnet.markets;
     }
 
@@ -56,15 +50,14 @@ export async function GET(req: Request) {
     let userMessage = `Error al obtener la información del exchange de Mainnet.`;
     let statusCode = 500;
     
-    // Mejorar el manejo de errores para ser más específico
     if (error.message.includes('Service unavailable from a restricted location')) {
         userMessage = "Servicio no disponible: La API de Binance está restringiendo el acceso desde la ubicación del servidor.";
         statusCode = 403;
     } else if (error instanceof ccxt.AuthenticationError) {
          userMessage = "Error de autenticación. Causa probable: La IP pública de tu red no está en la lista blanca (whitelist) de tu clave API en Binance, o la clave no tiene los permisos necesarios.";
          statusCode = 401;
-    } else if (error instanceof ccxt.NetworkError) {
-        userMessage = "Error de conexión con la API de Binance.";
+    } else if (error instanceof ccxt.NetworkError || error instanceof ccxt.RequestTimeout) {
+        userMessage = `Error de conexión o timeout con la API de Binance. Detalles: ${error.message}`;
         statusCode = 503;
     } else if (error instanceof ccxt.ExchangeError) {
          userMessage = `Ocurrió un error en el exchange: ${error.message}`;

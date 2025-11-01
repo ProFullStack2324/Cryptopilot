@@ -1,53 +1,44 @@
-// src/app/api/binance/route.ts
+// src/app/api/binance/ticker/route.ts
 
 import { NextResponse } from 'next/server';
-import Binance from 'node-binance-api';
-
-// Inicializa el cliente de Binance sin claves API, ya que obtendremos datos públicos.
-const binance = new Binance();
+import { exchangeMainnet } from '@/lib/binance-client';
 
 /**
  * Manejador de la petición GET para obtener los precios de los tickers de Binance.
  *
  * Puedes acceder a esta API desde:
- * http://localhost:9002/api/binance/ticker
+ * /api/binance/ticker
  *
  * O para un símbolo específico (por ejemplo, BTCUSDT):
- * http://localhost:9002/api/binance/ticker?symbol=BTCUSDT
+ * /api/binance/ticker?symbol=BTCUSDT
  *
  * Puedes pasar múltiples símbolos separados por comas:
- * http://localhost:9002/api/binance/ticker?symbol=BTCUSDT,ETHUSDT
+ * /api/binance/ticker?symbol=BTCUSDT,ETHUSDT
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const symbol = searchParams.get('symbol'); // Obtiene el parámetro 'symbol' de la URL
+    const symbol = searchParams.get('symbol');
 
     console.log(`[API/Binance/Ticker] Solicitando precios para el símbolo: ${symbol || 'TODOS'}`);
 
-    let tickerData;
-    if (symbol) {
-      // Si se especifica un símbolo (o varios separados por coma)
-      const symbolsArray = symbol.split(',').map(s => s.trim().toUpperCase());
-      const promises = symbolsArray.map(s => binance.prices(s)); // Obtener precio para cada símbolo
-      const results = await Promise.all(promises);
-
-      // Combinar los resultados en un solo objeto para facilitar el uso
-      tickerData = results.reduce((acc, current) => {
-        return { ...acc, ...current };
-      }, {});
-
-    } else {
-      // Si no se especifica ningún símbolo, obtiene todos los precios de los tickers
-      tickerData = await binance.prices();
-    }
+    // fetchTickers es más eficiente para múltiples símbolos
+    const tickerData = await exchangeMainnet.fetchTickers(symbol?.split(','));
 
     console.log("[API/Binance/Ticker] Precios obtenidos con éxito.");
+
+    // Mapear la respuesta para simplificarla a { SYMBOL: last_price }
+    const formattedData: Record<string, number> = {};
+    if (tickerData) {
+        for (const key in tickerData) {
+            formattedData[tickerData[key].symbol] = tickerData[key].last!;
+        }
+    }
 
     return NextResponse.json(
       {
         message: "Precios de tickers obtenidos con éxito de Binance.",
-        data: tickerData,
+        data: formattedData,
       },
       { status: 200 }
     );

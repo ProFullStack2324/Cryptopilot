@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const symbolParam = searchParams.get('symbol');
-        const intervalParam = searchParams.get('interval') || '1m'; // Se usa 'interval' en lugar de 'timeframe'
+        const intervalParam = searchParams.get('interval') || '1m';
         const limitParam = searchParams.get('limit');
         const limit = limitParam ? parseInt(limitParam, 10) : 200;
 
@@ -21,7 +21,6 @@ export async function GET(request: Request) {
             await exchangeMainnet.loadMarkets();
             const ccxtSymbol = symbolParam.includes('/') ? symbolParam : `${symbolParam.replace(/USDT$/i, '')}/USDT`;
 
-            // fetchOHLCV es un endpoint público, no debería fallar por autenticación
             const ohlcv = await exchangeMainnet.fetchOHLCV(ccxtSymbol, intervalParam, undefined, limit);
 
             if (!ohlcv || ohlcv.length === 0) {
@@ -38,8 +37,8 @@ export async function GET(request: Request) {
                 return NextResponse.json({ success: false, message: 'Servicio no disponible: La API de Binance está restringiendo el acceso desde la ubicación del servidor.', details: 'Bloqueo geográfico de Binance.' }, { status: 403 });
             } else if (err instanceof ccxt.AuthenticationError) {
                 return NextResponse.json({ success: false, message: 'Error de autenticación. Causa probable: La IP pública de tu red no está en la lista blanca (whitelist) de tu clave API en Binance, o la clave no tiene los permisos necesarios.' }, { status: 401 });
-            } else if (err instanceof ccxt.NetworkError) {
-                return NextResponse.json({ success: false, message: 'Error de red al conectar con Binance Mainnet.' }, { status: 503 });
+            } else if (err instanceof ccxt.NetworkError || err instanceof ccxt.RequestTimeout) {
+                return NextResponse.json({ success: false, message: `Error de red o timeout al conectar con Binance Mainnet. Detalles: ${err.message}` }, { status: 503 });
             } else if (err instanceof ccxt.ExchangeError) {
                 return NextResponse.json({ success: false, message: `Error del exchange: ${err.message}` }, { status: 400 });
             }
