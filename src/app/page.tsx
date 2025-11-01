@@ -72,7 +72,6 @@ export default function TradingBotControlPanel() {
     const [balancesLoading, setBalancesLoading] = useState(true);
     const [balancesError, setBalancesError] = useState<string | null>(null);
 
-    const [operationLogs, setOperationLogs] = useState<any[]>([]);
     const [tradeExecutionLogs, setTradeExecutionLogs] = useState<any[]>([]);
     const [signalLogs, setSignalLogs] = useState<any[]>([]);
     const { simulationHistory, isLoading: isSimHistoryLoading, error: simHistoryError } = useSimulationHistory();
@@ -83,48 +82,32 @@ export default function TradingBotControlPanel() {
     // ** LA FUNCIÓN CLAVE **
     // Esta función centraliza la recepción de todos los eventos del bot.
     const onBotAction = useCallback((details: BotActionDetails) => {
-        // Registra todas las acciones en un log general si es necesario
-        // setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
-
-        const isInsufficientFunds = details.type === 'strategy_decision' && details.data?.action === 'hold_insufficient_funds';
+        const newLog = { ...details, timestamp: Date.now() };
 
         // Filtra eventos para la tabla "Libro de Órdenes"
-        if (details.type === 'order_placed' || details.type === 'order_failed' || isInsufficientFunds) {
-            let logEntryForExecution = { ...details, message: details.message || 'Acción de orden' };
-            if (isInsufficientFunds) {
+        if (details.type === 'order_placed' || details.type === 'order_failed' || details.type === 'hold_insufficient_funds') {
+            let logEntryForExecution = { ...newLog, message: details.message || 'Acción de orden' };
+            if (details.type === 'hold_insufficient_funds') {
                 logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${details.details?.required.toFixed(2)}, Disponible: $${details.details?.available.toFixed(2)}`;
                 logEntryForExecution.success = false;
             }
-            setTradeExecutionLogs(prev => {
-                const updatedLogs = [logEntryForExecution, ...prev.slice(0, 99)];
-                // Guardar en la base de datos
-                (async () => {
-                    try {
-                        await fetch('/api/logs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForExecution) });
-                    } catch (e) { console.error("Failed to save execution log to database", e); }
-                })();
-                return updatedLogs;
-            });
+             setTradeExecutionLogs(prev => [logEntryForExecution, ...prev.slice(0, 99)]);
+            // Guardar en la base de datos
+            fetch('/api/logs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForExecution) })
+                .catch(e => console.error("Failed to save execution log to database", e));
         }
         
         // Filtra eventos para la tabla "Historial de Señales Detectadas"
         if (details.type === 'strategy_decision' && details.details?.strategyMode) {
              let logEntryForSignal = {
-                timestamp: details.timestamp,
+                ...newLog,
                 message: `Señal ${details.details.strategyMode.toUpperCase()} detectada (${details.details.buyConditionsCount} condiciones).`,
-                details: details.details,
                 success: true,
              };
-             setSignalLogs(prev => {
-                 const updatedLogs = [logEntryForSignal, ...prev.slice(0, 99)];
-                 // Guardar en la base de datos
-                (async () => {
-                    try {
-                        await fetch('/api/signals/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForSignal) });
-                    } catch (e) { console.error("Failed to save signal log to database", e); }
-                })();
-                 return updatedLogs;
-             });
+             setSignalLogs(prev => [logEntryForSignal, ...prev.slice(0, 99)]);
+             // Guardar en la base de datos
+            fetch('/api/signals/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForSignal) })
+                .catch(e => console.error("Failed to save signal log to database", e));
         }
 
     }, []); // El array de dependencias vacío asegura que la función no se recree innecesariamente.
@@ -148,6 +131,21 @@ export default function TradingBotControlPanel() {
         onBotAction, // Pasamos la función centralizada al hook
         timeframe,
     });
+    
+    // Carga inicial de logs desde la BD
+    useEffect(() => {
+        const fetchInitialLogs = async () => {
+            try {
+                // No tenemos endpoints para leer logs, asumimos que se empieza de cero
+                // Si los tuviéramos, las llamadas irían aquí.
+                // Ejemplo: const tradeLogsRes = await fetch('/api/logs/history');
+                // const signalLogsRes = await fetch('/api/signals/history');
+            } catch (e) {
+                console.error("Error fetching initial logs", e);
+            }
+        };
+        fetchInitialLogs();
+    }, []);
 
     useEffect(() => {
         const fetchBalances = async () => {
@@ -181,7 +179,7 @@ export default function TradingBotControlPanel() {
     
     const annotatedHistory = useMemo(() => currentMarketPriceHistory.filter(dp => dp && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)), [currentMarketPriceHistory]);
     const latestDataPointForStrategy = useMemo(() => annotatedHistory.at(-1) || null, [annotatedHistory]);
-    const lastStrategyDecision = useMemo(() => operationLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [operationLogs]);
+    const lastStrategyDecision = useMemo(() => tradeExecutionLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [tradeExecutionLogs]);
 
     const isReadyToStart = !rulesLoading && annotatedHistory.length >= MIN_REQUIRED_HISTORY_FOR_BOT;
 
@@ -298,7 +296,7 @@ export default function TradingBotControlPanel() {
                 <Card className="lg:col-span-4 shadow-lg rounded-xl">
                     <CardHeader><CardTitle>Gráfica de Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
                     <CardContent>
-                        <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
+                        <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={signalLogs} chartColors={CHART_COLORS} />
                     </CardContent>
                     <CardFooter><p className="text-xs text-muted-foreground"><ScalpingAnalysisDescription /></p></CardFooter>
                 </Card>

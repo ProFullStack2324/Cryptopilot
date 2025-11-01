@@ -34,7 +34,7 @@ export function SignalHistoryTable({ logs, title, emptyLogMessage, className }: 
         if (conditions.price) met.push("Precio vs BB");
         if (conditions.rsi) met.push("RSI");
         if (conditions.macd) met.push("Cruce MACD");
-        return met.join(' + ');
+        return met.join(' + ') || 'Ninguna';
     };
 
     return (
@@ -42,8 +42,8 @@ export function SignalHistoryTable({ logs, title, emptyLogMessage, className }: 
             <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
             <CardContent>
                 <ScrollArea className="h-[250px] w-full pr-4">
-                    {logs.length > 0 ? logs.map(log => (
-                        <div key={log.timestamp} className="text-xs border-b py-2">
+                    {logs.length > 0 ? logs.map((log, index) => (
+                        <div key={`${log.timestamp}-${index}`} className="text-xs border-b py-2">
                             <p>
                                 <span className="font-bold mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
                                 <span className={`font-semibold ${log.details?.strategyMode === 'sniper' ? 'text-amber-500' : 'text-blue-400'}`}>{log.message}</span>

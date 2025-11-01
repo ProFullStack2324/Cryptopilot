@@ -45,7 +45,7 @@ export const MIN_REQUIRED_HISTORY_FOR_BOT = 51; // Requisito mínimo de velas pa
 export const useTradingBot = (props: {
     selectedMarket: Market | null;
     allBinanceBalances: BinanceBalance[];
-    onBotAction: (details: BotActionDetails) => void; // CORREGIDO: se espera onBotAction
+    onBotAction: (details: BotActionDetails) => void;
     timeframe: string;
 }) => {
     const { selectedMarket, allBinanceBalances, onBotAction, timeframe } = props;
@@ -68,8 +68,8 @@ export const useTradingBot = (props: {
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isMounted = useRef(false);
 
+    // Simplificado para solo llamar al prop onBotAction
     const logAction = useCallback((details: Omit<BotActionDetails, 'timestamp'>) => {
-        // Esta función ahora llama directamente al callback pasado desde la página.
         onBotAction({ ...details, timestamp: Date.now() });
     }, [onBotAction]);
 
@@ -280,6 +280,7 @@ export const useTradingBot = (props: {
         if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
             await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
         } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
+            logAction({type: 'hold_insufficient_funds', success: false, message: 'Fondos insuficientes para la orden de compra', details: decision.details});
             const config = STRATEGY_CONFIG[decision.details.strategyMode];
             const entryPrice = decision.orderData.price;
             const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
