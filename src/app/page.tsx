@@ -22,6 +22,9 @@ import { SimulatedPerformanceCard } from '@/components/dashboard/simulated-perfo
 import { Watchlist } from '@/components/dashboard/watchlist';
 import { SignalHistoryTable } from '@/components/dashboard/signal-history-table';
 import { PerformanceMetricsCard } from '@/components/dashboard/performance-metrics-card';
+import { SimulationHistoryTable } from '@/components/dashboard/simulation-history-table';
+import { useSimulationHistory } from '@/hooks/useSimulationHistory';
+
 
 // Importaciones de UI
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -71,6 +74,8 @@ export default function TradingBotControlPanel() {
     const [operationLogs, setOperationLogs] = useState<any[]>([]);
     const [tradeExecutionLogs, setTradeExecutionLogs] = useState<any[]>([]);
     const [signalLogs, setSignalLogs] = useState<any[]>([]);
+    const { simulationHistory, isLoading: isSimHistoryLoading, error: simHistoryError } = useSimulationHistory();
+
 
     const { toast } = useToast();
 
@@ -335,10 +340,12 @@ export default function TradingBotControlPanel() {
                         emptyLogMessage="Esperando la primera señal de la estrategia..."
                         className="md:col-span-1"
                     />
-                    <TradeHistoryTable 
-                        logs={operationLogs}
-                        title="Registro de Operaciones (Diario del Bot)"
-                        emptyLogMessage="Esperando la primera acción del bot..."
+                    <SimulationHistoryTable 
+                        logs={simulationHistory}
+                        isLoading={isSimHistoryLoading}
+                        error={simHistoryError}
+                        title="Historial de Simulaciones"
+                        emptyLogMessage="No hay simulaciones completadas."
                         className="md:col-span-1"
                     />
                 </div>
