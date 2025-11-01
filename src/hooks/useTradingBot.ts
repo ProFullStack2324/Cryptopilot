@@ -220,32 +220,30 @@ export const useTradingBot = (props: {
 
         // --- INICIO FLUJO DE SIMULACIÓN ---
         if (simulatedPosition) {
-            // El bot tiene una simulación activa. Comprueba si debe cerrarla.
             const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount, strategy } = simulatedPosition;
             let exitReason: string | null = null;
             if (takeProfitPrice && currentPrice >= takeProfitPrice) exitReason = 'take_profit';
             else if (stopLossPrice && currentPrice <= stopLossPrice) exitReason = 'stop_loss';
 
-            if (exitReason) {
+            if (exitReason && simulationId) {
                 const finalPnl = (currentPrice - entryPrice) * amount;
                 logAction({ type: 'strategy_decision', success: true, message: `Simulación (${strategy}) finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.` });
                 
-                if (simulationId) {
-                    fetch('/api/simulations/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            simulationId,
-                            exitPrice: currentPrice,
-                            exitReason,
-                            finalPnl,
-                        }),
-                    }).catch(e => console.error("Fallo al guardar el fin de la simulación", e));
-                }
+                // *** CORRECCIÓN: LLAMAR A LA API PARA CERRAR LA SIMULACIÓN ***
+                fetch('/api/simulations/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        simulationId, // <- Enviar el ID para actualizar
+                        exitPrice: currentPrice,
+                        exitReason,
+                        finalPnl,
+                    }),
+                }).catch(e => console.error("Fallo al guardar el fin de la simulación", e));
                 
                 setSimulatedPosition(null); 
             }
-            return; 
+            return; // Si hay simulación activa, no hacer nada más
         }
         // --- FIN FLUJO DE SIMULACIÓN ---
     
@@ -303,15 +301,15 @@ export const useTradingBot = (props: {
                 });
                 const result = await response.json();
                 if(result.success && result.insertedId) {
+                    // *** CORRECCIÓN: GUARDAR EL ID DE LA SIMULACIÓN ***
                     setSimulatedPosition({ ...newSimulationBase, simulationId: result.insertedId });
                 } else {
-                    setSimulatedPosition(newSimulationBase); // Fallback sin ID si falla la API
+                    setSimulatedPosition(newSimulationBase);
                 }
             } catch (e) {
-                 setSimulatedPosition(newSimulationBase); // Fallback sin ID si falla la red
+                 setSimulatedPosition(newSimulationBase);
             }
         }
-        // --- FIN FLUJO DE NUEVA ENTRADA ---
     
     }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, simulatedPosition, selectedMarketRules, isPlacingOrder, logAction, executeOrder ]);
     

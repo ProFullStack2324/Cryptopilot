@@ -1,3 +1,4 @@
+
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -138,22 +139,32 @@ export default function TradingBotControlPanel() {
         timeframe,
     });
     
-    // Carga inicial de logs desde la BD (ASUMIENDO QUE EXISTEN ENDPOINTS)
+    // Carga inicial de logs desde la BD
     useEffect(() => {
-        // Esta función se puede expandir para cargar logs desde la BD si se implementan los endpoints
         const fetchInitialLogs = async () => {
             try {
-                // Ejemplo (requeriría crear estos endpoints):
-                // const tradeLogsRes = await fetch('/api/logs/history?type=trade').then(res => res.json());
-                // const signalLogsRes = await fetch('/api/logs/history?type=signal').then(res => res.json());
-                // if (tradeLogsRes.success) setTradeExecutionLogs(tradeLogsRes.logs);
-                // if (signalLogsRes.success) setSignalLogs(signalLogsRes.logs);
+                // Endpoint para logs de trades
+                // const tradeLogsRes = await fetch('/api/logs/history?type=trade&limit=50').then(res => res.json());
+                // if (tradeLogsRes.success) setTradeExecutionLogs(tradeLogsRes.logs.reverse()); // Asumiendo que vienen del más antiguo al más nuevo
+
+                // Endpoint para logs de señales
+                // const signalLogsRes = await fetch('/api/signals/history?limit=50').then(res => res.json());
+                // if (signalLogsRes.success) setSignalLogs(signalLogsRes.logs.reverse());
+                
+                // El historial de simulaciones ya se carga a través de su propio hook
+                refreshHistory();
+
             } catch (e) {
                 console.error("Error fetching initial logs", e);
+                toast({
+                    title: "Error al Cargar Historial",
+                    description: "No se pudieron cargar los registros históricos desde la base de datos.",
+                    variant: "destructive"
+                });
             }
         };
         fetchInitialLogs();
-    }, []);
+    }, [refreshHistory, toast]);
 
     useEffect(() => {
         const fetchBalances = async () => {
