@@ -1,6 +1,6 @@
 // src/hooks/useTradingBot.ts
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useToast } from './use-toast';
+import { useToast } from '@/components/ui/use-toast';
 
 import {
     Market,
@@ -16,29 +16,10 @@ import {
     OrderFormData
 } from '@/lib/types';
 
-import { decideTradeActionAndAmount } from '@/lib/strategies/tradingStrategy';
+import { decideTradeActionAndAmount, STRATEGY_CONFIG } from '@/lib/strategies/tradingStrategy';
 import { calculateSMA, calculateRSI, calculateMACD, calculateBollingerBands } from '@/lib/indicators';
 
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
-
-// ======================================================================================================
-// CONFIGURACIÓN DE LA ESTRATEGIA
-// ======================================================================================================
-const STRATEGY_CONFIG = {
-    scalping: {
-        minBuyConditions: 1,
-        takeProfitPercentage: 0.008, // 0.8%
-        stopLossPercentage: 0.004,   // 0.4%
-        capitalToRiskPercentage: 0.95 
-    },
-    sniper: {
-        minBuyConditions: 2,
-        takeProfitPercentage: 0.02,  // 2%
-        stopLossPercentage: 0.01,    // 1%
-        capitalToRiskPercentage: 0.95
-    },
-    rsiSellThreshold: 65,
-};
 
 export const MIN_REQUIRED_HISTORY_FOR_BOT = 51; // Requisito mínimo de velas para operar
 

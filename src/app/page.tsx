@@ -1,9 +1,8 @@
-
 "use client"; // Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTradingBot, MIN_REQUIRED_HISTORY_FOR_BOT } from '@/hooks/useTradingBot'; 
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import {
     Market,
     BinanceBalance,
