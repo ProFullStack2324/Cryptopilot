@@ -18,7 +18,7 @@ export interface StrategyDecision {
 // ======================================================================================================
 // CONFIGURACIÓN DE LAS ESTRATEGIAS
 // ======================================================================================================
-const STRATEGY_CONFIG = {
+export const STRATEGY_CONFIG = {
     scalping: {
         minBuyConditions: 1, 
         takeProfitPercentage: 0.008, // 0.8%

@@ -15,7 +15,8 @@ import { useSimulationHistory } from '@/hooks/useSimulationHistory';
 // Importaciones de Componentes de Dashboard
 import { BotControls } from '@/components/dashboard/bot-controls';
 import { BinanceBalancesDisplay } from '@/components/dashboard/binance-balances-display';
-import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
+import { ScalpingStrategyCard } from '@/components/dashboard/scalping-strategy-card';
+import { SniperStrategyCard } from '@/components/dashboard/sniper-strategy-card';
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
 import { BotStatusFlow } from '@/components/dashboard/bot-status-flow';
 import { MarketChart } from '@/components/MarketChart';
@@ -322,22 +323,18 @@ export default function TradingBotControlPanel() {
                     <Card className="lg:col-span-4">
                         <CardHeader><CardTitle>4. Diagnóstico de Estrategia</CardTitle></CardHeader>
                         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                             <StrategyDashboard 
-                                latest={latestDataPointForStrategy} 
-                                decision={lastStrategyDecision} 
-                                selectedMarket={selectedMarket} 
-                                priceHistory={annotatedHistory}
-                                botOpenPosition={botOpenPosition}
-                                strategyMode="scalping"
-                             />
-                             <StrategyDashboard 
-                                latest={latestDataPointForStrategy} 
-                                decision={lastStrategyDecision} 
-                                selectedMarket={selectedMarket} 
-                                priceHistory={annotatedHistory}
-                                botOpenPosition={botOpenPosition}
-                                strategyMode="sniper"
-                             />
+                            <ScalpingStrategyCard
+                                latest={latestDataPointForStrategy}
+                                market={selectedMarket}
+                                history={annotatedHistory}
+                                openPosition={botOpenPosition}
+                            />
+                            <SniperStrategyCard
+                                latest={latestDataPointForStrategy}
+                                market={selectedMarket}
+                                history={annotatedHistory}
+                                openPosition={botOpenPosition}
+                            />
                         </CardContent>
                     </Card>
                 )}
