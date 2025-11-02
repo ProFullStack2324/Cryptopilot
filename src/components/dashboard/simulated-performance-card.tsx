@@ -39,7 +39,7 @@ export function SimulatedPerformanceCard({ simulatedPosition, currentPrice, mark
     }
 
     return (
-        <Card className="lg:col-span-4 shadow-lg rounded-xl border-dashed border-blue-500 bg-blue-500/5">
+        <Card className="lg:col-span-3 shadow-lg rounded-xl border-dashed border-blue-500 bg-blue-500/5">
             <CardHeader>
                 <CardTitle className="flex items-center text-blue-400">
                     <Beaker className="w-5 h-5 mr-2" />

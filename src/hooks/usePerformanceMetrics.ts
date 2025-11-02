@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from './use-toast';
 
 export interface PerformanceMetrics {
     simulatedGains: number;
@@ -17,7 +17,6 @@ export interface PerformanceMetrics {
 }
 
 export const usePerformanceMetrics = () => {
-    const { toast } = useToast();
     const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -43,7 +42,7 @@ export const usePerformanceMetrics = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [toast]);
+    }, []);
 
     useEffect(() => {
         fetchMetrics();

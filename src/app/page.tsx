@@ -2,20 +2,17 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTradingBot, MIN_REQUIRED_HISTORY_FOR_BOT } from '@/hooks/useTradingBot'; 
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import {
     Market,
     BinanceBalance,
-    BotActionDetails
+    MarketPriceDataPoint
 } from '@/lib/types'; 
-import { useSimulationHistory } from '@/hooks/useSimulationHistory';
-
 
 // Importaciones de Componentes de Dashboard
 import { BotControls } from '@/components/dashboard/bot-controls';
 import { BinanceBalancesDisplay } from '@/components/dashboard/binance-balances-display';
-import { ScalpingStrategyCard } from '@/components/dashboard/scalping-strategy-card';
-import { SniperStrategyCard } from '@/components/dashboard/sniper-strategy-card';
+import { StrategyDashboard } from '@/components/dashboard/strategy-dashboard';
 import { StrategyConditionChart } from '@/components/dashboard/strategy-condition-chart';
 import { BotStatusFlow } from '@/components/dashboard/bot-status-flow';
 import { MarketChart } from '@/components/MarketChart';
@@ -26,6 +23,7 @@ import { Watchlist } from '@/components/dashboard/watchlist';
 import { SignalHistoryTable } from '@/components/dashboard/signal-history-table';
 import { PerformanceMetricsCard } from '@/components/dashboard/performance-metrics-card';
 import { SimulationHistoryTable } from '@/components/dashboard/simulation-history-table';
+import { useSimulationHistory } from '@/hooks/useSimulationHistory';
 
 
 // Importaciones de UI
@@ -73,51 +71,57 @@ export default function TradingBotControlPanel() {
     const [balancesLoading, setBalancesLoading] = useState(true);
     const [balancesError, setBalancesError] = useState<string | null>(null);
 
+    const [operationLogs, setOperationLogs] = useState<any[]>([]);
     const [tradeExecutionLogs, setTradeExecutionLogs] = useState<any[]>([]);
     const [signalLogs, setSignalLogs] = useState<any[]>([]);
-    const { simulationHistory, isLoading: isSimHistoryLoading, error: simHistoryError, refreshHistory } = useSimulationHistory();
+    const { simulationHistory, isLoading: isSimHistoryLoading, error: simHistoryError } = useSimulationHistory();
+
 
     const { toast } = useToast();
 
-    // ** LA FUNCIÓN CLAVE **
-    // Esta función centraliza la recepción de todos los eventos del bot.
-    const onBotAction = useCallback((details: BotActionDetails) => {
-        const newLog = { ...details, timestamp: Date.now() };
+    const onBotAction = useCallback((details: any) => {
+        const newLog = { ...details, timestamp: Date.now() + Math.random() };
+        
+        setOperationLogs(prev => [newLog, ...prev.slice(0, 199)]);
+        
+        const isInsufficientFunds = details.type === 'strategy_decision' && details.data?.action === 'hold_insufficient_funds';
 
-        // Filtra eventos para la tabla "Libro de Órdenes"
-        if (['order_placed', 'order_failed', 'hold_insufficient_funds'].includes(details.type)) {
-            let logEntryForExecution = { ...newLog, message: details.message || 'Acción de orden' };
-            if (details.type === 'hold_insufficient_funds') {
-                logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${(details.details?.required || 0).toFixed(2)}, Disponible: $${(details.details?.available || 0).toFixed(2)}`;
+        if (details.type === 'order_placed' || details.type === 'order_failed' || isInsufficientFunds) {
+            let logEntryForExecution = { ...newLog, message: details.message || newLog.message };
+            if (isInsufficientFunds) {
+                logEntryForExecution.message = `Intento de Compra Fallido: Saldo insuficiente. Requerido: ~$${details.details?.required.toFixed(2)}, Disponible: $${details.details?.available.toFixed(2)}`;
+                logEntryForExecution.success = false;
             }
-             setTradeExecutionLogs(prev => [logEntryForExecution, ...prev.slice(0, 99)]);
-            // Guardar en la base de datos
-            if(details.type === 'order_placed' || details.type === 'order_failed') {
-                fetch('/api/logs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForExecution) })
-                    .catch(e => console.error("Failed to save execution log to database", e));
-            }
+             setTradeExecutionLogs(prev => {
+                const updatedLogs = [logEntryForExecution, ...prev.slice(0, 99)];
+                (async () => {
+                    try {
+                        await fetch('/api/logs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForExecution) });
+                    } catch (e) { console.error("Failed to save execution log to database", e); }
+                })();
+                return updatedLogs;
+            });
         }
         
-        // Filtra eventos para la tabla "Historial de Señales Detectadas"
-        if (details.type === 'strategy_decision') {
+        if (details.type === 'strategy_decision' && details.details?.strategyMode) {
              let logEntryForSignal = {
-                ...newLog,
-                message: `Señal ${details.data.action.toUpperCase()} detectada (${details.details.buyConditionsCount} condiciones). Modo: ${details.details.strategyMode}`,
+                timestamp: details.timestamp,
+                message: `Señal ${details.details.strategyMode.toUpperCase()} detectada (${details.details.buyConditionsCount} condiciones).`,
+                details: details.details,
                 success: true,
              };
-             setSignalLogs(prev => [logEntryForSignal, ...prev.slice(0, 99)]);
-             // Guardar en la base de datos
-            fetch('/api/signals/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForSignal) })
-                .catch(e => console.error("Failed to save signal log to database", e));
+             setSignalLogs(prev => {
+                 const updatedLogs = [logEntryForSignal, ...prev.slice(0, 99)];
+                (async () => {
+                    try {
+                        await fetch('/api/signals/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntryForSignal) });
+                    } catch (e) { console.error("Failed to save signal log to database", e); }
+                })();
+                 return updatedLogs;
+             });
         }
 
-        // Si la simulación se cierra, refrescamos el historial
-        if (details.message?.includes("Simulación finalizada")) {
-            refreshHistory();
-        }
-
-    }, [refreshHistory]);
-
+    }, []);
 
     const {
         isBotRunning,
@@ -131,41 +135,12 @@ export default function TradingBotControlPanel() {
         botOpenPosition,
         currentMarketPriceHistory,
         simulatedPosition,
-        setSimulatedPosition,
     } = useTradingBot({
         selectedMarket,
         allBinanceBalances: currentBalances,
-        onBotAction, // Pasamos la función centralizada al hook
+        onBotAction,
         timeframe,
     });
-    
-    // Carga inicial de logs desde la BD
-    useEffect(() => {
-        const fetchInitialLogs = async () => {
-            // Este es un placeholder. Deberías crear endpoints que devuelvan el historial.
-            try {
-                // Endpoint para logs de trades
-                // const tradeRes = await fetch('/api/logs/history?type=trade_log&limit=50').then(r => r.json());
-                // if(tradeRes.success) setTradeExecutionLogs(tradeRes.logs);
-
-                // Endpoint para logs de señales
-                // const signalRes = await fetch('/api/logs/history?type=signal_log&limit=50').then(r => r.json());
-                // if(signalRes.success) setSignalLogs(signalRes.logs);
-                
-                // El historial de simulaciones ya se carga desde su propio hook.
-                refreshHistory();
-
-            } catch (e) {
-                console.error("Error fetching initial logs", e);
-                toast({
-                    title: "Error al Cargar Historial",
-                    description: "No se pudieron cargar los registros históricos desde la base de datos.",
-                    variant: "destructive"
-                });
-            }
-        };
-        fetchInitialLogs();
-    }, [refreshHistory, toast]);
 
     useEffect(() => {
         const fetchBalances = async () => {
@@ -199,7 +174,7 @@ export default function TradingBotControlPanel() {
     
     const annotatedHistory = useMemo(() => currentMarketPriceHistory.filter(dp => dp && isValidNumber(dp.timestamp) && isValidNumber(dp.closePrice)), [currentMarketPriceHistory]);
     const latestDataPointForStrategy = useMemo(() => annotatedHistory.at(-1) || null, [annotatedHistory]);
-    const lastStrategyDecision = useMemo(() => signalLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [signalLogs]);
+    const lastStrategyDecision = useMemo(() => operationLogs.find(log => log.type === 'strategy_decision')?.data?.action || 'hold', [operationLogs]);
 
     const isReadyToStart = !rulesLoading && annotatedHistory.length >= MIN_REQUIRED_HISTORY_FOR_BOT;
 
@@ -225,10 +200,10 @@ export default function TradingBotControlPanel() {
     
         const { buyConditionsMet } = latest;
         if ((buyConditionsMet || 0) >= 2) {
-            return `Modo de Caza ACTIVO. Señal de Francotirador detectada (${buyConditionsMet}/3). Esperando confirmación para actuar.`;
+            return `Modo de Caza ACTIVO. Señal de Francotirador detectada (${buyConditionsMet}/2). Esperando confirmación para actuar.`;
         }
         if ((buyConditionsMet || 0) >= 1) {
-            return `Modo de Caza ACTIVO. Señal de Scalping detectada (${buyConditionsMet}/3). Esperando confirmación para actuar.`;
+            return `Modo de Caza ACTIVO. Señal de Scalping detectada (${buyConditionsMet}/1). Esperando confirmación para actuar.`;
         }
     
         return "Modo de Caza ACTIVO. Esperando la próxima oportunidad de entrada (RSI en sobreventa, cruce MACD o toque de Banda de Bollinger).";
@@ -244,7 +219,7 @@ export default function TradingBotControlPanel() {
                     </CardHeader>
                     <CardContent className="flex flex-wrap items-center justify-center gap-4">
                         <div className="flex items-center gap-2">
-                            <span className="font-semibold">1. Mercado:</span>
+                            <span className="font-semibold">Mercado:</span>
                             <Select onValueChange={setSelectedMarketId} value={selectedMarketId || ""}>
                                 <SelectTrigger className="w-[150px]"><SelectValue placeholder="Selecciona..." /></SelectTrigger>
                                 <SelectContent>
@@ -253,7 +228,7 @@ export default function TradingBotControlPanel() {
                             </Select>
                         </div>
                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">2. Temporalidad:</span>
+                            <span className="font-semibold">Temporalidad:</span>
                             <Select onValueChange={setTimeframe} value={timeframe}>
                                 <SelectTrigger className="w-[120px]"><SelectValue placeholder="Tiempo" /></SelectTrigger>
                                 <SelectContent>
@@ -266,25 +241,25 @@ export default function TradingBotControlPanel() {
                         </div>
                         <BotControls isBotRunning={isBotRunning} onToggleBot={toggleBotStatus} isDisabled={!isReadyToStart} />
                     </CardContent>
-                    {(isPlacingOrder || placeOrderError || rulesError || balancesError) && (
+                    {isPlacingOrder || placeOrderError || rulesError || balancesError ? (
                         <CardFooter>
                             <div className="text-xs text-muted-foreground w-full">
                                 {isPlacingOrder && <p className="text-orange-500 font-semibold">Colocando orden...</p>}
-                                {placeOrderError && <Alert variant="destructive" className="mt-2"><Terminal className="h-4 w-4" /><AlertTitle>Error de Orden</AlertTitle><AlertDescription>{parseErrorMessage(placeOrderError)}</AlertDescription></Alert>}
+                                {placeOrderError && <p className="text-red-500 font-semibold">Error de Orden: {parseErrorMessage(placeOrderError)}</p>}
                                 {rulesError && <Alert variant="destructive" className="mt-2"><Terminal className="h-4 w-4" /><AlertTitle>Error de Conexión</AlertTitle><AlertDescription>{parseErrorMessage(rulesError)}</AlertDescription></Alert>}
                                 {balancesError && <Alert variant="destructive" className="mt-2"><Terminal className="h-4 w-4" /><AlertTitle>Error de Balances</AlertTitle><AlertDescription>{parseErrorMessage(balancesError)}</AlertDescription></Alert>}
                             </div>
                         </CardFooter>
-                    )}
+                    ) : null}
                 </Card>
             </header>
 
             <main className="grid grid-cols-1 lg:grid-cols-4 gap-6 w-full">
-                 <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-1">
+                 <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="md:col-span-1 lg:col-span-1">
                         <BinanceBalancesDisplay balances={currentBalances.reduce((acc, bal) => ({ ...acc, [bal.asset]: { available: bal.free, onOrder: bal.locked, total: bal.free + bal.locked } }), {})} isLoading={balancesLoading} error={balancesError} />
                     </div>
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-1 lg:col-span-2">
                         <PerformanceMetricsCard />
                     </div>
                 </div>
@@ -300,46 +275,53 @@ export default function TradingBotControlPanel() {
                      />
                 </div>
                 
-                {simulatedPosition && (
+                {(simulatedPosition || botOpenPosition) && (
                     <div className="lg:col-span-4">
-                        <SimulatedPerformanceCard
-                            simulatedPosition={simulatedPosition}
-                            currentPrice={currentPrice}
-                            market={selectedMarket}
-                        />
+                        {simulatedPosition && (
+                            <SimulatedPerformanceCard
+                                simulatedPosition={simulatedPosition}
+                                currentPrice={currentPrice}
+                                market={selectedMarket}
+                            />
+                        )}
+                        {/* Aquí podrías poner un Card para la posición real si lo deseas */}
                     </div>
                 )}
                 
                 <Card className="lg:col-span-4 shadow-lg rounded-xl">
-                    <CardHeader><CardTitle>3. Gráfica de Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
+                    <CardHeader><CardTitle>Gráfica de Mercado ({selectedMarket?.symbol || 'N/A'})</CardTitle></CardHeader>
                     <CardContent>
-                        <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={signalLogs} chartColors={CHART_COLORS} />
+                        <MarketChart data={annotatedHistory} selectedMarket={selectedMarket} strategyLogs={operationLogs} chartColors={CHART_COLORS} />
                     </CardContent>
                     <CardFooter><p className="text-xs text-muted-foreground"><ScalpingAnalysisDescription /></p></CardFooter>
                 </Card>
 
                  {annotatedHistory.length > 0 && (
                     <Card className="lg:col-span-4">
-                        <CardHeader><CardTitle>4. Diagnóstico de Estrategia</CardTitle></CardHeader>
+                        <CardHeader><CardTitle>Diagnóstico de Estrategia</CardTitle></CardHeader>
                         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <ScalpingStrategyCard
-                                latest={latestDataPointForStrategy}
-                                market={selectedMarket}
-                                history={annotatedHistory}
-                                openPosition={botOpenPosition}
-                            />
-                            <SniperStrategyCard
-                                latest={latestDataPointForStrategy}
-                                market={selectedMarket}
-                                history={annotatedHistory}
-                                openPosition={botOpenPosition}
-                            />
+                             <StrategyDashboard 
+                                latest={latestDataPointForStrategy} 
+                                decision={lastStrategyDecision} 
+                                selectedMarket={selectedMarket} 
+                                priceHistory={annotatedHistory}
+                                botOpenPosition={botOpenPosition}
+                                strategyMode="scalping"
+                             />
+                             <StrategyDashboard 
+                                latest={latestDataPointForStrategy} 
+                                decision={lastStrategyDecision} 
+                                selectedMarket={selectedMarket} 
+                                priceHistory={annotatedHistory}
+                                botOpenPosition={botOpenPosition}
+                                strategyMode="sniper"
+                             />
                         </CardContent>
                     </Card>
                 )}
                 
                 <Card className="lg:col-span-4">
-                    <CardHeader><CardTitle>5. Análisis de Condiciones</CardTitle></CardHeader>
+                    <CardHeader><CardTitle>Análisis de Condiciones de Estrategia</CardTitle></CardHeader>
                     <CardContent>
                         <StrategyConditionChart data={annotatedHistory} />
                     </CardContent>
@@ -348,13 +330,13 @@ export default function TradingBotControlPanel() {
                 <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6">
                     <TradeHistoryTable 
                         logs={tradeExecutionLogs}
-                        title="6. Libro de Órdenes"
+                        title="Libro de Órdenes"
                         emptyLogMessage="Esperando la primera acción de compra o venta..."
                         className="md:col-span-1"
                     />
                     <SignalHistoryTable
                         logs={signalLogs}
-                        title="7. Historial de Señales"
+                        title="Historial de Señales Detectadas"
                         emptyLogMessage="Esperando la primera señal de la estrategia..."
                         className="md:col-span-1"
                     />
@@ -362,7 +344,7 @@ export default function TradingBotControlPanel() {
                         logs={simulationHistory}
                         isLoading={isSimHistoryLoading}
                         error={simHistoryError}
-                        title="8. Historial de Simulaciones"
+                        title="Historial de Simulaciones"
                         emptyLogMessage="No hay simulaciones completadas."
                         className="md:col-span-1"
                     />
