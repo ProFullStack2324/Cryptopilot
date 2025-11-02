@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTradingBot } from '@/hooks/useTradingBot'; // Importa tu hook de trading
-import { useToast } from '@/hooks/use-toast'; // Asegúrate de que la ruta sea correcta para useToast
+import { useToast } from '@/components/ui/use-toast'; // Asegúrate de que la ruta sea correcta para useToast
 import {
     Market,
     BinanceBalance,
