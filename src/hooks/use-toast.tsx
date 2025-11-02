@@ -189,9 +189,4 @@ function useToast() {
   }
 }
 
-// Dummy ToastProvider, ya no es necesario
-const ToastProvider = ({ children }: { children: React.ReactNode }) => {
-    return <>{children}</>
-}
-
-export { useToast, toast, ToastProvider }
+export { useToast, toast }
