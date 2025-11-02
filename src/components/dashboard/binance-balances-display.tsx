@@ -2,7 +2,7 @@
 "use client";
 
 import React from 'react';
-// useEffect  and  useState are   removed because this component now receives data via props.
+// useEffect  and   useState are   removed because this component now receives data via props.
 // The   fetching  should be in a parent component (e.g., page.tsx).
 // import { useEffect, useState } from 'react'; 
 
