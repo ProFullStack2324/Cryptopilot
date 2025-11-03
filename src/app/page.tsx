@@ -121,7 +121,7 @@ export default function TradingBotControlPanel() {
              });
         }
 
-    }, []);
+    }, [toast]);
 
     const {
         isBotRunning,
