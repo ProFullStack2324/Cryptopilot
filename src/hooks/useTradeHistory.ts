@@ -27,6 +27,8 @@ export const useTradeHistory = (refreshInterval: number = 15000) => { // Actuali
     const [error, setError] = useState<string | null>(null);
 
     const fetchHistory = useCallback(async () => {
+        // No establecer isLoading a true en cada fetch para evitar parpadeos,
+        // solo en la carga inicial (manejado por el estado inicial de isLoading).
         setError(null);
         try {
             const response = await fetch('/api/logs/history');

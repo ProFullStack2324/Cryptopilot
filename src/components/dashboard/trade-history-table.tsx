@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { ArrowUpRight, ArrowDownLeft, AlertCircle } from "lucide-react";
+import { ArrowUpRight, ArrowDownLeft, AlertCircle, Info } from "lucide-react";
 import clsx from 'clsx';
 import { TradeLog } from '@/hooks/useTradeHistory'; // Importar el tipo
 
@@ -26,10 +26,11 @@ export function TradeHistoryTable({ logs, isLoading, error, title, emptyLogMessa
     };
 
     const getIconAndColor = (log: TradeLog) => {
+        if (!log.details) return { Icon: Info, color: "text-muted-foreground" };
         if (!log.success) return { Icon: AlertCircle, color: "text-destructive" };
         if (log.details.side === 'buy') return { Icon: ArrowUpRight, color: "text-green-500" };
         if (log.details.side === 'sell') return { Icon: ArrowDownLeft, color: "text-red-500" };
-        return { Icon: AlertCircle, color: "text-muted-foreground" };
+        return { Icon: Info, color: "text-blue-500" };
     };
 
     return (
@@ -48,7 +49,27 @@ export function TradeHistoryTable({ logs, isLoading, error, title, emptyLogMessa
                     ) : logs.length > 0 ? logs.map(log => {
                         const { Icon, color } = getIconAndColor(log);
                         const details = log.details;
-                        const value = details.cummulativeQuoteQty ? parseFloat(details.cummulativeQuoteQty) : (details.price * details.origQty);
+                        
+                        // Si no hay detalles, es un log informativo
+                        if (!details) {
+                            return (
+                                <div key={log._id || log.timestamp} className="text-xs border-b py-2 space-y-1">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <Icon className={cn("w-4 h-4", color)} />
+                                            <span className={clsx("font-semibold", color)}>
+                                                {log.message}
+                                            </span>
+                                        </div>
+                                        <span className="text-muted-foreground">
+                                            [{new Date(log.timestamp).toLocaleTimeString()}]
+                                        </span>
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        const value = details.cummulativeQuoteQty ? parseFloat(details.cummulativeQuoteQty) : (details.price || 0) * (details.origQty || 0);
 
                         return (
                             <div key={log._id || log.timestamp} className="text-xs border-b py-2 space-y-1">
