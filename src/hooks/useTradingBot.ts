@@ -69,7 +69,7 @@ export const useTradingBot = (props: {
     const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isMounted = useRef(false);
 
-    const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'buy' | 'sell'; quantity: number }, strategyForOrder: 'scalping' | 'sniper') => {
+    const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'buy' | 'sell'; amount: number }, strategyForOrder: 'scalping' | 'sniper') => {
         if (isPlacingOrder) return false;
         if (!selectedMarket) {
             onBotAction({ type: 'order_failed', success: false, message: "FALLO al colocar orden: No hay mercado seleccionado.", timestamp: Date.now() });
@@ -83,7 +83,7 @@ export const useTradingBot = (props: {
             symbol: selectedMarket.symbol,
             type: 'market',
             side: orderData.side,
-            amount: orderData.quantity,
+            amount: orderData.amount,
             price: orderData.price,
         };
     
@@ -242,17 +242,17 @@ export const useTradingBot = (props: {
             if (sellReason) {
                 onBotAction({ type: 'strategy_decision', success: true, message: `Señal de VENTA por ${sellReason}.`, details: { reason: sellReason, currentPrice, rsi: currentRsi, target: sellReason === 'take_profit' ? takeProfitPrice : stopLossPrice }, timestamp: Date.now() });
                 
-                let quantityToSell = amount;
+                let amountToSell = amount;
                 const stepSize = selectedMarketRules.lotSize.stepSize;
                 if (stepSize > 0) {
-                    quantityToSell = Math.floor(quantityToSell / stepSize) * stepSize;
+                    amountToSell = Math.floor(amountToSell / stepSize) * stepSize;
                 }
-                quantityToSell = parseFloat(quantityToSell.toFixed(selectedMarketRules.precision.amount));
+                amountToSell = parseFloat(amountToSell.toFixed(selectedMarketRules.precision.amount));
     
-                if (quantityToSell >= selectedMarketRules.lotSize.minQty) {
-                    await executeOrder({ side: 'sell', quantity: quantityToSell, price: currentPrice }, strategy || 'scalping');
+                if (amountToSell >= selectedMarketRules.lotSize.minQty) {
+                    await executeOrder({ side: 'sell', amount: amountToSell, price: currentPrice }, strategy || 'scalping');
                 } else {
-                    onBotAction({ type: 'order_failed', success: false, message: `FALLO al vender: la cantidad ajustada (${quantityToSell}) es menor que el mínimo permitido.`, details: { quantityToSell }, timestamp: Date.now() });
+                    onBotAction({ type: 'order_failed', success: false, message: `FALLO al vender: la cantidad ajustada (${amountToSell}) es menor que el mínimo permitido.`, details: { amountToSell }, timestamp: Date.now() });
                 }
                 return; 
             }
@@ -274,7 +274,7 @@ export const useTradingBot = (props: {
             onBotAction({ type: 'strategy_decision', success: true, message, details: decision.details, data: { action: decision.action }, timestamp: Date.now() });
     
             if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
-                await executeOrder({ side: 'buy', quantity: decision.orderData.quantity, price: decision.orderData.price }, decision.details.strategyMode);
+                await executeOrder({ side: 'buy', amount: decision.orderData.amount, price: decision.orderData.price }, decision.details.strategyMode);
             } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
                 const config = STRATEGY_CONFIG[decision.details.strategyMode];
                 const entryPrice = decision.orderData.price;
@@ -284,7 +284,7 @@ export const useTradingBot = (props: {
                 const newSimulation: Omit<BotOpenPosition, 'simulationId'> = {
                     marketId: selectedMarket.id,
                     entryPrice: entryPrice,
-                    amount: decision.orderData.quantity,
+                    amount: decision.orderData.amount,
                     type: 'buy',
                     timestamp: Date.now(),
                     takeProfitPrice,

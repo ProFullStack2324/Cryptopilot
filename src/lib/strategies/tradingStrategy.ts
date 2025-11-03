@@ -12,7 +12,7 @@ import { MIN_REQUIRED_HISTORY_FOR_BOT } from '@/hooks/useTradingBot';
 
 export interface StrategyDecision {
     action: TradeAction;
-    orderData?: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'BUY' | 'SELL'; quantity: number };
+    orderData?: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'BUY' | 'SELL'; amount: number };
     details?: any; 
 }
 
@@ -116,19 +116,19 @@ export const decideTradeActionAndAmount = (params: {
         if (amountInQuote > quoteAssetBalance) {
             const insufficientFundsDetails = { ...decisionDetails, required: amountInQuote, available: quoteAssetBalance };
             // El mensaje de log se genera en el hook para este caso
-            return { action: 'hold_insufficient_funds', details: insufficientFundsDetails, orderData: { side: 'BUY', quantity: amountInQuote / currentPrice, price: currentPrice } };
+            return { action: 'hold_insufficient_funds', details: insufficientFundsDetails, orderData: { side: 'BUY', amount: amountInQuote / currentPrice, price: currentPrice } };
         }
 
-        let quantityToBuy = amountInQuote / currentPrice;
+        let amountToBuy = amountInQuote / currentPrice;
 
         const stepSize = selectedMarketRules.lotSize.stepSize;
         if (stepSize > 0) {
-            quantityToBuy = Math.floor(quantityToBuy / stepSize) * stepSize;
+            amountToBuy = Math.floor(amountToBuy / stepSize) * stepSize;
         }
-        quantityToBuy = parseFloat(quantityToBuy.toFixed(selectedMarketRules.precision.amount));
+        amountToBuy = parseFloat(amountToBuy.toFixed(selectedMarketRules.precision.amount));
         
-        if (quantityToBuy < selectedMarketRules.lotSize.minQty) {
-            log(`HOLD: Cantidad a comprar (${quantityToBuy}) es menor que el mínimo permitido (${selectedMarketRules.lotSize.minQty}).`, decisionDetails);
+        if (amountToBuy < selectedMarketRules.lotSize.minQty) {
+            log(`HOLD: Cantidad a comprar (${amountToBuy}) es menor que el mínimo permitido (${selectedMarketRules.lotSize.minQty}).`, decisionDetails);
             return { action: 'hold' };
         }
 
@@ -136,7 +136,7 @@ export const decideTradeActionAndAmount = (params: {
             action: 'buy',
             orderData: {
                 side: 'BUY',
-                quantity: quantityToBuy,
+                amount: amountToBuy,
                 price: currentPrice
             },
             details: decisionDetails

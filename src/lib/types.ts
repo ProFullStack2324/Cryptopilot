@@ -138,7 +138,7 @@ export interface OrderFormData {
     symbol: string;
     side: 'buy' | 'sell'; 
     orderType: 'market' | 'limit';
-    quantity: number;
+    amount: number;
     price?: number; 
 }
 
