@@ -31,10 +31,10 @@ export function SimulatedPerformanceCard({ simulatedPosition, currentPrice, mark
     let statusColor = "text-blue-500";
 
     if (isValidNumber(takeProfitPrice) && currentPrice >= takeProfitPrice) {
-        simulationStatus = "Venta Simulada por Take Profit";
+        simulationStatus = "Venta Simulada por Take Profit (Toma de Ganancias)";
         statusColor = "text-green-500";
     } else if (isValidNumber(stopLossPrice) && currentPrice <= stopLossPrice) {
-        simulationStatus = "Venta Simulada por Stop Loss";
+        simulationStatus = "Venta Simulada por Stop Loss (Límite de Pérdida)";
         statusColor = "text-red-500";
     }
 
@@ -43,7 +43,7 @@ export function SimulatedPerformanceCard({ simulatedPosition, currentPrice, mark
             <CardHeader>
                 <CardTitle className="flex items-center text-blue-400">
                     <Beaker className="w-5 h-5 mr-2" />
-                    Simulador de Oportunidad Perdida
+                    Simulador de Oportunidad Perdida (Paper Trading)
                 </CardTitle>
                 <CardDescription>
                     Rendimiento de la última señal de compra que no se ejecutó por falta de fondos.
@@ -58,16 +58,16 @@ export function SimulatedPerformanceCard({ simulatedPosition, currentPrice, mark
                 <div className="space-y-2">
                     <p className="flex items-center gap-2">
                         <Target className="w-4 h-4 text-green-500" />
-                        <strong>Take Profit:</strong> {takeProfitPrice?.toFixed(pricePrecision) || 'N/A'}
+                        <strong>Take Profit (Toma de Ganancias):</strong> {takeProfitPrice?.toFixed(pricePrecision) || 'N/A'}
                     </p>
                     <p className="flex items-center gap-2">
                         <Shield className="w-4 h-4 text-red-500" />
-                        <strong>Stop Loss:</strong> {stopLossPrice?.toFixed(pricePrecision) || 'N/A'}
+                        <strong>Stop Loss (Límite de Pérdida):</strong> {stopLossPrice?.toFixed(pricePrecision) || 'N/A'}
                     </p>
                     <p className={`font-bold ${statusColor}`}>{simulationStatus}</p>
                 </div>
                 <div className="flex flex-col items-center justify-center space-y-1">
-                    <p className="text-lg font-bold">PnL Flotante (Simulado)</p>
+                    <p className="text-lg font-bold">PnL Flotante (Ganancia/Pérdida) (Simulado)</p>
                     <p className={clsx("text-2xl font-bold", pnl >= 0 ? "text-green-500" : "text-red-500")}>
                         {pnl.toFixed(2)} {quoteAsset}
                     </p>

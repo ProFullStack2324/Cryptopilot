@@ -21,8 +21,8 @@ interface SimulationHistoryTableProps {
 
 const getExitReasonText = (reason: string) => {
     switch (reason) {
-        case 'take_profit': return <><Target className="w-3 h-3 text-green-500 mr-1"/>Take Profit</>;
-        case 'stop_loss': return <><Shield className="w-3 h-3 text-red-500 mr-1"/>Stop Loss</>;
+        case 'take_profit': return <><Target className="w-3 h-3 text-green-500 mr-1"/>Take Profit (Toma de Ganancias)</>;
+        case 'stop_loss': return <><Shield className="w-3 h-3 text-red-500 mr-1"/>Stop Loss (Límite de Pérdida)</>;
         default: return reason;
     }
 };
@@ -55,7 +55,7 @@ export function SimulationHistoryTable({ logs, isLoading, error, title, emptyLog
                                 <span className="flex items-center">{getExitReasonText(log.exitReason)}</span>
                                 <span className={clsx("font-bold flex items-center", log.finalPnl >= 0 ? "text-green-500" : "text-red-500")}>
                                     {log.finalPnl >= 0 ? <TrendingUp className="w-3 h-3 mr-1"/> : <TrendingDown className="w-3 h-3 mr-1"/>}
-                                    PnL: ${log.finalPnl.toFixed(2)}
+                                    PnL (Ganancia/Pérdida): ${log.finalPnl.toFixed(2)}
                                 </span>
                             </div>
                         </div>

@@ -191,11 +191,11 @@ export default function TradingBotControlPanel() {
         if (botOpenPosition) {
             const { entryPrice, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
             const strategyName = strategy === 'sniper' ? 'Francotirador' : 'Scalping';
-            return `Posición ABIERTA (${strategyName}). Entrada: ${entryPrice.toFixed(2)}. Take Profit: ${takeProfitPrice?.toFixed(2) || 'N/A'}. Stop Loss: ${stopLossPrice?.toFixed(2) || 'N/A'}. Monitoreando para cierre.`;
+            return `Posición ABIERTA (${strategyName}). Entrada: ${entryPrice.toFixed(2)}. Take Profit (Toma de Ganancias): ${takeProfitPrice?.toFixed(2) || 'N/A'}. Stop Loss (Límite de Pérdida): ${stopLossPrice?.toFixed(2) || 'N/A'}. Monitoreando para cierre.`;
         }
         
         if (simulatedPosition) {
-            return `Simulación ACTIVA. Monitoreando PnL de oportunidad perdida.`;
+            return `Simulación ACTIVA. Monitoreando PnL (Ganancia/Pérdida) de oportunidad perdida.`;
         }
     
         const { buyConditionsMet } = latest;
@@ -330,7 +330,7 @@ export default function TradingBotControlPanel() {
                 <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6">
                     <TradeHistoryTable 
                         logs={tradeExecutionLogs}
-                        title="Libro de Órdenes"
+                        title="Libro de Órdenes (Operaciones Reales)"
                         emptyLogMessage="Esperando la primera acción de compra o venta..."
                         className="md:col-span-1"
                     />
@@ -344,7 +344,7 @@ export default function TradingBotControlPanel() {
                         logs={simulationHistory}
                         isLoading={isSimHistoryLoading}
                         error={simHistoryError}
-                        title="Historial de Simulaciones"
+                        title="Historial de Simulaciones (Paper Trading)"
                         emptyLogMessage="No hay simulaciones completadas."
                         className="md:col-span-1"
                     />

@@ -49,7 +49,7 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
   if (!latest || !selectedMarket || priceHistory.length < 2) {
     return (
       <Card>
-        <CardHeader><CardTitle>Diagnóstico de Estrategia</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Diagnóstico de Estrategia ({strategyMode})</CardTitle></CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">Esperando datos suficientes de la vela...</p>
         </CardContent>
@@ -75,27 +75,27 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
   const getRequirementsText = () => {
       if (strategyMode === 'scalping') {
           if (botOpenPosition) {
-              return `Monitoreando salida: TP @ ${botOpenPosition.takeProfitPrice?.toFixed(pricePrecision)}, SL @ ${botOpenPosition.stopLossPrice?.toFixed(pricePrecision)}`;
+              return `Monitoreando salida: TP (Toma de Ganancias) @ ${botOpenPosition.takeProfitPrice?.toFixed(pricePrecision)}, SL (Límite de Pérdida) @ ${botOpenPosition.stopLossPrice?.toFixed(pricePrecision)}`;
           }
           return "Se requiere 1 de 3 condiciones para COMPRA.";
       }
       // Sniper mode
       if (botOpenPosition) {
-        return `Monitoreando salida: TP @ ${botOpenPosition.takeProfitPrice?.toFixed(pricePrecision)}, SL @ ${botOpenPosition.stopLossPrice?.toFixed(pricePrecision)}`;
+        return `Monitoreando salida: TP (Toma de Ganancias) @ ${botOpenPosition.takeProfitPrice?.toFixed(pricePrecision)}, SL (Límite de Pérdida) @ ${botOpenPosition.stopLossPrice?.toFixed(pricePrecision)}`;
     }
       return "Se requieren 2 de 3 condiciones para COMPRA.";
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4">
       {/* Decisión Final */}
       <Card className={clsx("md:col-span-1", decision === 'buy' ? "border-green-500" : decision === 'sell' ? "border-red-500" : "border-border")}>
         <CardHeader>
-          <CardTitle className="text-lg">Decisión Actual</CardTitle>
+          <CardTitle className="text-lg capitalize">Diagnóstico {strategyMode}</CardTitle>
           <CardDescription>{new Date(latest.timestamp).toLocaleTimeString()}</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className={clsx("text-3xl font-bold text-center", {
+          <p className={clsx("text-xl font-bold text-center", {
             'text-green-500': decision === 'buy',
             'text-red-500': decision === 'sell',
             'text-muted-foreground': decision === 'hold' || decision === 'hold_insufficient_funds'
@@ -114,19 +114,19 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
         <CardContent>
           <ul className="space-y-1">
             <ConditionStatus 
-              label="Precio vs BB"
+              label="Precio vs BB (Bandas de Bollinger)"
               expected={`Precio <= BB Inf. (${isValidNumber(lowerBollingerBand) ? lowerBollingerBand.toFixed(pricePrecision) : 'N/A'})`}
               value={isValidNumber(closePrice) ? closePrice.toFixed(pricePrecision) : "N/A"}
               conditionMet={buyPriceCondition}
             />
             <ConditionStatus 
-              label="RSI"
+              label="RSI (Índice de Fuerza Relativa)"
               expected="RSI <= 35"
               value={isValidNumber(rsi) ? rsi.toFixed(2) : "N/A"}
               conditionMet={buyRsiCondition}
             />
             <ConditionStatus 
-              label="Cruce MACD"
+              label="Cruce MACD (Convergencia/Divergencia de Medias Móviles)"
               expected="Histograma > 0"
               value={isValidNumber(macdHistogram) ? macdHistogram.toFixed(4) : "N/A"}
               conditionMet={buyMacdCondition}
@@ -138,19 +138,19 @@ export function StrategyDashboard({ latest, decision, selectedMarket, priceHisto
       {/* Condiciones de Venta */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Condiciones de Venta</CardTitle>
+          <CardTitle className="text-lg">Condiciones de Venta (Cierre de Posición)</CardTitle>
           <CardDescription>El bot es "Long-Only" (no abre ventas en corto).</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="space-y-1">
             <ConditionStatus 
-              label="Precio vs BB"
+              label="Precio vs BB (Bandas de Bollinger)"
               expected={`Precio >= BB Sup. (${isValidNumber(upperBollingerBand) ? upperBollingerBand.toFixed(pricePrecision) : 'N/A'})`}
               value={isValidNumber(closePrice) ? closePrice.toFixed(pricePrecision) : "N/A"}
               conditionMet={sellPriceCondition}
             />
             <ConditionStatus 
-              label="RSI"
+              label="RSI (Índice de Fuerza Relativa)"
               expected="RSI >= 65"
               value={isValidNumber(rsi) ? rsi.toFixed(2) : "N/A"}
               conditionMet={sellRsiCondition}
