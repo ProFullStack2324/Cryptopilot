@@ -1,6 +1,6 @@
 // src/components/dashboard/binance-ticker-prices-display.tsx
 
-"use client"; // Marca este componente como un Client Component
+"use client"; // Marca este  componente como un Client Component
 
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
