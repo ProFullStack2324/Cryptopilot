@@ -173,7 +173,7 @@ export default function TradingBotControlPanel() {
             return `Posición ABIERTA (${strategyName}). Entrada: ${entryPrice.toFixed(2)}. Take Profit (Toma de Ganancias): ${takeProfitPrice?.toFixed(2) || 'N/A'}. Stop Loss (Límite de Pérdida): ${stopLossPrice?.toFixed(2) || 'N/A'}. Monitoreando para cierre.`;
         }
         
-        if (simulatedPositions.length > 0) {
+        if (simulatedPositions && simulatedPositions.length > 0) {
             return `Simulaciones ACTIVAS (${simulatedPositions.length}). Monitoreando PnL (Ganancia/Pérdida) de oportunidades perdidas.`;
         }
     
