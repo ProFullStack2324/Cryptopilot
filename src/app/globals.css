@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components; 
+@tailwind utilities; 
+
+@layer base {
+  :root {
+    /* Tema claro (base) - Mantenido por si se necesita, pero nos enfocaremos en el oscuro */
+    --background: 210 29% 95.7%; /* #F0F4F8 Light Blue-Gray */
+    --foreground: 210 20% 15%; /* Dark Blue-Gray for text */
+    --card: 0 0% 100%; /* White */
+    --card-foreground: 210 20% 15%; 
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 20% 15%;
+    --primary: 231 48% 48%; /* #3F51B5 Deep Blue */
+    --primary-foreground: 210 40% 98%; 
+    --secondary: 210 25% 90%; 
+    --secondary-foreground: 210 20% 15%;
+    --muted: 210 25% 85%; 
+    --muted-foreground: 210 20% 35%;
+    --accent: 36 100% 50%; /* #FF9800 Vibrant Orange */
+    --accent-foreground: 0 0% 9%; 
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 210 20% 80%; 
+    --input: 210 20% 88%; 
+    --ring: 231 48% 48%; 
+    --chart-1: 231 48% 48%; 
+    --chart-2: 36 100% 50%; 
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Tema Oscuro inspirado en plataformas de trading */
+    --background: 220 18% 10%; /* Negro azulado muy oscuro */
+    --foreground: 210 15% 88%; /* Gris claro para texto principal */
+    
+    --card: 220 18% 14%; /* Un poco más claro que el fondo para las tarjetas */
+    --card-foreground: 210 15% 88%;
+    
+    --popover: 220 18% 12%; /* Similar al fondo para popovers */
+    --popover-foreground: 210 15% 88%;
+    
+    --primary: 210 100% 60%; /* Azul brillante para elementos primarios */
+    --primary-foreground: 220 20% 10%; /* Texto oscuro para contraste con primario */
+    
+    --secondary: 220 15% 25%; /* Gris medio oscuro para elementos secundarios */
+    --secondary-foreground: 210 15% 75%; /* Texto más claro para secundarios */
+    
+    --muted: 220 15% 20%; /* Gris oscuro para elementos apagados */
+    --muted-foreground: 210 15% 60%; /* Texto gris medio para elementos apagados */
+    
+    --accent: 45 100% 55%; /* Amarillo/Dorado para acentos, común en finanzas */
+    --accent-foreground: 220 20% 10%; /* Texto oscuro para contraste con acento */
+    
+    --destructive: 0 70% 55%; /* Rojo para destructivo/errores/ventas */
+    --destructive-foreground: 0 0% 98%; /* Texto claro para contraste con destructivo */
+    
+    --border: 220 15% 25%; /* Bordes sutiles, un poco más claros que el fondo de tarjeta */
+    --input: 220 15% 18%; /* Fondo de inputs ligeramente diferente */
+    --ring: 210 100% 65%; /* Color del anillo de enfoque, similar al primario */
+
+    /* Colores específicos para gráficos en tema oscuro */
+    --chart-1: 210 100% 60%; /* Azul (primario) */
+    --chart-2: 45 100% 55%; /* Amarillo (acento) */
+    --chart-3: 160 100% 45%; /* Verde brillante para 'subidas' o datos positivos */
+    --chart-4: 0 80% 60%; /* Rojo para 'bajadas' o datos negativos */
+    --chart-5: 280 80% 70%; /* Púrpura/Magenta para diversificar */
+
+    --radius: 0.375rem; /* Bordes ligeramente menos redondeados para un look más técnico */
+
+    /* Colores para Sidebar (si se usa) - Asumimos que también es oscura */
+    --sidebar-background: 220 18% 12%; 
+    --sidebar-foreground: 210 15% 88%;
+    --sidebar-primary: 210 100% 60%;
+    --sidebar-primary-foreground: 220 20% 10%;
+    --sidebar-accent: 45 100% 55%;
+    --sidebar-accent-foreground: 220 20% 10%;
+    --sidebar-border: 220 15% 22%;
+    --sidebar-ring: 210 100% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
+}
