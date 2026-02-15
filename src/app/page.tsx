@@ -1,4 +1,4 @@
-"use client"; // Marca este componente como un Client Component en Next.js
+"use client"; //src/app/page.tsx  Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTradingBot, MIN_REQUIRED_HISTORY_FOR_BOT } from '@/hooks/useTradingBot'; 
@@ -107,13 +107,16 @@ export default function TradingBotControlPanel() {
         currentPrice,
         botOpenPosition,
         currentMarketPriceHistory,
-        simulatedPositions,
+        simulatedPosition,
     } = useTradingBot({
         selectedMarket,
         allBinanceBalances: currentBalances,
         onBotAction,
         timeframe,
     });
+    
+    // Adaptar simulatedPosition singular a array para compatibilidad con UI existente
+    const simulatedPositions = simulatedPosition ? [simulatedPosition] : [];
 
     useEffect(() => {
         const fetchBalances = async () => {
@@ -256,9 +259,9 @@ export default function TradingBotControlPanel() {
                 
                 {(simulatedPositions || []).length > 0 && (
                     <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {(simulatedPositions || []).map(simPos => (
+                        {(simulatedPositions || []).map((simPos, idx) => (
                             <SimulatedPerformanceCard
-                                key={simPos.id}
+                                key={simPos.simulationId || idx}
                                 simulatedPosition={simPos}
                                 currentPrice={currentPrice}
                                 market={selectedMarket}

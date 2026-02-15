@@ -60,7 +60,10 @@ export function useBinanceMarketData({
       // --- INICIO SECCIÓN MODIFICADA: Llamar a endpoint de symbols con POST y body isTestnet ---
       const response = await fetch('/api/binance/symbols', {
           method: 'POST', // Usamos POST
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+              'Content-Type': 'application/json',
+              'x-api-key': process.env.NEXT_PUBLIC_BOT_API_KEY || ''
+          },
           body: JSON.stringify({ isTestnet: useTestnet }), // Enviamos la bandera isTestnet en el body
       });
       // --- FIN SECCIÓN MODIFICADA: Llamar a endpoint de symbols con POST y body isTestnet ---
@@ -135,7 +138,9 @@ export function useBinanceMarketData({
 
     try {
       // --- INICIO SECCIÓN MODIFICADA: Llamar a endpoint de klines con query param isTestnet ---
-      const response = await fetch(`/api/binance/klines?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}&isTestnet=${useTestnet}`);
+      const response = await fetch(`/api/binance/klines?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}&isTestnet=${useTestnet}`, {
+          headers: { 'x-api-key': process.env.NEXT_PUBLIC_BOT_API_KEY || '' }
+      });
       // --- FIN SECCIÓN MODIFICADA: Llamar a endpoint de klines con query param isTestnet ---
 
 
@@ -152,7 +157,7 @@ export function useBinanceMarketData({
         const newHistory: MarketPriceDataPoint[] = data.klines;
 
         if (newHistory.length > 0) {
-          setMarketPrice(newHistory[newHistory.length - 1].price);
+          setMarketPrice(newHistory[newHistory.length - 1].closePrice);
         }
 
         // Asegurarse de mantener solo el número correcto de puntos

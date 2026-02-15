@@ -31,7 +31,9 @@ export const useTradeHistory = (refreshInterval: number = 15000) => { // Actuali
         // solo en la carga inicial (manejado por el estado inicial de isLoading).
         setError(null);
         try {
-            const response = await fetch('/api/logs/history');
+            const response = await fetch('/api/logs/history', {
+                headers: { 'x-api-key': process.env.NEXT_PUBLIC_BOT_API_KEY || '' }
+            });
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.message || `Error HTTP ${response.status}`);

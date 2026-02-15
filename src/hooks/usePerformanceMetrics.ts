@@ -25,7 +25,9 @@ export const usePerformanceMetrics = () => {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetch('/api/stats/performance');
+            const response = await fetch('/api/stats/performance', {
+                headers: { 'x-api-key': process.env.NEXT_PUBLIC_BOT_API_KEY || '' }
+            });
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.message || `Error HTTP ${response.status}`);

@@ -1,6 +1,10 @@
-// src/app/api/binance/symbols/route.ts
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
+import { z } from 'zod';
+
+const SymbolsRequestSchema = z.object({
+  isTestnet: z.boolean().optional()
+});
 
 const exchangeMainnet = new ccxt.binance({
   apiKey: process.env.BINANCE_API_KEY,
@@ -14,9 +18,11 @@ const exchangeMainnet = new ccxt.binance({
 
 export async function POST(req: Request) {
   const networkType = 'Mainnet';
-  console.log(`[API/Binance/Symbols] Solicitud POST recibida. Usando ${networkType}.`);
-
+  
   try {
+    const rawBody = await req.json().catch(() => ({}));
+    const validation = SymbolsRequestSchema.safeParse(rawBody);
+    // isTestnet is ignored for now as the route is hardcoded to Mainnet, but we keep validation
     await exchangeMainnet.loadMarkets();
     const markets = exchangeMainnet.markets;
     console.log(`[API/Binance/Symbols] Lista de mercados obtenida. Cantidad: ${markets ? Object.keys(markets).length : 0}`);

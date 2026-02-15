@@ -26,7 +26,7 @@ export async function GET(req: Request) {
                 minQty: marketInfo.limits?.amount?.min,
                 amountPrecision: marketInfo.precision?.amount,
                 pricePrecision: marketInfo.precision?.price,
-                quotePrecision: marketInfo.precision?.quote,
+                quotePrecision: (marketInfo.precision as any)?.quote || marketInfo.precision?.price,
                 filters: marketInfo.info?.filters 
              };
         } else {

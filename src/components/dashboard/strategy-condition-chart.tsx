@@ -37,8 +37,8 @@ export function StrategyConditionChart({ data }: StrategyConditionChartProps) {
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const timestamp = new Date(label).toLocaleTimeString();
-      const buyConditions = payload.find(p => p.dataKey === 'sniperBuy')?.payload.sniperBuy + payload.find(p => p.dataKey === 'scalpingBuy')?.payload.scalpingBuy || 0;
-      const sellConditions = Math.abs(payload.find(p => p.dataKey === 'sniperSell')?.payload.sniperSell + payload.find(p => p.dataKey === 'scalpingSell')?.payload.scalpingSell || 0);
+      const buyConditions = payload.find((p: any) => p.dataKey === 'sniperBuy')?.payload.sniperBuy + payload.find((p: any) => p.dataKey === 'scalpingBuy')?.payload.scalpingBuy || 0;
+      const sellConditions = Math.abs(payload.find((p: any) => p.dataKey === 'sniperSell')?.payload.sniperSell + payload.find((p: any) => p.dataKey === 'scalpingSell')?.payload.scalpingSell || 0);
 
       return (
         <div className="bg-background/90 p-3 border rounded-md shadow-lg text-foreground text-xs backdrop-blur-sm">

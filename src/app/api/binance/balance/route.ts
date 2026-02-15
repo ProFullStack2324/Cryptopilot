@@ -19,13 +19,14 @@ export async function GET(req: Request) {
 
     const balancesFormatted: Record<string, { available: number; onOrder: number; total: number }> = {};
     
-    if (accountBalance && accountBalance.total) {
-        Object.keys(accountBalance.total).forEach(asset => {
-            const total = accountBalance.total[asset] || 0;
+    const bal = accountBalance as any;
+    if (bal && bal.total) {
+        Object.keys(bal.total).forEach(asset => {
+            const total = bal.total[asset] || 0;
             if (total > 0) {
                  balancesFormatted[asset] = {
-                    available: accountBalance.free[asset] || 0,
-                    onOrder: accountBalance.used[asset] || 0,
+                    available: bal.free[asset] || 0,
+                    onOrder: bal.used[asset] || 0,
                     total: total,
                 };
             }

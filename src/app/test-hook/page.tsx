@@ -1,4 +1,4 @@
-"use client"; // Marca este componente como un Client Component en Next.js
+"use client"; //src/app/test-hook/page.tsx  Marca este componente como un Client Component en Next.js
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTradingBot } from '@/hooks/useTradingBot'; // Importa tu hook de trading
@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge"; // Para mostrar el estado del bot
 import { ScrollArea } from "@/components/ui/scroll-area"; // Para el área de historial de precios
 
 // IMPORTACIÓN ÚNICA DE GRÁFICA: SOLO MarketChart encapsula toda la lógica de Recharts.
-import { getChartLegendItems, CHART_COLORS, MarketChart } from '@/components/MarketChart';
+import { CHART_COLORS, MarketChart } from '@/components/MarketChart';
 import clsx from 'clsx';
 
 // --- MOCK DE MERCADOS (se usará con datos reales de Binance) ---
@@ -39,6 +39,7 @@ const MOCK_MARKETS: Market[] = [
         quoteAsset: "USDT",
         active: true,
         precision: { amount: 5, price: 2, base: 8, quote: 8 },
+        amountPrecision: 5,
         limits: { amount: { min: 0.00001, max: 100 }, price: { min: 0.01, max: 1000000 } , cost: { min: 10 } },
         info: {},
         pricePrecision: 2,
@@ -52,6 +53,7 @@ const MOCK_MARKETS: Market[] = [
         quoteAsset: "USDT",
         active: true,
         precision: { amount: 4, price: 2, base: 8, quote: 8 },
+        amountPrecision: 4,
         limits: { amount: { min: 0.0001, max: 1000 }, price: { min: 0.01, max: 10000 } , cost: { min: 10 } },
         info: {},
         pricePrecision: 2,
@@ -190,6 +192,7 @@ export default function TestHookPage() {
         selectedMarket: selectedMarket,
         allBinanceBalances: currentBalances,
         onBotAction: onBotAction,
+        timeframe: "1m"
     });
     const requiredCandles = 35; // Mínimo de velas necesarias para la estrategia
 

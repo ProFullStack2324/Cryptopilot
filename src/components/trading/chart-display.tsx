@@ -17,7 +17,7 @@ interface ChartDisplayProps {
 }
 
 // Sólo los keys de los datos que realmente existen en chartDataWithSMAs
-type DataKey = 'price' | 'sma10' | 'sma20' | 'sma50';
+type DataKey = 'closePrice' | 'sma10' | 'sma20' | 'sma50';
 
 export default function ChartDisplay({
   chartDataWithSMAs,
@@ -101,7 +101,7 @@ export default function ChartDisplay({
 
         <Legend verticalAlign="bottom" height={30} wrapperStyle={{ fontSize: "10px", textTransform: 'capitalize' }} />
 
-        <Line yAxisId="left" dataKey="price" type="linear" stroke="#00FF00" strokeWidth={2} dot={false} activeDot={{ r: 5, fill: "#00FF00", stroke: "#333", strokeWidth: 2 }} name="Precio" />
+        <Line yAxisId="left" dataKey="closePrice" type="linear" stroke="#00FF00" strokeWidth={2} dot={false} activeDot={{ r: 5, fill: "#00FF00", stroke: "#333", strokeWidth: 2 }} name="Precio" />
         <Line yAxisId="left" dataKey="sma10" type="linear" stroke="#FFFF00" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#FFFF00", stroke: "#333", strokeWidth: 1 }} name="SMA 10" connectNulls />
         <Line yAxisId="left" dataKey="sma20" type="linear" stroke="#FFA500" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#FFA500", stroke: "#333", strokeWidth: 1 }} name="SMA 20" connectNulls />
         <Line yAxisId="left" dataKey="sma50" type="linear" stroke="#FF0000" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#FF0000", stroke: "#333", strokeWidth: 1 }} name="SMA 50" connectNulls />

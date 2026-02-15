@@ -70,8 +70,8 @@ export function OrderForm({ market, balanceQuoteAsset, balanceBaseAsset, onSubmi
 
   const handleSubmitInternal: SubmitHandler<OrderFormValues> = (data) => {
     onSubmit({
-      type: tradeType,
-      marketId: market.id,
+      side: tradeType,
+      symbol: market.symbol,
       amount: data.amount,
       price: data.orderType === "limit" ? (data.price ?? undefined) : (currentPrice ?? market.latestPrice ?? undefined),
 
@@ -102,7 +102,7 @@ export function OrderForm({ market, balanceQuoteAsset, balanceBaseAsset, onSubmi
       <CardHeader className="pb-3 pt-4">
         <CardTitle className="flex items-center text-xl">
           <ShoppingCart className="h-5 w-5 mr-2 text-primary" />
-          Colocar Orden: {market.name}
+          Colocar Orden: {market.symbol}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-grow space-y-3 overflow-y-auto pr-1">

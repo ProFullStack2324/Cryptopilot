@@ -26,7 +26,9 @@ export const useSimulationHistory = (refreshInterval: number = 30000) => {
         // solo en la carga inicial.
         setError(null);
         try {
-            const response = await fetch('/api/simulations/history');
+            const response = await fetch('/api/simulations/history', {
+                headers: { 'x-api-key': process.env.NEXT_PUBLIC_BOT_API_KEY || '' }
+            });
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.message || `Error HTTP ${response.status}`);

@@ -18,7 +18,7 @@ interface SignalHistoryTableProps {
 
 export function SignalHistoryTable({ logs, isLoading, error, title, emptyLogMessage, className }: SignalHistoryTableProps) {
     
-    const getConditionText = (conditions: SignalLog['details']['conditions'] | undefined) => {
+    const getConditionText = (conditions: NonNullable<SignalLog['details']>['conditions'] | undefined) => {
         if (!conditions) return "N/A";
         const met = [];
         if (conditions.price) met.push("Precio vs BB");

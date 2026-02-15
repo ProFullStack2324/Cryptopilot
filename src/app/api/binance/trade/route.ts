@@ -1,7 +1,18 @@
-// src/app/api/binance/trade/route.ts
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
-import { exchangeMainnet } from '@/lib/binance-client'; // Importar la instancia centralizada
+import { exchangeMainnet } from '@/lib/binance-client';
+import { z } from 'zod';
+
+const TradeRequestSchema = z.object({
+  symbol: z.string(),
+  type: z.enum(['market', 'limit']),
+  side: z.enum(['buy', 'sell']),
+  amount: z.number().positive(),
+  price: z.number().positive().optional(),
+}).refine(data => data.type !== 'limit' || (data.price && data.price > 0), {
+  message: "Price is required for limit orders.",
+  path: ["price"]
+});
 
 interface TradeRequest {
   symbol: string;
@@ -15,21 +26,19 @@ export async function POST(req: Request) {
   let ccxtSymbol: string = '';
 
   try {
-    const body: TradeRequest = await req.json();
-    const { symbol, type, side, amount, price } = body;
-    console.log(`[API/Binance/Trade/Mainnet] Recibida solicitud POST: ${JSON.stringify(body)}`);
-
-    if (!exchangeMainnet.apiKey || !exchangeMainnet.secret) {
-      console.error(`[API/Binance/Trade/Mainnet] Credenciales no configuradas.`);
-      return NextResponse.json({ success: false, message: `Credenciales de Binance Mainnet no configuradas.` }, { status: 500 });
-    }
+    const rawBody = await req.json();
+    const validation = TradeRequestSchema.safeParse(rawBody);
     
-    if (!symbol || !type || !side || amount <= 0) {
-      return NextResponse.json({ success: false, message: 'Parámetros inválidos (symbol, type, side, amount).'}, { status: 400 });
+    if (!validation.success) {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Parámetros de trading inválidos.', 
+        errors: validation.error.format() 
+      }, { status: 400 });
     }
-    if (type === 'limit' && (!price || price <= 0)) {
-      return NextResponse.json({ success: false, message: 'El precio es requerido para órdenes límite.'}, { status: 400 });
-    }
+
+    const { symbol, type, side, amount, price } = validation.data;
+    console.log(`[API/Binance/Trade/Mainnet] Recibida solicitud validada: ${JSON.stringify(validation.data)}`);
 
     await exchangeMainnet.loadMarkets();
     ccxtSymbol = symbol.includes('/') ? symbol : `${symbol.replace(/USDT$/i, '')}/USDT`;

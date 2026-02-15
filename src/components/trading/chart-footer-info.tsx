@@ -39,7 +39,7 @@ export function ChartFooterInfo({
               Últ. precio ({marketName}):{" "}
               <span style={{ color: marketPriceChartConfigDark.price.color }}>
                 $
-                {lastPoint.price.toLocaleString("en-US", {
+                {lastPoint.closePrice.toLocaleString("en-US", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits:
                     marketName.includes("BTC") || marketName.includes("ETH")

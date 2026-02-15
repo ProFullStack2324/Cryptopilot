@@ -18,7 +18,7 @@ import {
 } from '@/lib/types';
 
 import { decideTradeActionAndAmount } from '@/lib/strategies/tradingStrategy';
-import { calculateSMA, calculateRSI, calculateMACD, calculateBollingerBands } from '@/lib/indicators';
+import { calculateSMA, calculateRSI, calculateMACD, calculateBollingerBands, calculateATR, calculateADX } from '@/lib/indicators';
 
 const isValidNumber = (value: any): value is number => typeof value === 'number' && !isNaN(value);
 
@@ -63,11 +63,60 @@ export const useTradingBot = (props: {
     const [currentMarketPriceHistory, setCurrentMarketPriceHistory] = useState<MarketPriceDataPoint[]>([]);
     const [currentPrice, setCurrentPrice] = useState<number | null>(null);
     const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
-    const [botIntervalMs] = useState(5000);
-    
+
     const { toast } = useToast();
-    const botIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isMounted = useRef(false);
+
+    // NUEVO: Sincronización con el servidor
+    const fetchBotStatus = useCallback(async () => {
+        try {
+            const response = await fetch('/api/bot/status', {
+                headers: { 'x-api-key': process.env.NEXT_PUBLIC_BOT_API_KEY || '' }
+            });
+            const result = await response.json();
+            if (result.success && isMounted.current) {
+                setIsBotRunning(result.data.isRunning);
+            }
+        } catch (error) {
+            console.error("Failed to fetch bot status", error);
+        }
+    }, []);
+
+    useEffect(() => {
+        const interval = setInterval(fetchBotStatus, 5000);
+        return () => clearInterval(interval);
+    }, [fetchBotStatus]);
+
+    const toggleBotStatus = useCallback(async () => {
+        const newStatus = !isBotRunning;
+        const action = newStatus ? 'start' : 'stop';
+        
+        try {
+            const response = await fetch('/api/bot/toggle', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-api-key': process.env.NEXT_PUBLIC_BOT_API_KEY || ''
+                },
+                body: JSON.stringify({ action, market: selectedMarket, timeframe })
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                setIsBotRunning(newStatus);
+                onBotAction({ type: action, success: true, message: `Bot ${newStatus ? 'iniciado' : 'detenido'} en el servidor`, timestamp: Date.now() });
+                toast({
+                    title: `Bot ${newStatus ? 'iniciado' : 'detenido'}`,
+                    description: `El bot para ${selectedMarket?.symbol || 'mercado'} se está ejecutando en el servidor.`,
+                    variant: newStatus ? 'default' : 'destructive',
+                });
+            } else {
+                toast({ title: "Error", description: result.message, variant: "destructive" });
+            }
+        } catch (error: any) {
+            toast({ title: "Error de red", description: error.message, variant: "destructive" });
+        }
+    }, [isBotRunning, selectedMarket, timeframe, onBotAction, toast]);
 
     const executeOrder = useCallback(async (orderData: Omit<OrderFormData, 'symbol' | 'orderType'> & { side: 'buy' | 'sell'; amount: number }, strategyForOrder: 'scalping' | 'sniper') => {
         if (isPlacingOrder) return false;
@@ -100,12 +149,15 @@ export const useTradingBot = (props: {
                 toast({ title: "Error al colocar orden", description: errorMessage, variant: "destructive" });
                 return false;
             } else {
-                const config = STRATEGY_CONFIG[strategyForOrder];
+                // Configuración simplificada para el estado local
+                const tpPerc = strategyForOrder === 'sniper' ? 0.035 : 0.012;
+                const slPerc = strategyForOrder === 'sniper' ? 0.015 : 0.006;
+                
                 setBotLastActionTimestamp(Date.now());
                 if (finalOrderData.side === 'buy' && result.data?.price) {
                     const entryPrice = parseFloat(result.data.price);
-                    const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
-                    const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
+                    const takeProfitPrice = entryPrice * (1 + tpPerc);
+                    const stopLossPrice = entryPrice * (1 - slPerc);
                     setBotOpenPosition({
                         marketId: selectedMarket.id,
                         entryPrice: entryPrice,
@@ -150,8 +202,6 @@ export const useTradingBot = (props: {
             const [timestamp, openPrice, highPrice, lowPrice, closePrice, volume] = klineItem;
             if (![timestamp, openPrice, highPrice, lowPrice, closePrice, volume].every(isValidNumber)) continue;
             
-            const prevKline = i > 0 ? klines[i - 1] : null;
-
             const sma10 = calculateSMA(currentCloses, 10);
             const sma20 = calculateSMA(currentCloses, 20);
             const sma50 = calculateSMA(currentCloses, 50);
@@ -159,208 +209,28 @@ export const useTradingBot = (props: {
             const macd = calculateMACD(currentCloses, 12, 26, 9);
             const bb = calculateBollingerBands(currentCloses, 20, 2);
 
-            let buyConditionsMet = 0;
-            let sellConditionsMet = 0;
+            const currentHighs = klines.slice(0, i + 1).map(k => k[2]);
+            const currentLows = klines.slice(0, i + 1).map(k => k[3]);
+            const atr = calculateATR(currentHighs, currentLows, currentCloses, 14);
+            const adx = calculateADX(currentHighs, currentLows, currentCloses, 14);
 
-            if (isValidNumber(closePrice) && isValidNumber(bb.lower) && closePrice <= bb.lower) buyConditionsMet++;
-            if (isValidNumber(rsi) && rsi <= 35) buyConditionsMet++;
-            if (isValidNumber(macd.macdHistogram) && prevKline) {
-                 const prevMacd = calculateMACD(klines.slice(0, i).map(k => k[4]), 12, 26, 9);
-                 if (isValidNumber(prevMacd.macdHistogram) && macd.macdHistogram > 0 && prevMacd.macdHistogram <= 0) {
-                     buyConditionsMet++;
-                 }
-            }
-            
-            if (isValidNumber(closePrice) && isValidNumber(bb.upper) && closePrice >= bb.upper) sellConditionsMet++;
-            if (isValidNumber(rsi) && rsi >= 65) sellConditionsMet++;
-            
             annotatedHistory.push({
                 timestamp, openPrice, highPrice, lowPrice, closePrice, volume,
                 sma10, sma20, sma50, rsi,
-                macdLine: macd.macdLine,
-                signalLine: macd.signalLine,
                 macdHistogram: macd.macdHistogram,
                 upperBollingerBand: bb.upper,
-                middleBollingerBand: bb.middle,
                 lowerBollingerBand: bb.lower,
-                buyConditionsMet,
-                sellConditionsMet,
+                atr: !isNaN(atr) ? atr : undefined,
+                adx: !isNaN(adx) ? adx : undefined,
             });
         }
         return annotatedHistory;
     }, []);
 
-    const executeBotStrategy = useCallback(async () => {
-        if (!isBotRunning || !selectedMarket || currentPrice === null || currentMarketPriceHistory.length < MIN_REQUIRED_HISTORY_FOR_BOT || !selectedMarketRules || isPlacingOrder) {
-            return;
-        }
-    
-        const latest = currentMarketPriceHistory.at(-1);
-        if (!latest) return;
-
-        if (simulatedPosition) {
-            const { takeProfitPrice, stopLossPrice, simulationId, entryPrice, amount, strategy } = simulatedPosition;
-            let exitReason: string | null = null;
-            if (takeProfitPrice && currentPrice >= takeProfitPrice) exitReason = 'take_profit';
-            else if (stopLossPrice && currentPrice <= stopLossPrice) exitReason = 'stop_loss';
-
-            if (exitReason) {
-                const finalPnl = (currentPrice - entryPrice) * amount;
-                onBotAction({ type: 'strategy_decision', success: true, message: `Simulación finalizada por ${exitReason}. PnL: ${finalPnl.toFixed(2)}.`, timestamp: Date.now() });
-                
-                if (simulationId) {
-                    fetch('/api/simulations/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            simulationId,
-                            exitPrice: currentPrice,
-                            exitReason,
-                            finalPnl,
-                        }),
-                    }).catch(e => console.error("Failed to save simulation end state", e));
-                }
-                
-                setSimulatedPosition(null);
-            }
-        }
-    
-        if (botOpenPosition) {
-            const { amount, takeProfitPrice, stopLossPrice, strategy } = botOpenPosition;
-            const currentRsi = latest.rsi;
-    
-            let sellReason: 'take_profit' | 'stop_loss' | 'rsi_sell' | null = null;
-    
-            if (takeProfitPrice && currentPrice >= takeProfitPrice) {
-                sellReason = 'take_profit';
-            } else if (stopLossPrice && currentPrice <= stopLossPrice) {
-                sellReason = 'stop_loss';
-            } else if (isValidNumber(currentRsi) && currentRsi >= STRATEGY_CONFIG.rsiSellThreshold) {
-                sellReason = 'rsi_sell';
-            }
-    
-            if (sellReason) {
-                onBotAction({ type: 'strategy_decision', success: true, message: `Señal de VENTA por ${sellReason}.`, details: { reason: sellReason, currentPrice, rsi: currentRsi, target: sellReason === 'take_profit' ? takeProfitPrice : stopLossPrice }, timestamp: Date.now() });
-                
-                let amountToSell = amount;
-                const stepSize = selectedMarketRules.lotSize.stepSize;
-                if (stepSize > 0) {
-                    amountToSell = Math.floor(amountToSell / stepSize) * stepSize;
-                }
-                amountToSell = parseFloat(amountToSell.toFixed(selectedMarketRules.precision.amount));
-    
-                if (amountToSell >= selectedMarketRules.lotSize.minQty) {
-                    await executeOrder({ side: 'sell', amount: amountToSell, price: currentPrice }, strategy || 'scalping');
-                } else {
-                    onBotAction({ type: 'order_failed', success: false, message: `FALLO al vender: la cantidad ajustada (${amountToSell}) es menor que el mínimo permitido.`, details: { amountToSell }, timestamp: Date.now() });
-                }
-                return; 
-            }
-            onBotAction({ type: 'strategy_decision', success: true, message: `HOLD: Posición de compra abierta (${botOpenPosition.strategy}). Monitoreando para salida.`, data: { action: 'hold' }, timestamp: Date.now() });
-        }
-        
-        if (!botOpenPosition && !simulatedPosition) { // Solo busca comprar si no hay posición real NI SIMULADA
-            const decision = decideTradeActionAndAmount({
-                selectedMarket,
-                currentMarketPriceHistory,
-                currentPrice,
-                allBinanceBalances,
-                botOpenPosition,
-                selectedMarketRules,
-                logStrategyMessage: (message, details) => onBotAction({type: 'strategy_decision', success: true, message, details, timestamp: Date.now()})
-            });
-            
-            const message = `Decisión de la estrategia: ${decision.action.toUpperCase().replace('_', ' ')}${decision.details?.strategyMode ? ` en modo ${decision.details.strategyMode}` : ''}`;
-            onBotAction({ type: 'strategy_decision', success: true, message, details: decision.details, data: { action: decision.action }, timestamp: Date.now() });
-    
-            if (decision.action === 'buy' && decision.orderData && decision.details.strategyMode) {
-                await executeOrder({ side: 'buy', amount: decision.orderData.amount, price: decision.orderData.price }, decision.details.strategyMode);
-            } else if (decision.action === 'hold_insufficient_funds' && decision.orderData && decision.details.strategyMode) {
-                const config = STRATEGY_CONFIG[decision.details.strategyMode];
-                const entryPrice = decision.orderData.price;
-                const takeProfitPrice = entryPrice * (1 + config.takeProfitPercentage);
-                const stopLossPrice = entryPrice * (1 - config.stopLossPercentage);
-
-                const newSimulation: Omit<BotOpenPosition, 'simulationId'> = {
-                    marketId: selectedMarket.id,
-                    entryPrice: entryPrice,
-                    amount: decision.orderData.amount,
-                    type: 'buy',
-                    timestamp: Date.now(),
-                    takeProfitPrice,
-                    stopLossPrice,
-                    strategy: decision.details.strategyMode,
-                };
-
-                try {
-                    const response = await fetch('/api/simulations/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(newSimulation),
-                    });
-                    const result = await response.json();
-                    if(result.success && result.insertedId) {
-                        setSimulatedPosition({ ...newSimulation, simulationId: result.insertedId });
-                    } else {
-                        setSimulatedPosition(newSimulation); // Fallback si no se puede guardar
-                        console.error("Failed to save simulation start state", result.message);
-                    }
-                } catch (e) {
-                     setSimulatedPosition(newSimulation); // Fallback si hay error de red
-                     console.error("Error connecting to simulation save API", e);
-                }
-            }
-        }
-    
-    }, [ isBotRunning, selectedMarket, currentMarketPriceHistory, currentPrice, allBinanceBalances, botOpenPosition, simulatedPosition, selectedMarketRules, isPlacingOrder, onBotAction, executeOrder ]);
-    
-    // Función para generar datos de mercado simulados
-    const generateSimulatedData = useCallback(() => {
-        setCurrentMarketPriceHistory(prevHistory => {
-            const lastPoint = prevHistory.length > 0 ? prevHistory[prevHistory.length - 1] : { closePrice: 60000, timestamp: Date.now() - 60000, openPrice: 59900, highPrice: 60100, lowPrice: 59800, volume: 10 };
-            const newPrice = lastPoint.closePrice * (1 + (Math.random() - 0.5) * 0.001); // Fluctuación aleatoria
-            const newPoint:KLine = [
-                Date.now(),
-                lastPoint.closePrice,
-                Math.max(lastPoint.closePrice, newPrice),
-                Math.min(lastPoint.closePrice, newPrice),
-                newPrice,
-                Math.random() * 10,
-            ];
-            
-            const newHistoryKlines = [...prevHistory.map(p => [p.timestamp, p.openPrice, p.highPrice, p.lowPrice, p.closePrice, p.volume] as KLine), newPoint];
-            if (newHistoryKlines.length > PRICE_HISTORY_POINTS_TO_KEEP) {
-                newHistoryKlines.shift();
-            }
-            
-            const annotated = annotateMarketPriceHistory(newHistoryKlines);
-            if (annotated.length > 0) {
-                 setCurrentPrice(annotated[annotated.length - 1].closePrice);
-            }
-            return annotated;
-        });
-    }, [annotateMarketPriceHistory]);
-
-
     useEffect(() => {
         isMounted.current = true;
         return () => { isMounted.current = false; };
     }, []);
-    
-    const toggleBotStatus = useCallback(() => {
-        setIsBotRunning(prev => {
-            const newStatus = !prev;
-            onBotAction({ type: newStatus ? 'start' : 'stop', success: true, message: `Bot ${newStatus ? 'iniciado' : 'detenido'}`, timestamp: Date.now() });
-            if (isMounted.current) {
-                toast({
-                    title: `Bot ${newStatus ? 'iniciado' : 'detenido'}`,
-                    description: `El bot para ${selectedMarket?.symbol || 'mercado seleccionado'} ha sido ${newStatus ? 'iniciado' : 'detenido'}.`,
-                    variant: newStatus ? 'default' : 'destructive',
-                });
-            }
-            return newStatus;
-        });
-    }, [selectedMarket?.symbol, toast, onBotAction]);
 
     useEffect(() => {
         if (!selectedMarket?.symbol) {
@@ -374,15 +244,12 @@ export const useTradingBot = (props: {
             return;
         }
 
-        let dataInterval: NodeJS.Timeout | null = null;
-
         const fetchMarketData = async () => {
             if (!isMounted.current) return;
             setRulesLoading(true);
             setRulesError(null);
             
             try {
-                // Fetch Rules
                 const rulesResponse = await fetch(`/api/binance/exchange-info?symbol=${selectedMarket.symbol}`);
                 const rulesData: ApiResult<any> = await rulesResponse.json();
                 
@@ -408,7 +275,6 @@ export const useTradingBot = (props: {
                 
                 if (isMounted.current) setSelectedMarketRules(parsedRules);
 
-                // Fetch Klines
                 const klinesResponse = await fetch(`/api/binance/klines?symbol=${selectedMarket.symbol}&interval=${timeframe}&limit=${PRICE_HISTORY_POINTS_TO_KEEP}`);
                 const klinesData: ApiResult<KLine[]> = await klinesResponse.json();
                 if (!klinesResponse.ok || !klinesData.success) throw new Error(klinesData.message || "Error al cargar velas (klines).");
@@ -420,44 +286,18 @@ export const useTradingBot = (props: {
                         setCurrentPrice(historyWithIndicators.at(-1)?.closePrice || null);
                         setIsDataLoaded(true);
                     }
-                } else {
-                    if (isMounted.current) setIsDataLoaded(false);
                 }
-
             } catch (error: any) {
-                if (isMounted.current) {
-                    setRulesError(error.message);
-                    onBotAction({ type: 'order_failed', success: false, message: `Error de Conexión: ${error.message}. Activando modo simulado.`, timestamp: Date.now() });
-                    setIsDataLoaded(true); // Permitir que el bot inicie en modo simulado
-                    // Iniciar generación de datos simulados si la carga real falla
-                    if (!dataInterval) {
-                        generateSimulatedData(); // Carga inicial simulada
-                        dataInterval = setInterval(generateSimulatedData, 5000);
-                    }
-                }
+                if (isMounted.current) setRulesError(error.message);
             } finally {
                 if (isMounted.current) setRulesLoading(false);
             }
         };
 
-        fetchMarketData(); // Llamada inicial
-        const initialDataInterval = setInterval(fetchMarketData, 30000); // Intervalo para datos reales
-        
-        return () => {
-            clearInterval(initialDataInterval);
-            if (dataInterval) clearInterval(dataInterval);
-        };
-
-    }, [selectedMarket?.symbol, timeframe, annotateMarketPriceHistory, generateSimulatedData, onBotAction]);
-
-    useEffect(() => {
-        if (isBotRunning && isDataLoaded) {
-            botIntervalRef.current = setInterval(executeBotStrategy, botIntervalMs);
-        } else {
-            if (botIntervalRef.current) clearInterval(botIntervalRef.current);
-        }
-        return () => { if (botIntervalRef.current) clearInterval(botIntervalRef.current); };
-    }, [isBotRunning, isDataLoaded, executeBotStrategy, botIntervalMs]);
+        fetchMarketData();
+        const initialDataInterval = setInterval(fetchMarketData, 30000);
+        return () => clearInterval(initialDataInterval);
+    }, [selectedMarket?.symbol, timeframe, annotateMarketPriceHistory]);
 
     return {
         isBotRunning, toggleBotStatus, botOpenPosition, botLastActionTimestamp,

@@ -114,6 +114,8 @@ export interface MarketPriceDataPoint {
     // Conteo de condiciones para la visualización de zonas
     buyConditionsMet?: number;
     sellConditionsMet?: number;
+    atr?: number;
+    adx?: number;
 }
 
 // CONFIGURACIÓN DE GRÁFICOS (ÚNICA DECLARACIÓN)
@@ -122,6 +124,7 @@ export const marketPriceChartConfigDark = {
     closePrice: { label: "Cierre", color: "hsl(var(--chart-1))" },
     sma10: { label: "SMA 10", color: "hsl(var(--chart-5))" },
     sma20: { label: "SMA 20", color: "hsl(var(--chart-2))" },
+    sma50: { label: "SMA 50", color: "hsl(var(--chart-3))" },
 } satisfies ChartConfig;
 
 
@@ -132,6 +135,19 @@ export interface SignalItem {
 }
 
 export type ParsedSignals = SignalItem[];
+
+export interface SignalEvent {
+    type: 'BUY' | 'SELL';
+    price: number;
+    timestamp: number;
+    confidence: number;
+}
+
+export interface SmaCrossoverEvent {
+    type: 'SMA_CROSS_BUY' | 'SMA_CROSS_SELL';
+    price: number;
+    timestamp: number;
+}
 
 // INTERFAZ OrderFormData
 export interface OrderFormData {
@@ -165,6 +181,11 @@ export interface BotOpenPosition {
     takeProfitPrice?: number;
     strategy: 'scalping' | 'sniper'; // Para saber con qué estrategia se abrió la posición
     simulationId?: string; // Para la persistencia de simulaciones
+    
+    // Trailing Stop fields
+    trailingStopActive?: boolean;
+    highestPriceReached?: number;
+    atrAtEntry?: number;
 }
 
 
